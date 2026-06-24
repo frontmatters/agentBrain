@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+# brain-extract — move a project's knowledge bundle from vault to project folder.
+# Phase 1 MVP: happy-path only. See vault project doc for full spec.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SHARED_DIR="$SCRIPT_DIR/../../_shared/brain-package"
+# shellcheck source=/dev/null
+source "$SHARED_DIR/manifest.sh"
+# shellcheck source=/dev/null
+source "$SHARED_DIR/wiki-link-crawler.sh"
+
+usage() {
+  cat <<EOF
+Usage: brain-extract <slug> [--keep] [--to <path>] [--vault <path>]
+
+Phase 1 MVP — happy path only. No lockfile, no checkpoint.
+EOF
+  exit 2
+}
+
+SLUG=""
+KEEP=0
+DEST_OVERRIDE=""
+VAULT="${BRAIN_DIR:-$HOME/agentBrain}/local"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --keep) KEEP=1; shift ;;
+    --to) DEST_OVERRIDE="$2"; shift 2 ;;
+    --vault) VAULT="$2"; shift 2 ;;
+    -h|--help) usage ;;
+    --*) echo "unknown flag: $1" >&2; exit 2 ;;
+    *) SLUG="$1"; shift ;;
+  esac
+done
+
+[ -n "$SLUG" ] || usage
+
+# === Step 1: Resolve & validate ===
+MANIFEST_FILE="$VAULT/projects/$SLUG/.export-manifest.yml"
+
+if [ ! -f "$MANIFEST_FILE" ]; then
+  echo "brain-extract: no manifest found at $MANIFEST_FILE" >&2
+  echo "  (Phase 1 MVP does not yet support auto-seeding via wiki-link crawl.)" >&2
+  exit 1
+fi
+
+if ! manifest_validate "$MANIFEST_FILE"; then
+  echo "brain-extract: manifest validation failed" >&2
+  exit 1
+fi
+
+# Resolve include paths against vault
+INCLUDES=$(yq -r '.include[]?' "$MANIFEST_FILE")
+SCOPE=()
+while IFS= read -r p; do
+  [ -z "$p" ] && continue
+  if [[ "$p" == *"*"* ]]; then
+    # Glob: expand against vault
+    while IFS= read -r m; do
+      [ -n "$m" ] && SCOPE+=("${m#$VAULT/}")
+    done < <(cd "$VAULT" && compgen -G "$p" || true)
+  else
+    if [ -f "$VAULT/$p" ]; then
+      SCOPE+=("$p")
+    else
+      echo "brain-extract: scope path missing: $p" >&2
+      exit 1
+    fi
+  fi
+done <<< "$INCLUDES"
+
+if [ ${#SCOPE[@]} -eq 0 ]; then
+  echo "brain-extract: empty scope after resolution" >&2
+  exit 1
+fi
+
+# Apply exclude
+EXCLUDES=$(yq -r '.exclude[]?' "$MANIFEST_FILE")
+while IFS= read -r e; do
+  [ -z "$e" ] && continue
+  for i in "${!SCOPE[@]}"; do
+    [ "${SCOPE[$i]}" = "$e" ] && unset 'SCOPE[i]'
+  done
+done <<< "$EXCLUDES"
+SCOPE=("${SCOPE[@]}")  # reindex
+
+echo "brain-extract: resolved scope (${#SCOPE[@]} files):"
+for p in "${SCOPE[@]}"; do echo "  $p"; done
+
+# === Step 2: Determine destination ===
+PROJECT_ROOT="${DEST_OVERRIDE:-$(pwd)}"
+DEST="$PROJECT_ROOT/.brain-package"
+
+if [ -e "$DEST" ]; then
+  echo "brain-extract: destination already exists: $DEST" >&2
+  exit 1
+fi
+
+# === Step 3: Stage package in tmp ===
+TMP="$DEST.tmp.$$"
+mkdir -p "$TMP/notes"
+
+CHECKSUMS="$TMP/CHECKSUMS.txt"
+: > "$CHECKSUMS"
+
+for path in "${SCOPE[@]}"; do
+  src="$VAULT/$path"
+  # UUID5 of the vault-rel path without .md extension is the note id
+  rel_no_ext="${path%.md}"
+  uuid=$(yq -r '.id // ""' "$src" 2>/dev/null || echo "")
+  if [ -z "$uuid" ]; then
+    # Fallback: derive UUID5 from path (uses uuid5-gen.sh from installed agentBrain)
+    uuid=$("$HOME/agentBrain/scripts/uuid5-gen.sh" "local/$rel_no_ext")
+  fi
+  dst="$TMP/notes/$uuid.md"
+
+  # Atomic per-file write: write to .tmp, then rename
+  cp "$src" "$dst.write"
+  mv "$dst.write" "$dst"
+
+  # Record sha256 (BSD vs GNU compat)
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$dst" | awk -v p="notes/$uuid.md" '{print $1 "  " p}' >> "$CHECKSUMS"
+  else
+    shasum -a 256 "$dst" | awk -v p="notes/$uuid.md" '{print $1 "  " p}' >> "$CHECKSUMS"
+  fi
+done
+
+# Copy manifest (with metadata.created updated)
+yq ".metadata.created = \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"" "$MANIFEST_FILE" > "$TMP/manifest.yml"
+
+# Manifest hash + dir-tree hash
+manifest_hash=$( (command -v sha256sum >/dev/null && sha256sum "$TMP/manifest.yml") || shasum -a 256 "$TMP/manifest.yml")
+manifest_hash=$(echo "$manifest_hash" | awk '{print $1}')
+echo "$manifest_hash  manifest.yml" >> "$CHECKSUMS"
+
+# Dir-tree hash: sorted (rel_path:file_sha256) lines, then sha256 of that
+dir_tree_hash=$(sort "$CHECKSUMS" | awk '{print $2 ":" $1}' | (command -v sha256sum >/dev/null && sha256sum || shasum -a 256) | awk '{print $1}')
+echo "$dir_tree_hash  __dir-tree__" >> "$CHECKSUMS"
+
+# === Step 4: Integrity gate ===
+# Re-verify by computing fresh hashes and comparing to CHECKSUMS
+fail=0
+while IFS= read -r line; do
+  expected=$(echo "$line" | awk '{print $1}')
+  path=$(echo "$line" | awk '{print $2}')
+  [ "$path" = "__dir-tree__" ] && continue
+  actual=$( (command -v sha256sum >/dev/null && sha256sum "$TMP/$path") || shasum -a 256 "$TMP/$path")
+  actual=$(echo "$actual" | awk '{print $1}')
+  if [ "$expected" != "$actual" ]; then
+    echo "brain-extract: integrity FAIL on $path" >&2
+    fail=1
+  fi
+done < "$CHECKSUMS"
+
+if [ "$fail" -ne 0 ]; then
+  echo "brain-extract: tmp/ retained at $TMP for inspection" >&2
+  exit 1
+fi
+
+echo "brain-extract: staged + integrity-verified at $TMP"
+
+# === Step 7: Atomic swap ===
+mv "$TMP" "$DEST"
+echo "brain-extract: package at $DEST"
+
+# === Step 8: Cascade brain-forget (skipped in MVP if --keep is default) ===
+# In Phase 1 MVP, only --keep behavior is implemented. The cascade path
+# (without --keep) is deferred to Phase 2 because it requires the brain-forget
+# pre-check + checkpoint + resume infrastructure that is also Phase 2.
+if [ "$KEEP" -eq 1 ]; then
+  echo "brain-extract: --keep: vault originals retained"
+else
+  echo "brain-extract: Phase 1 MVP only supports --keep. Originals retained." >&2
+  echo "  (Cascade to brain-forget arrives in Phase 2.)" >&2
+fi
+
+# === Step 9: Final report ===
+file_count=$(find "$DEST/notes" -type f | wc -l | awk '{print $1}')
+echo "brain-extract: $file_count notes packaged to $DEST"
+exit 0

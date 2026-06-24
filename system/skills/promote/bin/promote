@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+# promote/demote — agentBrain mirror-path swapper
+# See ../SPEC.md for the contract.
+
+set -euo pipefail
+
+# --- BRAIN_DIR resolution (realpath → cd/pwd-P → python3) ---
+resolve_brain_dir() {
+    local target="$HOME/agentBrain"
+    if command -v realpath >/dev/null 2>&1; then
+        realpath "$target" 2>/dev/null && return 0
+    fi
+    if [ -d "$target" ]; then
+        (cd "$target" && pwd -P) && return 0
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c "import os; print(os.path.realpath(os.path.expanduser('~/agentBrain')))" && return 0
+    fi
+    echo "promote: cannot resolve ~/agentBrain" >&2
+    exit 1
+}
+
+BRAIN_DIR="$(resolve_brain_dir)"
+
+# local/ and system/ may live on different filesystems (e.g., private vault on
+# a separate volume). Resolve each scope root independently so prefix checks
+# stay correct regardless of how the mirror is mounted.
+resolve_scope_root() {
+    local scope="$1"
+    local path="$BRAIN_DIR/$scope"
+    if command -v realpath >/dev/null 2>&1; then
+        realpath "$path" 2>/dev/null && return 0
+    fi
+    if [ -d "$path" ]; then
+        (cd "$path" && pwd -P) && return 0
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "$path" && return 0
+    fi
+    echo "$path"
+}
+
+LOCAL_ROOT="$(resolve_scope_root local)"
+SYSTEM_ROOT="$(resolve_scope_root system)"
+MIRROR_FOLDERS=(addons agent-config integrations pi-config skills)
+
+# --- arg parsing ---
+VERB="$(basename "$0")"   # 'promote' or 'demote'
+case "$VERB" in
+    promote) FROM_SCOPE="local";  TO_SCOPE="system"; FROM_ROOT="$LOCAL_ROOT";  TO_ROOT="$SYSTEM_ROOT" ;;
+    demote)  FROM_SCOPE="system"; TO_SCOPE="local";  FROM_ROOT="$SYSTEM_ROOT"; TO_ROOT="$LOCAL_ROOT"  ;;
+    *)       echo "promote: invoked under unexpected name '$VERB' (expected promote|demote)" >&2; exit 1 ;;
+esac
+
+FORCE=0
+INPUT_PATH=""
+for arg in "$@"; do
+    case "$arg" in
+        --force) FORCE=1 ;;
+        -h|--help)
+            cat <<EOF
+$VERB — agentBrain mirror-path swapper
+
+Usage:
+  promote <local-path>  [--force]
+  demote  <system-path> [--force]
+
+Mirror folders: ${MIRROR_FOLDERS[*]}
+See SPEC.md for full behavior. Exit codes: 0 ok, 1 validation, 2 target exists, 3 non-mirror.
+EOF
+            exit 0
+            ;;
+        -*) echo "$VERB: unknown flag '$arg'" >&2; exit 1 ;;
+        *)
+            if [ -n "$INPUT_PATH" ]; then
+                echo "$VERB: multiple paths given; expected exactly one" >&2; exit 1
+            fi
+            INPUT_PATH="$arg"
+            ;;
+    esac
+done
+
+if [ -z "$INPUT_PATH" ]; then
+    echo "$VERB: missing path argument. Try '$VERB --help'." >&2
+    exit 1
+fi
+
+# --- path normalization ---
+# Refuse symlinks BEFORE realpath would silently dereference them.
+if [ -L "$INPUT_PATH" ]; then
+    echo "$VERB: '$INPUT_PATH' is a symlink." >&2
+    echo "  v1 only operates on real files/dirs to avoid ambiguous semantics." >&2
+    echo "  Resolve the link manually or pass the real path." >&2
+    exit 1
+fi
+
+if [ ! -e "$INPUT_PATH" ]; then
+    echo "$VERB: source path does not exist: $INPUT_PATH" >&2
+    exit 1
+fi
+
+normalize_path() {
+    local p="$1"
+    if command -v realpath >/dev/null 2>&1; then
+        realpath "$p" 2>/dev/null && return 0
+    fi
+    local dir base
+    if [ -d "$p" ]; then
+        (cd "$p" && pwd -P) && return 0
+    fi
+    dir="$(dirname "$p")"
+    base="$(basename "$p")"
+    if [ -d "$dir" ]; then
+        echo "$(cd "$dir" && pwd -P)/$base" && return 0
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "$p" && return 0
+    fi
+    echo "$p"  # last resort
+}
+
+SOURCE="$(normalize_path "$INPUT_PATH")"
+
+# --- verify scope ---
+SCOPE_PREFIX="$FROM_ROOT/"
+if [[ "$SOURCE" != "$SCOPE_PREFIX"* ]]; then
+    echo "$VERB: '$SOURCE' is not under $SCOPE_PREFIX." >&2
+    if [ "$VERB" = "promote" ] && [[ "$SOURCE" == "$SYSTEM_ROOT/"* ]]; then
+        echo "  This path is already in system/. Did you mean 'demote'?" >&2
+    elif [ "$VERB" = "demote" ] && [[ "$SOURCE" == "$LOCAL_ROOT/"* ]]; then
+        echo "  This path is already in local/. Did you mean 'promote'?" >&2
+    fi
+    exit 1
+fi
+
+RELATIVE="${SOURCE#$SCOPE_PREFIX}"
+if [ -z "$RELATIVE" ]; then
+    echo "$VERB: refuses to operate on the scope root itself ($SCOPE_PREFIX)." >&2
+    exit 1
+fi
+
+# --- mirror-folder check ---
+FIRST_COMPONENT="${RELATIVE%%/*}"
+if [ "$FIRST_COMPONENT" = "$RELATIVE" ] && [ -d "$SOURCE" ]; then
+    echo "$VERB: refuses to operate on the whole mirror folder '$FIRST_COMPONENT/' (would clobber the other side)." >&2
+    exit 1
+fi
+
+IS_MIRROR=0
+for m in "${MIRROR_FOLDERS[@]}"; do
+    if [ "$FIRST_COMPONENT" = "$m" ]; then IS_MIRROR=1; break; fi
+done
+
+if [ "$IS_MIRROR" -eq 0 ]; then
+    echo "$VERB: '$FROM_SCOPE/$FIRST_COMPONENT/' is not a mirror folder." >&2
+    echo "  Mirror folders: ${MIRROR_FOLDERS[*]}" >&2
+    case "$FIRST_COMPONENT" in
+        learnings)       echo "  For technical insights, use the /save-learning skill." >&2 ;;
+        troubleshooting) echo "  For problem+solution notes, use the /save-troubleshoot skill." >&2 ;;
+        projects)        echo "  For project state/decisions, use the /project-update skill." >&2 ;;
+        preferences)     echo "  Preferences stay private — they are not promotable in v1." >&2 ;;
+        sessions|memories|reviews)
+                         echo "  '$FIRST_COMPONENT/' is private session/runtime state — not promotable." >&2 ;;
+        *)               echo "  See SPEC.md section 2 (scope) and section 4 (mirror folders)." >&2 ;;
+    esac
+    exit 3
+fi
+
+# --- compute target ---
+TARGET="$TO_ROOT/$RELATIVE"
+
+# Defensive sanity check: target must land under the same mirror folder
+EXPECTED_TARGET_PREFIX="$TO_ROOT/$FIRST_COMPONENT/"
+if [[ "$TARGET" != "$EXPECTED_TARGET_PREFIX"* ]]; then
+    echo "$VERB: internal sanity check failed — computed target '$TARGET' does not land under '$EXPECTED_TARGET_PREFIX'." >&2
+    exit 1
+fi
+
+# --- handle existing target ---
+if [ -e "$TARGET" ]; then
+    if [ "$FORCE" -ne 1 ]; then
+        echo "$VERB: target already exists: $TARGET" >&2
+        echo "  Re-run with --force to move the existing target into local/.trash/promote/." >&2
+        exit 2
+    fi
+    TS="$(date +%Y%m%d-%H%M%S)"
+    TRASH_DIR="$LOCAL_ROOT/.trash/promote/$TS"
+    TRASH_TARGET="$TRASH_DIR/$TO_SCOPE/$RELATIVE"
+    mkdir -p "$(dirname "$TRASH_TARGET")"
+    mv "$TARGET" "$TRASH_TARGET"
+    echo "$VERB: existing target moved to $TRASH_TARGET"
+fi
+
+# --- create target parent + move ---
+mkdir -p "$(dirname "$TARGET")"
+mv "$SOURCE" "$TARGET"
+echo "${VERB}d: $SOURCE → $TARGET"

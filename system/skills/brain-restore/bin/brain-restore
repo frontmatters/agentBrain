@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# brain-restore — write a brain-package back into the vault.
+# Phase 1 MVP: happy-path + default overwrite-on-collision. No lockfile, no
+# alternate collision flags.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SHARED_DIR="$SCRIPT_DIR/../../_shared/brain-package"
+# shellcheck source=/dev/null
+source "$SHARED_DIR/manifest.sh"
+
+usage() {
+  cat <<EOF
+Usage: brain-restore <package-path> [--move] [--vault <path>]
+
+Phase 1 MVP — happy path, default overwrite + warn on collision.
+EOF
+  exit 2
+}
+
+PACKAGE=""
+MOVE=0
+VAULT="${BRAIN_DIR:-$HOME/agentBrain}/local"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --move) MOVE=1; shift ;;
+    --vault) VAULT="$2"; shift 2 ;;
+    -h|--help) usage ;;
+    --*) echo "unknown flag: $1" >&2; exit 2 ;;
+    *) PACKAGE="$1"; shift ;;
+  esac
+done
+
+[ -n "$PACKAGE" ] || usage
+[ -d "$PACKAGE" ] || { echo "brain-restore: package not found: $PACKAGE" >&2; exit 1; }
+
+# === Step 1: Resolve + validate ===
+MANIFEST="$PACKAGE/manifest.yml"
+[ -f "$MANIFEST" ] || { echo "brain-restore: no manifest.yml in $PACKAGE" >&2; exit 1; }
+manifest_validate "$MANIFEST" || exit 1
+
+CHECKSUMS="$PACKAGE/CHECKSUMS.txt"
+[ -f "$CHECKSUMS" ] || { echo "brain-restore: no CHECKSUMS.txt in $PACKAGE" >&2; exit 1; }
+
+# Verify CHECKSUMS
+while IFS= read -r line; do
+  expected=$(echo "$line" | awk '{print $1}')
+  path=$(echo "$line" | awk '{print $2}')
+  [ "$path" = "__dir-tree__" ] && continue
+  actual=$( (command -v sha256sum >/dev/null && sha256sum "$PACKAGE/$path") || shasum -a 256 "$PACKAGE/$path")
+  actual=$(echo "$actual" | awk '{print $1}')
+  if [ "$expected" != "$actual" ]; then
+    echo "brain-restore: CHECKSUMS mismatch on $path" >&2
+    exit 1
+  fi
+done < "$CHECKSUMS"
+
+# === Step 3: Determine targets ===
+SLUG=$(yq -r '.project' "$MANIFEST")
+INCLUDES=$(yq -r '.include[]?' "$MANIFEST")
+
+# Build a map: source-uuid -> target-vault-path
+declare -A target_path  # key: uuid, val: vault-rel
+declare -a TARGETS
+while IFS= read -r path; do
+  [ -z "$path" ] && continue
+  if [[ "$path" == *"*"* ]]; then
+    # Glob: not stored expanded in manifest. For MVP, ignore globs in restore —
+    # treat each note in the package as authoritative.
+    continue
+  fi
+  # The package's notes are uuid-named; map by content-id (frontmatter id field)
+  TARGETS+=("$path")
+done <<< "$INCLUDES"
+
+# === Step 4: Stage in tmp ===
+RESTORE_TMP="$VAULT/.restore.tmp.$$"
+mkdir -p "$RESTORE_TMP"
+
+# For each note in package, look up its frontmatter `id` and find target path
+# by reverse-lookup in vault manifest's include list.
+collision_count=0
+overwrite_paths=()
+
+for note in "$PACKAGE"/notes/*.md; do
+  [ -f "$note" ] || continue
+  uuid=$(basename "$note" .md)
+
+  # Find target by ID match in TARGETS frontmatter scan
+  target=""
+  for t in "${TARGETS[@]}"; do
+    src_uuid=$(yq -r '.id // ""' "$VAULT/$t" 2>/dev/null || echo "")
+    if [ "$src_uuid" = "$uuid" ]; then
+      target="$t"
+      break
+    fi
+    # If target doesn't exist yet, compute its expected UUID5
+    if [ ! -f "$VAULT/$t" ]; then
+      rel_no_ext="${t%.md}"
+      expected_uuid=$("$HOME/agentBrain/scripts/uuid5-gen.sh" "local/$rel_no_ext" 2>/dev/null || echo "")
+      if [ "$expected_uuid" = "$uuid" ]; then
+        target="$t"
+        break
+      fi
+    fi
+  done
+
+  if [ -z "$target" ]; then
+    echo "brain-restore: cannot map package note $uuid to any include path" >&2
+    continue
+  fi
+
+  staged="$RESTORE_TMP/$target"
+  mkdir -p "$(dirname "$staged")"
+  cp "$note" "$staged.write"
+  mv "$staged.write" "$staged"
+
+  if [ -f "$VAULT/$target" ]; then
+    collision_count=$((collision_count + 1))
+    overwrite_paths+=("$target")
+  fi
+done
+
+# === Step 5: Integrity gate (basic — staged files exist) ===
+staged_count=$(find "$RESTORE_TMP" -type f | wc -l | awk '{print $1}')
+if [ "$staged_count" -eq 0 ]; then
+  echo "brain-restore: no files staged — restore aborted" >&2
+  rm -rf "$RESTORE_TMP"
+  exit 1
+fi
+
+# === Step 6: Atomic per-file swap with default policy (overwrite + warn) ===
+for target in "${overwrite_paths[@]}"; do
+  echo "brain-restore: WARN: overwriting existing $target" >&2
+done
+
+cd "$RESTORE_TMP"
+find . -type f | while IFS= read -r rel; do
+  rel="${rel#./}"
+  mkdir -p "$VAULT/$(dirname "$rel")"
+  mv "$RESTORE_TMP/$rel" "$VAULT/$rel"
+done
+cd - >/dev/null
+rm -rf "$RESTORE_TMP"
+
+# === Step 7: Package disposition ===
+if [ "$MOVE" -eq 1 ]; then
+  rm -rf "$PACKAGE"
+  echo "brain-restore: package removed (--move)"
+else
+  echo "brain-restore: package retained at $PACKAGE"
+fi
+
+echo "brain-restore: restored $staged_count files to vault ($collision_count overwrites)"
+exit 0

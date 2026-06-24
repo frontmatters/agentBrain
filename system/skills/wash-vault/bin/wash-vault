@@ -1,0 +1,388 @@
+#!/usr/bin/env bash
+# wash-vault — the agentBrain laundromat (deterministic content-debt repair).
+# See ../SKILL.md for rules, args, and safety guarantees.
+
+set -uo pipefail
+
+resolve_brain_dir() {
+    if command -v realpath >/dev/null 2>&1; then
+        realpath "$HOME/agentBrain" 2>/dev/null && return 0
+    fi
+    if [ -d "$HOME/agentBrain" ]; then
+        (cd "$HOME/agentBrain" && pwd -P) && return 0
+    fi
+    echo "wash-vault: cannot resolve ~/agentBrain" >&2
+    exit 1
+}
+
+BRAIN_DIR="$(resolve_brain_dir)"
+UUID5_GEN="$BRAIN_DIR/scripts/uuid5-gen.sh"
+LOCAL_DIR="$BRAIN_DIR/local"
+
+if [ ! -d "$LOCAL_DIR" ]; then
+    echo "wash-vault: no local/ at $LOCAL_DIR" >&2
+    exit 1
+fi
+if [ ! -x "$UUID5_GEN" ]; then
+    echo "wash-vault: missing uuid5-gen.sh at $UUID5_GEN" >&2
+    exit 1
+fi
+
+FIX=0
+JSON=0
+RULES="id-mismatch,no-frontmatter,filename-unsafe-chars"
+SCOPE=()
+
+usage() {
+    cat <<'EOF'
+wash-vault — deterministic content-debt repair for the agentBrain vault.
+
+Usage: wash-vault [--fix] [--scope PATH ...] [--rules R1,R2] [--json] [--help]
+
+  --fix          Apply repairs. Default: dry-run (preview only, exit 2 if findings).
+  --scope PATH   Limit to one or more paths under local/. Default: all of local/.
+  --rules R,R    Run only listed rules. Default: all.
+                 Valid: id-mismatch, no-frontmatter, filename-unsafe-chars
+  --json         Structured output for the self-improving-loop framework.
+  --help         This message.
+
+Exit codes: 0 = clean (or fix applied), 1 = error, 2 = findings in dry-run.
+See system/skills/wash-vault/SKILL.md for full docs.
+EOF
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --fix) FIX=1 ;;
+        --json) JSON=1 ;;
+        --scope) shift; SCOPE+=("$1") ;;
+        --rules) shift; RULES="$1" ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "wash-vault: unknown arg: $1" >&2; usage; exit 1 ;;
+    esac
+    shift
+done
+
+[ ${#SCOPE[@]} -eq 0 ] && SCOPE=("$LOCAL_DIR")
+
+export BRAIN_DIR LOCAL_DIR UUID5_GEN FIX JSON RULES
+
+python3 - "${SCOPE[@]}" <<'PY'
+import json as _json
+import os
+import re
+import subprocess
+import sys
+import uuid
+from datetime import date
+from pathlib import Path
+
+BRAIN = Path(os.environ["BRAIN_DIR"])
+# LOCAL is typically a symlink (~/Developer/agentBrain*/local → ~/.agentBrain/vault).
+# Resolve so that os.walk's followlinks=True yields paths under the same root
+# we'll use for relative_to() — otherwise every file raises ValueError and the
+# whole walk silently no-ops.
+LOCAL = Path(os.environ["LOCAL_DIR"]).resolve()
+UUID5_GEN = os.environ["UUID5_GEN"]
+FIX = os.environ.get("FIX") == "1"
+JSON = os.environ.get("JSON") == "1"
+RULES = set(os.environ.get("RULES", "").split(","))
+
+# Namespace must match check-local-content.sh and uuid5-gen.sh
+NS = uuid.UUID(_json.loads((BRAIN / "brain.json").read_text())["namespace"])
+
+# Exemptions are PER-RULE. Filename-safety is more universal than schema rules,
+# so it runs on machine-generated content where id/frontmatter checks do not.
+
+# SCHEMA_EXEMPT — files whose id/frontmatter use a different (or no) strategy.
+# Mirrors check-local-content.sh is_exempt() conceptually.
+SCHEMA_EXEMPT = [
+    "skills/*/SKILL.md", "addons/*/SKILL.md", "addons/*/manifest.md",
+    ".trash/*", ".trash/**/*",
+    "memories/MEMORY.md",
+    "quarantine/*", "quarantine/**/*",
+    "sessions/session-journal.md",
+    "sessions/archive/*", "sessions/archive/**/*",
+    "sessions/README.md", "sessions/startup-context.md",
+    "findings/*", "findings/**/*",
+    "metrics/*", "metrics/**/*",
+    "learnings/extracted/*", "learnings/extracted/**/*",
+    "youtube-knowledge/*", "youtube-knowledge/**/*",
+    "events/*", "events/**/*",
+    "reviews/*", "reviews/**/*",
+    "addons/*/state.json", "addons/*/stats.json",
+]
+
+# RENAME_EXEMPT — only the truly off-limits paths. Filename-safety is allowed
+# (and wanted) inside machine-generated content folders like youtube-knowledge,
+# because the upstream sanitizer there has known bugs (curly quotes from titles).
+RENAME_EXEMPT = [
+    "skills/*/SKILL.md", "addons/*/SKILL.md", "addons/*/manifest.md",
+    ".trash/*", ".trash/**/*",
+    "quarantine/*", "quarantine/**/*",
+    "findings/*", "findings/**/*",
+    "metrics/*", "metrics/**/*",
+    "events/*", "events/**/*",                  # ndjson/jsonl file naming is structured
+    "sessions/archive/*", "sessions/archive/**/*",
+]
+
+# Folder → default type mapping for the frontmatter stub. Conservative defaults;
+# the human is expected to enrich tags and override type where appropriate.
+FOLDER_TYPE = {
+    "learnings": "learning",
+    "references": "reference",
+    "preferences": "feedback",
+    "backlog": "backlog",
+    "memories": "feedback",
+    "projects": "spec",   # default for sub-files; projects/<x>/index.md handled specially
+}
+
+# Filenames characters considered unsafe for portability / shell / URL.
+# U+2018/U+2019 = curly quotes; U+2026 = ellipsis. Plain ASCII " ' kept too.
+# Characters disallowed in note filenames. Coverage:
+# - " ' ‘ ’           — quote variants (curly + ASCII); shell quoting hazards
+# - …                 — ellipsis from auto-generated titles (yt-knowledge bug)
+# - * ?               — POSIX glob meta; cause CLI-tool grief even on macOS/Linux
+# - :                 — Synology/SMB-export hazard; reserved on FAT/exFAT-mounted volumes
+# Intentionally NOT included (Windows-only concerns, agentBrain is mac/Linux):
+#   < > | \ — Windows-illegal chars; out of scope per platform target
+UNSAFE_CHARS = re.compile(r'["\'‘’…*?:]')
+
+def fnmatch_any(rel, globs):
+    import fnmatch
+    return any(fnmatch.fnmatch(rel, g) for g in globs)
+
+def detect_type(rel_path):
+    parts = rel_path.split("/")
+    if len(parts) >= 2 and parts[0] == "projects" and parts[-1] == "index.md":
+        return "project"
+    if parts and parts[0] in FOLDER_TYPE:
+        return FOLDER_TYPE[parts[0]]
+    return None
+
+def expected_uuid5(rel_no_ext):
+    # rel_no_ext is local-relative (e.g. "learnings/Foo"); namespace-string is
+    # "agentBrain/local/<rel_no_ext>" — matches check-local-content.sh and the
+    # convention that uuid5-gen.sh expects callers to pass the full
+    # vault-relative path including the "local/" segment.
+    return str(uuid.uuid5(NS, f"agentBrain/local/{rel_no_ext}"))
+
+# Self-test: our inline formula must match canonical uuid5-gen.sh.
+# We pass "local/<probe>" to uuid5-gen.sh because that's what the rest of
+# the toolchain (check-local-content.sh, new-note.sh) passes.
+probe_rel = "__wash_vault_probe__"
+canonical = subprocess.run(
+    ["bash", UUID5_GEN, f"local/{probe_rel}"], capture_output=True, text=True
+).stdout.strip()
+if expected_uuid5(probe_rel) != canonical:
+    print("wash-vault: uuid5 self-test failed (formula drift vs uuid5-gen.sh)", file=sys.stderr)
+    print(f"  inline={expected_uuid5(probe_rel)}  canonical={canonical}", file=sys.stderr)
+    sys.exit(1)
+
+ID_RE = re.compile(r"^id:\s*(\S+)\s*$", re.M)
+# Claude auto-memory mirrors wrap fields under `metadata:`. Tolerate that form
+# so externally-managed schemas (Claude auto-memory) pass the missing-id check;
+# uuid5-parity is not enforced for nested ids — they come from external
+# id-strategies and are not computed from the vault-relative path.
+# Mirrors the same regex in check-local-content.sh for behavioural parity.
+METADATA_ID_RE = re.compile(r"^metadata:\s*\n(?:\s+\S+.*\n)*?\s+id:\s*(\S+)\s*$", re.M)
+
+findings = []  # list of {rule, file, before, after, applied}
+
+def add_finding(rule, file_rel, before, after, applied):
+    findings.append({
+        "rule": rule, "file": file_rel,
+        "before": before, "after": after,
+        "applied": applied,
+    })
+
+def walk(roots):
+    # Symlink-cycle guard: track inodes already visited so a self-referential
+    # symlink chain (e.g. local/X -> local/Y -> local/X) doesn't exhaust
+    # resources silently. followlinks=True is required because LOCAL itself
+    # is typically a symlink; without it the walk no-ops on this vault.
+    visited = set()
+    for root in roots:
+        root = Path(root).resolve()
+        if not root.exists():
+            continue
+        for dirpath, dirnames, filenames in os.walk(root, followlinks=True):
+            try:
+                st = os.stat(dirpath)
+                key = (st.st_dev, st.st_ino)
+            except OSError:
+                key = None
+            if key is not None:
+                if key in visited:
+                    # Cycle: prune by clearing dirnames so os.walk stops descending
+                    dirnames[:] = []
+                    continue
+                visited.add(key)
+            for fn in filenames:
+                if fn.endswith(".md"):
+                    yield Path(dirpath) / fn
+
+scopes = sys.argv[1:] or [str(LOCAL)]
+
+# Track rename targets PLANNED in this run, so two source files that sanitize
+# to the same target don't silently overwrite each other (first wins on disk
+# after rename; second would clobber it without this guard).
+planned_targets: set[Path] = set()
+
+for fpath in walk(scopes):
+    try:
+        rel = fpath.relative_to(LOCAL).as_posix()
+    except ValueError:
+        continue
+    schema_exempt = fnmatch_any(rel, SCHEMA_EXEMPT)
+    rename_exempt = fnmatch_any(rel, RENAME_EXEMPT)
+
+    # Rule 3: filename-unsafe-chars (runs first — id depends on filename)
+    if "filename-unsafe-chars" in RULES and not rename_exempt and UNSAFE_CHARS.search(fpath.name):
+        # Sanitize stem and extension separately so the `.strip("-. ")` step
+        # cannot accidentally eat the `.md` extension on pathological inputs
+        # like "?.md" → ".md" → "md" (loses extension entirely).
+        stem = fpath.stem
+        ext = fpath.suffix  # includes the leading dot (e.g. ".md")
+        clean_stem = UNSAFE_CHARS.sub("", stem).strip()
+        clean_stem = re.sub(r"-{2,}", "-", clean_stem).strip("-. ")
+        clean = clean_stem + ext if clean_stem else ""
+        if not clean_stem:
+            # All meaningful characters were stripped (e.g. filename was just
+            # "….md"). Cannot auto-rename; surface for manual resolve.
+            add_finding("filename-empty-after-sanitize", rel,
+                        before=fpath.name,
+                        after="(empty after strip — manual rename required)",
+                        applied=False)
+        elif clean != fpath.name:
+            new_path = fpath.with_name(clean)
+            # Collision check (two-tier):
+            #  1) target already on disk — never silently overwrite
+            #  2) target already CLAIMED by an earlier file in this same run —
+            #     prevents intra-run collisions where two sources sanitize
+            #     to the same destination
+            if new_path.exists() or new_path in planned_targets:
+                cause = "TARGET EXISTS" if new_path.exists() else "TARGET CLAIMED BY EARLIER FILE IN THIS RUN"
+                add_finding("filename-collision", rel,
+                            before=fpath.name,
+                            after=f"{clean} — {cause}; manual resolve",
+                            applied=False)
+            else:
+                planned_targets.add(new_path)
+                new_rel = new_path.relative_to(LOCAL).as_posix()
+                if FIX:
+                    git_mv = subprocess.run(
+                        ["git", "mv", str(fpath), str(new_path)],
+                        cwd=BRAIN, capture_output=True, check=False,
+                    )
+                    if git_mv.returncode != 0:
+                        # Distinguish "file is untracked" (legitimate fall-back
+                        # to plain rename) from a real git-mv failure (abort).
+                        tracked = subprocess.run(
+                            ["git", "ls-files", "--error-unmatch", str(fpath)],
+                            cwd=BRAIN, capture_output=True, check=False,
+                        ).returncode == 0
+                        if tracked:
+                            sys.stderr.write(
+                                f"wash-vault: git mv failed for {rel}: "
+                                f"{git_mv.stderr.decode().strip()}\n"
+                            )
+                            continue  # leave file untouched, move on
+                        fpath.rename(new_path)
+                    fpath = new_path
+                    rel = new_rel
+                add_finding("filename-unsafe-chars", rel,
+                            before=fpath.name if not FIX else "",
+                            after=clean, applied=FIX)
+
+    # Rules 1 + 2 are schema rules — skip schema-exempt files (machine-generated
+    # buckets with their own id strategies, quarantine, .trash, etc.).
+    if schema_exempt:
+        continue
+
+    text = fpath.read_text(encoding="utf-8", errors="replace")
+
+    # Rule 2: no-frontmatter
+    if "no-frontmatter" in RULES and not text.startswith("---"):
+        ftype = detect_type(rel)
+        if ftype is None:
+            continue  # cannot stub safely without folder-type hint
+        rel_no_ext = rel[:-3] if rel.endswith(".md") else rel
+        stub_id = expected_uuid5(rel_no_ext)
+        stub = (
+            f"---\n"
+            f"date: {date.today().isoformat()}\n"
+            f"type: {ftype}\n"
+            f"tags: [{ftype}]\n"
+            f"id: {stub_id}\n"
+            f"---\n\n"
+        )
+        if FIX:
+            fpath.write_text(stub + text, encoding="utf-8")
+            text = stub + text  # so rule 1 sees the new frontmatter
+        add_finding("no-frontmatter", rel,
+                    before="(no frontmatter)", after=f"stub: type={ftype} id={stub_id[:8]}…",
+                    applied=FIX)
+
+    # Rule 1: id-mismatch (also covers missing-id within existing frontmatter)
+    if "id-mismatch" in RULES and text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end == -1:
+            continue  # unterminated frontmatter — leave to author
+        fm = text[:end]
+        rel_no_ext = rel[:-3] if rel.endswith(".md") else rel
+        want = expected_uuid5(rel_no_ext)
+        m = ID_RE.search(fm)
+        if not m:
+            # Tolerate nested metadata.id (Claude auto-memory mirrors) — that
+            # is an externally-managed schema with its own id-strategy.
+            if METADATA_ID_RE.search(fm):
+                continue
+            # Missing id within otherwise-valid frontmatter — insert it.
+            if FIX:
+                new_fm = fm + f"\nid: {want}"
+                fpath.write_text(new_fm + text[end:], encoding="utf-8")
+            add_finding("missing-id", rel,
+                        before="(no id)", after=want, applied=FIX)
+        else:
+            current = m.group(1)
+            if current != want:
+                if FIX:
+                    new_fm = ID_RE.sub(f"id: {want}", fm, count=1)
+                    fpath.write_text(new_fm + text[end:], encoding="utf-8")
+                add_finding("id-mismatch", rel,
+                            before=current, after=want, applied=FIX)
+
+# Output
+if JSON:
+    print(_json.dumps({
+        "tool": "wash-vault",
+        "mode": "fix" if FIX else "dry-run",
+        "rules": sorted(RULES),
+        "findings": findings,
+    }, indent=2))
+    sys.exit(0)
+
+per_rule = {}
+for f in findings:
+    per_rule.setdefault(f["rule"], []).append(f)
+
+if not findings:
+    print("wash-vault: ✅ vault is clean (rules: " + ", ".join(sorted(RULES)) + ")")
+    sys.exit(0)
+
+mode_label = "applied" if FIX else "would apply"
+print(f"wash-vault: {len(findings)} change(s) {mode_label}")
+for rule, items in sorted(per_rule.items()):
+    print(f"\n  [{rule}] {len(items)} file(s):")
+    for it in items[:20]:
+        print(f"    • {it['file']}")
+        print(f"        {it['before']}  →  {it['after']}")
+    if len(items) > 20:
+        print(f"    … +{len(items) - 20} more")
+
+if not FIX:
+    print("\nRe-run with --fix to apply, or --json for structured output.")
+    sys.exit(2)
+sys.exit(0)
+PY

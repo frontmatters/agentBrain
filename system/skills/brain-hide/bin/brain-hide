@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# brain-hide — adds `hidden: true` flag to a note's frontmatter.
+
+set -euo pipefail
+
+resolve_brain_dir() {
+    if [ -n "${BRAIN_DIR:-}" ] && [ -d "$BRAIN_DIR" ]; then
+        echo "$BRAIN_DIR"; return 0
+    fi
+    if command -v realpath >/dev/null 2>&1; then
+        realpath "$HOME/agentBrain" 2>/dev/null && return 0
+    fi
+    (cd "$HOME/agentBrain" && pwd -P)
+}
+
+BRAIN_DIR="$(resolve_brain_dir)"
+
+usage() {
+    cat <<EOF
+Usage: brain-hide <type>/<slug> [--file <name>]
+  Adds hidden: true + hidden-at: <today> to the note's frontmatter.
+EOF
+}
+
+# validate_target — fail-closed on non-user-content paths
+validate_target() {
+    local file="$1"
+    local rel="${file#$BRAIN_DIR/}"
+    case "$rel" in
+        local/learnings/*|local/projects/*|local/preferences/*|local/integrations/*|local/troubleshooting/*|local/memories/*)
+            return 0 ;;
+        local/.trash/*)
+            echo "brain-hide: refused — cannot hide items in .trash. Use /brain-recall instead." >&2
+            exit 3 ;;
+        local/sessions/*|local/daily-notes/*)
+            echo "brain-hide: refused — auto-generated content." >&2
+            exit 3 ;;
+        system/*)
+            echo "brain-hide: refused — system/ contains framework code, not user notes." >&2
+            exit 3 ;;
+        *)
+            echo "brain-hide: refused — not a recognized user-note path." >&2
+            echo "  Allowed: local/{learnings,projects,preferences,integrations,troubleshooting,memories}/" >&2
+            exit 3 ;;
+    esac
+}
+
+[ $# -lt 1 ] && { usage >&2; exit 2; }
+
+ARG="$1"; shift
+FILE_OVERRIDE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --file) FILE_OVERRIDE="$2"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Unknown arg: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+# Resolve target file
+case "$ARG" in
+    projects/*)
+        SLUG="${ARG#projects/}"
+        if [ -n "$FILE_OVERRIDE" ]; then
+            TARGET="$BRAIN_DIR/local/projects/$SLUG/$FILE_OVERRIDE"
+        else
+            TARGET="$BRAIN_DIR/local/projects/$SLUG/index.md"
+        fi
+        ;;
+    learnings/*|preferences/*|integrations/*|troubleshooting/*|memories/*)
+        TYPE="${ARG%%/*}"
+        SLUG="${ARG#$TYPE/}"
+        TARGET="$BRAIN_DIR/local/$TYPE/$SLUG.md"
+        ;;
+    sessions/*|daily-notes/*|.trash/*)
+        TARGET="$BRAIN_DIR/local/$ARG.md"
+        ;;
+    system/*)
+        TARGET="$BRAIN_DIR/$ARG"
+        ;;
+    *) echo "Unknown type prefix in: $ARG" >&2; exit 2 ;;
+esac
+
+validate_target "$TARGET"
+
+[ ! -f "$TARGET" ] && { echo "brain-hide: not found: $TARGET" >&2; exit 2; }
+
+# Idempotency check
+if grep -qE '^hidden:[[:space:]]*true[[:space:]]*$' "$TARGET"; then
+    echo "brain-hide: already hidden: $TARGET"
+    exit 0
+fi
+
+# Atomic frontmatter mutation: inject hidden: true + hidden-at: <today>
+TMP="$TARGET.tmp.$$"
+TODAY="$(date +%Y-%m-%d)"
+awk -v today="$TODAY" '
+    BEGIN { in_fm = 0; injected = 0 }
+    /^---[[:space:]]*$/ {
+        in_fm = !in_fm
+        if (in_fm == 0 && injected == 0) {
+            print "hidden: true"
+            print "hidden-at: " today
+            injected = 1
+        }
+        print
+        next
+    }
+    { print }
+' "$TARGET" > "$TMP"
+
+mv "$TMP" "$TARGET"
+echo "Hidden: $TARGET"
+echo "To restore: /brain-unhide $ARG"

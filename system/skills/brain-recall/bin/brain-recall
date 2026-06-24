@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# brain-recall — restore a note from local/.trash/forget/.
+
+set -euo pipefail
+
+resolve_brain_dir() {
+    if [ -n "${BRAIN_DIR:-}" ] && [ -d "$BRAIN_DIR" ]; then
+        echo "$BRAIN_DIR"; return 0
+    fi
+    realpath "$HOME/agentBrain" 2>/dev/null || (cd "$HOME/agentBrain" && pwd -P)
+}
+
+BRAIN_DIR="$(resolve_brain_dir)"
+
+usage() {
+    cat <<EOF
+Usage: brain-recall <timestamp-or-slug-or-N>
+  Restores a forgotten note.
+EOF
+}
+
+[ $# -lt 1 ] && { usage >&2; exit 2; }
+
+ARG="$1"
+
+# Numeric resolves via cache (but NOT pure numeric timestamps like 20260603-153012)
+if [[ "$ARG" =~ ^[0-9]+$ ]] && [[ ! "$ARG" =~ ^[0-9]{8}-[0-9]{6}$ ]]; then
+    CACHE="$BRAIN_DIR/local/.hidden-index.json"
+    [ ! -f "$CACHE" ] && { echo "brain-recall: no /list-hidden cache. Run /list-hidden --include-trash first." >&2; exit 2; }
+    RESOLVED=$(grep -oE "\{\"n\":$ARG,\"timestamp\":\"[^\"]*\"" "$CACHE" | sed 's/.*"timestamp":"//;s/"$//')
+    if [ -z "$RESOLVED" ]; then
+        if grep -qE "\{\"n\":$ARG,\"path\":" "$CACHE"; then
+            echo "brain-recall: $ARG is a hidden item. Use /brain-unhide $ARG instead." >&2
+            exit 2
+        fi
+        echo "brain-recall: $ARG not in cache. Run /list-hidden --include-trash to refresh." >&2
+        exit 2
+    fi
+    ARG="$RESOLVED"
+fi
+
+# Timestamp vs slug
+case "$ARG" in
+    [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9])
+        MODE="timestamp"
+        BATCH="$BRAIN_DIR/local/.trash/forget/$ARG"
+        ;;
+    *) MODE="slug" ;;
+esac
+
+if [ "$MODE" = "timestamp" ]; then
+    [ ! -d "$BATCH" ] && { echo "brain-recall: batch not found: $ARG" >&2; exit 2; }
+    META="$BATCH/.meta.json"
+    [ ! -f "$META" ] && { echo "brain-recall: corrupt batch (no .meta.json): $ARG" >&2; exit 2; }
+
+    PATHS=$(grep -oE '"[^"]+"' "$META" | grep -v "forgotten_at\|reason\|null\|original_paths" | grep -v "[0-9]T[0-9].*Z" | tr -d '"')
+    for rel in $PATHS; do
+        SRC="$BATCH/$rel"
+        DST="$BRAIN_DIR/$rel"
+        if [ -e "$DST" ]; then
+            echo "brain-recall: conflict at $rel — target already exists." >&2
+            echo "  Use: /brain-forget $rel && /brain-recall $ARG  (forget current first)" >&2
+            exit 2
+        fi
+        mkdir -p "$(dirname "$DST")"
+        mv "$SRC" "$DST"
+        echo "Recalled: $rel"
+    done
+    rm "$META"
+    rmdir -p "$BATCH" 2>/dev/null || true
+    exit 0
+fi
+
+# Slug mode
+TYPE="${ARG%%/*}"; SLUG="${ARG#$TYPE/}"
+FOUND=""
+for batch in "$BRAIN_DIR/local/.trash/forget"/*/; do
+    [ -d "$batch" ] || continue
+    if [ -e "$batch/local/$TYPE/$SLUG.md" ] || [ -e "$batch/local/$TYPE/$SLUG/index.md" ]; then
+        FOUND="$batch"
+        break
+    fi
+done
+
+[ -z "$FOUND" ] && { echo "brain-recall: $ARG not found in any trash batch" >&2; exit 2; }
+TS=$(basename "$FOUND")
+exec "$0" "$TS"

@@ -1,0 +1,440 @@
+---
+date: 2026-05-18
+type: system
+tags: [changelog, meta]
+id: 2bf62fb7-49d8-53e4-ba98-cb79a7742984
+---
+
+# Changelog
+
+All notable changes to agentBrain are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [v1.6.0] - 2026-06-24
+
+First stable release of the 1.6.0 line and agentBrain's public launch. Consolidates
+the `1.6.0-prerelease-01..06` cycle; per-change detail is in the prerelease sections
+below. Highlights:
+
+### Added
+
+- **Add-on-provided skills across every agent.** An add-on that ships a `SKILL.md`
+  becomes a usable skill in each detected agent (Claude Code, Copilot CLI, Pi) while it
+  is enabled — `addons.sh enable/disable/uninstall` are the lever — and `doctor` enforces
+  the invariant (`check-skill-links.sh`).
+- **`shared/` knowledge layer** — a third, shareable layer alongside private `local/`,
+  with a bidirectional secret-gate, abort-on-conflict rebase, and an id-regenerating
+  promote (`setup-shared-vault.sh`, `sync-agentbrain-shared.sh`, `promote-to-shared.sh`).
+- **Platform-aware setup** (`scripts/platform.sh`: os/arch/id detection + capability
+  probes) and an add-on **`onboard:`** lifecycle hook.
+- **`incognito` add-on** (read-only, write-suppressing sessions) and symmetric
+  `uninstall.sh` for the bundled add-ons.
+- Public-launch hardening: `SECURITY.md`, a rewritten welcoming README, and the
+  Apache-2.0 license.
+
+### Changed
+
+- `addons.sh update` re-runs the new version's install step and restores enabled state.
+- Addon-skill linking unified in `scripts/lib/skills.sh` — the Claude/Copilot and Pi
+  installers share one implementation.
+
+### Fixed
+
+- Add-on lifecycle + portability: `uninstall` prunes skill links; `test` validates local
+  add-ons; launchd resolves via dual-root and warns on dropped cron constraints; portable
+  sha256; a SIGPIPE-guarded version probe; and a serialized pre-push `doctor` gate.
+
+### Security
+
+- `publish-addon.sh` keeps `GITEA_TOKEN` out of the process list (curl `--config`), and
+  `release.sh` ships a tracked-files allowlist with a leak gate.
+
+## [v1.6.0-prerelease-06] - 2026-06-23
+
+### Added
+
+- **Add-on-provided skills across every agent.** An add-on that ships a `SKILL.md`
+  now becomes a usable skill in each detected agent (Claude Code, Copilot CLI, Pi)
+  exactly while it is enabled — `addons.sh enable/disable/uninstall` are the lever.
+  Linking is enabled-gated and enforced by `check-skill-links.sh` in `doctor`
+  (enabled ⇒ linked, disabled ⇒ no orphan). Previously an add-on's skill was never
+  installed for any agent unless wired by hand.
+- `shared/` knowledge layer — a third, shareable layer alongside private `local/`, backed
+  by its own git repo. `setup-shared-vault.sh` establishes it with a tiered, host-agnostic
+  remote flow (BYO `--remote` / `--bootstrap` a local bare repo); it does not install a git
+  server. `sync-agentbrain-shared.sh` syncs with a **bidirectional secret-gate**
+  (`check-agentbrain-shared.sh`, pre-push tree scan + `--incoming` scan of fetched refs) and
+  rebases with abort-on-conflict (never force). `promote-to-shared.sh` moves a note or folder
+  from `local/` to `shared/`, regenerating its path-derived UUID5 and logging a reversible
+  old→new id map. `doctor` runs the shared gate when a `shared/` layer is configured and skips
+  it cleanly otherwise. Docs: `docs/shared-vault.md`. Design + plan in `local/specs/`.
+- `SECURITY.md` (private reporting via GitHub Security Advisories + a "what agentBrain
+  touches" section) and README "this is / this is not" + "What it writes & network
+  behavior" sections, toward a credible public launch.
+
+### Changed
+
+- `addons.sh update` now re-runs the new version's install step and restores enabled
+  state after download (previously the files were updated but install hooks and skill
+  links were left pointing at the old version).
+- Addon-skill link/prune logic extracted to a shared `scripts/lib/skills.sh`, sourced by
+  both the Claude/Copilot installer (`setup-skills.sh`) and the Pi installer
+  (`configure-pi.sh`) so the two can't diverge.
+
+### Fixed
+
+- `addons.sh uninstall` now prunes the add-on's skill links (true inverse of install/enable).
+- `addons.sh test` validates local/downloaded add-ons against their own registry root,
+  instead of silently passing them as "valid".
+- `setup-addon-launchd.sh` resolves the addon dir via dual-root, so a registry-installed
+  scheduled add-on can get a launchd job; it also warns when a `*/N` cron drops calendar
+  constraints (e.g. a weekday restriction) instead of silently altering the schedule.
+- `setup.sh`: guard `pi --version | head` against SIGPIPE under `pipefail`.
+- Portable sha256 (`shasum` or `sha256sum`) in `addons.sh` and `package-addon.sh`.
+- onboard skill: idempotent, backed-up shell-rc write and first-run-safe `config.json` edit.
+- Hygiene: `addons.sh configure` validates numeric menu input; the English "newest" marker
+  replaces a hardcoded Dutch string; `onboard:`-hook guards a missing `platform.sh`.
+- `pre-push` hook serializes the `doctor` gate with a portable lock, ending the
+  auto-push / manual-push race that produced spurious "push FAILED".
+
+### Security
+
+- `publish-addon.sh` passes `GITEA_TOKEN` via a mode-600 curl `--config` file instead of
+  `-H "Authorization: …"` on the command line, keeping it out of the process list.
+
+## [v1.6.0-prerelease-05] - 2026-06-19
+
+### Added
+
+- `brain version` (bare subcommand) as an alias for `brain -v` / `brain --version`.
+  The flag forms already worked; the bare word fell into the unknown-command
+  branch. Listed in `brain --help` COMMANDS and `system/tools.md`. (To check for a
+  newer release on your channel, `brain-update.sh --check` already reports it.)
+
+### Changed
+
+- License changed from MIT to **Apache-2.0** ahead of the public release.
+  See `LICENSE`.
+- Rebrand legacy org references in the public layer to `frontmatters` (CHANGELOG
+  release links, the `publish-*` / `check-release-published` scripts' `GITEA_OWNER`
+  default, and the addon-registry URLs in `specs/`).
+- Genericize a hardcoded machine-name example to `a home-server` in the event-bus
+  storage SPEC.
+- Slim the hot `system/rules.md`: move the path env-var (`AGENTBRAIN_DIR` /
+  `AGENTBRAIN_HOME`) definitions and the forward-ref-marker detail to
+  `system/reference.md` (progressive disclosure -- smaller always-loaded context).
+
+### Fixed
+
+- `peer-review --list` on an empty bus: `brain-poll` exits 1 as its "no events"
+  signal, which under `set -o pipefail` aborted the whole read-only list. A
+  zero-result list is valid, not an error -- the poll step now tolerates the
+  empty-bus exit. (Surfaced as the `--list errored` skill-test failure.)
+
+### Security
+
+- `release.sh` built the archive from the whole working tree minus a denylist, so
+  any stray in the checkout root (tool screenshots, machine-local agent config and
+  override files, runtime logs) could ship in the public zip. The payload is now an
+  allowlist driven by `git ls-files` (tracked files only, minus dev tooling and
+  registry-distributed addons), with a redundant leak gate that aborts the build if
+  any untracked file reaches the payload. Playwright-mcp page dumps are also
+  gitignored. Build dropped from a stray-bloated 3.5M to ~0.8M.
+
+## [v1.6.0-prerelease-04] - 2026-06-17
+
+### Fixed
+
+- `capture-tool-info`: route physical machines/hosts/devices to
+  `local/devices/` instead of `local/integrations/`. The routing table had no
+  destination for a host, so a Raspberry Pi was captured as a duplicate
+  integration note. Adds a devices row, lists hosts/SBCs/NAS in the trigger
+  section, extends the `type` enum with `device`, and documents the
+  device-specific frontmatter (intent + state blocks).
+
+## [v1.6.0-prerelease-03] - 2026-06-17
+
+### Added
+
+- `incognito` add-on: read-only brain sessions that suppress all writes
+  (learnings, projects, troubleshoot, memories, journal). Enforcement reaches
+  the MCP write point and Pi, with behavioural coverage for hook-less agents.
+- `ask` `auto_update` mode in `brain-update` — when an update is available, it
+  asks before applying (TTY y/N prompt, or an agent-neutral line in a hook
+  session). This is the install default.
+- Symmetric `uninstall.sh` (true inverse of `install:`) for `agent-browser`,
+  `routa`, `sitescope`, `youtube-knowledge`, `secrets-helper`, and
+  `agentbrain-mcp`. `check-addons` now fails any add-on shipping `install.sh`
+  without a matching `uninstall.sh`.
+- Event-bus garbage collection (`brain-events-gc`).
+- Optional `platform` frontmatter field for notes.
+
+### Fixed
+
+- `event-bus`: doctor no longer hangs; added GC.
+- `offboard`/`import-offboard`: closed scope and rollback gaps; added
+  `--include-organization` (symmetric with `--include-team`).
+- `setup-local-vault`: halts cleanly on a dangling `local/` symlink instead of
+  failing cryptically later.
+- `brain-update`: restores the branch on rollback and derives the release
+  commitish from the branch.
+- `peer-review` `test.sh` is sandboxed so it never writes to the live event-bus.
+- `onboard` skill synced to the real update modes (`ask`/`notify`/`auto`/`off`);
+  removed stale references to the retired `voice` add-on.
+
+## [v1.6.0-prerelease-02] - 2026-06-14
+
+### Added
+
+- `secrets-helper` integration add-on: a thin, agent-agnostic installer for the
+  macOS keychain `secrets-helper` (brew-first, public git-clone fallback,
+  idempotent, macOS-guarded).
+- `os` platform axis in the add-on manifest schema (`macos|linux|windows|any`,
+  absent = cross-platform), validated by `check-addons.sh`, documented in the
+  add-on README, and rendered as a column in the generated `clients.md` matrix.
+- `unpark`: render a Markdown table of paused/blocked projects (newest first,
+  numbered, full status) when called with no argument.
+- Release advisory guard (`check-release-published.sh`): reminds at deploy time
+  when a bumped VERSION has no published release.
+- `still-needed` add-on + `/relevant` skill: per-item relevance check across
+  parallel sessions ("is this open work already resolved elsewhere?").
+
+### Changed
+
+- `configure-pi.sh` now delegates `secrets-helper` installation to the add-on
+  instead of a hardcoded block (closes the long-standing TODO; the legacy
+  `SECRETS_HELPER_REPO` opt-in is preserved).
+- `uxray` 0.1.1: added the "Absolute bans" auto-fail canon and AI-slop test;
+  reframed as a self-contained, multi-platform methodology.
+
+### Fixed
+
+- `registry-index.sh`: keep only the highest-version zip per add-on id, so a
+  stale older build can no longer win the index entry (avoids `ls`, SC2012-clean).
+- `check-doctor.sh`: exempt advisory deploy-time checks (e.g.
+  `check-release-published.sh`) from the orphan gate, so doctor stays green.
+- `check-architecture.sh`: treat `local/*` paths as optional (user runtime
+  state, absent in a fresh install) so doctor passes on a clean install.
+- `test-addons.sh`: skip the maintainer-only publish-script regression guards
+  when those scripts are excluded from an end-user install archive.
+
+## [v1.6.0-prerelease-01] - 2026-06-13
+
+### Added
+
+- Addon registry (Docker/npm-style): static `index.json` registries with a
+  per-machine **default** registry plus addable named registries
+  (`addons.sh registry default|add|remove|list`). `search`/`install`/`update`
+  resolve across them; installs verify `sha256`. Dupe rules: newest wins within
+  a registry, the default registry beats named ones (dependency-confusion
+  guard), explicit `<registry>/<id>` pin overrides.
+- Dual-root addon discovery: bundled (`system/addons/`) + local
+  (`local/addons/`); `status` gains VERSION/SOURCE columns, `--remote` adds an
+  UPDATE column. `addons.sh new <id>` scaffolds an addon into `local/addons/`.
+- Slim-core installer: `scripts/release.sh` ships only essential addons
+  (`scripts/lib/essential-addons.txt`); the rest distribute via registries.
+- Distribution tooling: `package-addon.sh` (privacy-scanned zip + sha256),
+  `registry-index.sh` (generate index, validates URLs), `publish-addon.sh`
+  (Gitea release + index), `mirror-registry-github.sh` (gated public mirror).
+- `privacy-scan.sh --dir <path>` and `--git-identity <repo>` modes; offboard
+  export/import now includes a `config/` section (registries, default-url,
+  enabled addons, locale).
+
+### Changed
+
+- Renamed the primary-registry concept `official` → `default` (npm/cargo
+  convention); index self-name `agentbrain-official` → `agentbrain`.
+- The default registry is always resolved dynamically (env >
+  `local/addons/default-url` > baked GitHub default); `registries.json` holds
+  only named registries, so re-pointing the default never goes stale.
+
+## [v1.5.6-prerelease] - 2026-05-20
+
+### Added
+
+- `scripts/install-prerequisites.sh` — general developer tools (nvm, Node LTS, Homebrew, bun, uv).
+- `scripts/configure-pi.sh` — Pi-specific setup: install Pi, opensrc, extensions, skills, tsconfig, API check, credentials.
+- `scripts/bootstrap-macos.sh` — slim macOS orchestrator; replaces `bootstrap-pi-macos.sh` as canonical entry point.
+- `scripts/configure-clients.sh` — all AI client pointer installs extracted from `setup.sh`.
+- `ensure_bun` and `ensure_uv` in `install-prerequisites.sh`.
+- 6 skills added to `system/skills.md`: `capture-tool-info`, `refactor-brain`, `opensrc`, `lightpanda`, `understand`, `understand-project`.
+- `opensrc` skill added to `.github/skills/` for Claude/Copilot/Gemini.
+- `scripts/configure-clients.sh` added to lifecycle contract check.
+- Gemini CLI pointer support in `setup.sh`, `uninstall.sh`, `move-agentbrain.sh`.
+- Extended doctor to 15 checks: preference scopes, node bootstrap, lifecycle scripts, client pointers.
+- Scoped preferences: `local/preferences/personal/`, optional `organization/` and `team/`.
+- `/onboard` skill updated for personal-first scoped preference flow.
+
+### Changed
+
+- `bootstrap-pi-macos.sh` is now a thin backwards-compat redirect to `scripts/bootstrap-macos.sh`.
+- `setup.sh` reduced from 484 to 269 lines by extracting client installs.
+- `ensure_pi` moved from `install-prerequisites` to `configure-pi` (Pi is a client, not a dev tool).
+- `scripts/readme-lightpanda.md` moved to `system/integrations/lightpanda.md`.
+- All stale `bootstrap-pi-macos.sh` references updated across docs and scripts.
+- README Quick Start updated: `./setup.sh` for everyone, `scripts/bootstrap-macos.sh` for macOS+Pi.
+- `lightpanda-install-wrapper.sh` fixed: was hardcoded to `~/Developer/agentBrain/Scripts/`.
+
+### Fixed
+
+- `ensure_opensrc` regression: accidentally removed when extracting `ensure_pi`.
+- Duplicate section numbering in `setup.sh` (two sections labelled "5").
+- Stale comment "must match bootstrap-pi-macos.sh setup_local_structure".
+- `docs/` empty directory removed.
+
+
+### Added
+
+- Reproducible Pi extension type-check and helper-test scripts integrated into doctor.
+- Unit tests for brain path safety, session archive target selection, and YouTube VTT cleanup.
+- `doctor.sh --pi-lens-strict` release-quality mode.
+
+### Changed
+
+- Hardened `brainPath(...)` to reject traversal outside the agentBrain root.
+- Extracted YouTube transcript helper utilities and simplified markdown writer options.
+- Hardened pi-cloak dynamic regex compilation with length and flag validation.
+
+## [v1.5.1] - 2026-05-18
+
+### Fixed
+
+- Pi `brain-paths.ts` helper now exports a no-op default factory so Pi can auto-load the helper file without extension startup errors.
+- Bootstrap now links helper modules required by Pi extensions, preventing missing `./brain-paths` imports in `~/.pi/agent/extensions/`.
+
+## [v1.5] - 2026-05-18
+
+### Added
+
+- Doctor `--ci`, `--summary`, `--verbose` flags
+- CI workflow calls `bash scripts/doctor.sh --ci` for full parity with local checks
+- `CHANGELOG.md` following Keep a Changelog format
+
+### Changed
+
+- `brain.json` path field now uses `~` instead of absolute home directory path
+- CI workflow uses single `doctor.sh --ci` command instead of duplicated check list
+
+### Fixed
+
+- Doctor check counter now correctly tracks passed/failed checks in all modes
+- Compact default output (path-naming details only in `--verbose`)
+
+## [v1.4] - 2026-05-18
+
+### Added
+
+- Doctor health audit system (`scripts/doctor.sh`) with 10 automated checks
+- `scripts/check-readmes.sh` — README coverage for public markdown folders
+- `scripts/check-frontmatter.sh` — UUID5/date/type/tags validation
+- `scripts/check-session-schema.sh` — session naming convention validation
+- `scripts/check-links.sh` — wiki-link target validation
+- `scripts/check-path-naming.sh` — path naming drift report
+- `scripts/check-pi-lens.sh` — unresolved Pi-lens worklog findings
+- Doctor `--ci`, `--summary`, `--verbose` flags
+- Session continuity system with crash recovery
+  - `local/sessions/session-journal.md` (live journal)
+  - `local/sessions/archive/YYYY-MM/YYYYMMDD-HHMMSS-<pid>.md` (archived)
+  - Random 4-hex PID with retry-on-collision
+- Pi session-continuity extension (`system/pi-config/extensions/session-continuity.ts`)
+- README documentation for all 24 public markdown folders (was 0, now 24/24)
+- GitHub Actions CI with privacy scan, all health checks, and ShellCheck
+- `.github/skills/doctor/` skill (SKILL.md + README.md)
+- ShellCheck integration for all shell scripts
+- Session continuity behavior rules in `system/agent-config/shared.md`
+- Public docs at `system/sessions.md`
+
+### Changed
+
+- `brain.json` path field now uses `~` instead of absolute home directory path
+- All public frontmatter UUIDs normalized to proper UUID5 (was string slugs)
+- CI workflow now calls `bash scripts/doctor.sh --ci` for parity with local doctor
+- `setup.sh` generates `brain.json` with relative `~` path
+
+### Fixed
+
+- `session-continuity.ts`: removed await-in-loop, added targeted Pi-lens suppressions
+- Git history cleaned of private data (IPs, hostnames) via `git-filter-repo`
+- Missing `tags` fields added to project example files
+- TypeScript check passes with `ignoreDeprecations: "6.0"`
+
+### Security
+
+- GitHub repo made public after thorough privacy audit
+- Privacy scan catches secrets, tokens, private IPs, and personal identifiers
+- `brain.json` no longer leaks absolute home directory path
+
+## [v1.3] - 2026-05-16
+
+### Added
+
+- `/brain-review` learning required fields checklist
+- A+ fixes: consistency, clone URL, frontmatter, maintenance routine
+
+### Fixed
+
+- Consistency improvements across documentation
+
+## [v1.2] - 2026-05-15
+
+### Added
+
+- `setup.sh`: explicit WSL detection + platform banner
+
+### Fixed
+
+- Remaining audit issues for A grade
+- Frontmatter consistency in README.md and CLAUDE.md
+- Cross-platform, non-interactive, and error handling improvements
+- Obsidian community plugins in .gitignore
+
+### Changed
+
+- VS Code: detect Code-Insiders + VSCodium
+- README: Obsidian as first-class citizen
+
+## [v1.1] - 2026-05-14
+
+### Added
+
+- `local/` personal layer with bot integration and dev loop learnings
+- Project subfolders, PDCA lifecycle, and project templates
+- Cross-agent skill support via `system/skills.md`
+- `/onboard` skill with resumable interactive setup
+- Seamless setup: `scripts/setup.sh` installs global agent pointers
+- Windsurf IDE support (`.windsurfrules`)
+- OpenCode support
+- GitHub Action for automatic version updates
+
+### Changed
+
+- Personal data routed to `local/` across all agent configs
+- `setup.sh`: auto-install dependencies (git, python3, Obsidian)
+
+### Fixed
+
+- Audit issues: Dutch text, UUIDs, onboarding message, session default
+- Cross-platform, non-interactive, Claude dir creation
+
+## [v1.0] - 2026-05-13
+
+### Added
+
+- Initial public agentBrain framework
+- Multi-agent support (Claude, Copilot, Windsurf, Cline, Cursor)
+- `system/rules.md` with public/private separation
+- `learnings/`, `projects/`, `templates/`, `sessions/` structure
+- MIT License
+
+[v1.5.2]: https://github.com/frontmatters/agentBrain/compare/v1.5.1...v1.5.2
+[v1.5.1]: https://github.com/frontmatters/agentBrain/compare/v1.5...v1.5.1
+[v1.5]: https://github.com/frontmatters/agentBrain/compare/v1.4...v1.5
+[v1.4]: https://github.com/frontmatters/agentBrain/compare/v1.3...v1.4
+[v1.3]: https://github.com/frontmatters/agentBrain/compare/v1.2...v1.3
+[v1.2]: https://github.com/frontmatters/agentBrain/compare/v1.2...v1.1
+[v1.1]: https://github.com/frontmatters/agentBrain/compare/v1.1...v1.0
+[v1.0]: https://github.com/frontmatters/agentBrain/releases/tag/v1.0

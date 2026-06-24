@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# brain-forget — soft-delete a note to local/.trash/forget/<TS>/.
+
+set -euo pipefail
+
+resolve_brain_dir() {
+    if [ -n "${BRAIN_DIR:-}" ] && [ -d "$BRAIN_DIR" ]; then
+        echo "$BRAIN_DIR"; return 0
+    fi
+    realpath "$HOME/agentBrain" 2>/dev/null || (cd "$HOME/agentBrain" && pwd -P)
+}
+
+BRAIN_DIR="$(resolve_brain_dir)"
+
+usage() {
+    cat <<EOF
+Usage: brain-forget <type>/<slug> [--file <name>] [--force] [--reason "<text>"]
+  Soft-deletes the note to local/.trash/forget/<timestamp>/.
+EOF
+}
+
+validate_target() {
+    local file="$1"
+    local rel="${file#$BRAIN_DIR/}"
+    case "$rel" in
+        local/learnings/*|local/projects/*|local/preferences/*|local/integrations/*|local/troubleshooting/*|local/memories/*)
+            return 0 ;;
+        local/.trash/*)
+            echo "brain-forget: refused — already in .trash." >&2; exit 3 ;;
+        local/sessions/*|local/daily-notes/*)
+            echo "brain-forget: refused — auto-generated content." >&2; exit 3 ;;
+        system/*)
+            echo "brain-forget: refused — system/ contains framework code." >&2; exit 3 ;;
+        *)
+            echo "brain-forget: refused — not a recognized user-note path." >&2; exit 3 ;;
+    esac
+}
+
+[ $# -lt 1 ] && { usage >&2; exit 2; }
+
+ARG="$1"; shift
+FORCE=0; REASON=""; FILE_OVERRIDE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --force) FORCE=1; shift ;;
+        --reason) REASON="$2"; shift 2 ;;
+        --file) FILE_OVERRIDE="$2"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Unknown arg: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+CASCADE_DIR=""
+case "$ARG" in
+    projects/*)
+        SLUG="${ARG#projects/}"
+        if [ -n "$FILE_OVERRIDE" ]; then
+            TARGET="$BRAIN_DIR/local/projects/$SLUG/$FILE_OVERRIDE"
+            CASCADE_DIR=""
+        else
+            TARGET="$BRAIN_DIR/local/projects/$SLUG/index.md"
+            CASCADE_DIR="$BRAIN_DIR/local/projects/$SLUG"
+        fi
+        ;;
+    learnings/*|preferences/*|integrations/*|troubleshooting/*|memories/*)
+        TYPE="${ARG%%/*}"
+        SLUG="${ARG#$TYPE/}"
+        TARGET="$BRAIN_DIR/local/$TYPE/$SLUG.md"
+        CASCADE_DIR=""
+        ;;
+    *)
+        # Route through validate_target so safety guards (system/, .trash/, etc.)
+        # can fire with exit 3 rather than a generic exit 2.
+        TARGET="$BRAIN_DIR/$ARG"
+        CASCADE_DIR=""
+        ;;
+esac
+
+validate_target "$TARGET"
+
+# Cascade: het project hoeft geen index.md te hebben — de map is het target.
+if [ -n "$CASCADE_DIR" ]; then
+    [ ! -d "$CASCADE_DIR" ] && { echo "brain-forget: not found: $CASCADE_DIR" >&2; exit 2; }
+else
+    [ ! -e "$TARGET" ] && { echo "brain-forget: not found: $TARGET" >&2; exit 2; }
+fi
+
+if [ "$FORCE" -eq 0 ]; then
+    SLUG_NAME=$(basename "${ARG#*/}")
+    BACKLINKS=$(grep -rln "\\[\\[${SLUG_NAME}\\]\\]" "$BRAIN_DIR/local" 2>/dev/null \
+        | grep -v "/.trash/" \
+        | grep -v "$TARGET" || true)
+    if [ -n "$BACKLINKS" ]; then
+        echo "Warning: forget will create broken backlinks:"
+        echo "$BACKLINKS" | head -5 | while read -r linkfile; do
+            echo "  ${linkfile#$BRAIN_DIR/}"
+        done
+        echo ""
+    fi
+    echo "About to forget: ${TARGET#$BRAIN_DIR/}"
+    [ -n "$CASCADE_DIR" ] && echo "(cascading — whole project folder moves to .trash/)"
+    printf "Proceed? [y/N] "
+    read -r ans
+    case "$ans" in
+        y|Y|yes) ;;
+        *) echo "Cancelled."; exit 0 ;;
+    esac
+fi
+
+TS="$(date +%Y%m%d-%H%M%S)"
+TRASH_BATCH="$BRAIN_DIR/local/.trash/forget/$TS"
+mkdir -p "$TRASH_BATCH"
+
+ORIGINAL_PATHS=()
+
+if [ -n "$CASCADE_DIR" ]; then
+    DEST="$TRASH_BATCH/local/projects/$SLUG"
+    mkdir -p "$(dirname "$DEST")"
+    mv "$CASCADE_DIR" "$DEST"
+    ORIGINAL_PATHS+=("local/projects/$SLUG")
+else
+    REL="${TARGET#$BRAIN_DIR/}"
+    DEST="$TRASH_BATCH/$REL"
+    mkdir -p "$(dirname "$DEST")"
+    mv "$TARGET" "$DEST"
+    ORIGINAL_PATHS+=("$REL")
+fi
+
+META="$TRASH_BATCH/.meta.json"
+PATHS_JSON=$(printf '"%s"\n' "${ORIGINAL_PATHS[@]}" | paste -sd, -)
+NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+REASON_JSON="null"
+[ -n "$REASON" ] && REASON_JSON="\"$REASON\""
+cat > "$META" <<EOF
+{
+  "forgotten_at": "$NOW",
+  "original_paths": [$PATHS_JSON],
+  "reason": $REASON_JSON
+}
+EOF
+
+echo "Forgotten: ${ORIGINAL_PATHS[0]}"
+echo "Soft-deleted to: ${TRASH_BATCH#$BRAIN_DIR/}"
+echo "To restore: /brain-recall $TS"

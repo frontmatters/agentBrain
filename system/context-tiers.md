@@ -1,0 +1,61 @@
+---
+date: 2026-05-21
+type: system
+tags: [meta, context, memory]
+id: cf2ae652-18f0-5b53-8bfb-1b30a3ce6fce
+---
+
+# Context Tiers
+
+Use tiers to keep agent context focused without changing the public/private boundary.
+
+## Measured baseline
+
+As of 2026-05-26, the public startup set is about **~19k characters / ~4.8k tokens** — after promoting `system/tools.md` (operations CLI index) into the hot set so agents discover `brain`, `doctor`, `smoke-test`, `new-note`, and addon binaries at session start instead of by grep:
+
+| Tier               | Files                                                                                                                          | Approx size  |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| Hot public startup | `learnings/patterns.md`, `learnings/troubleshooting.md`, `system/rules.md`, `system/skills.md`, `system/tools.md`, `system/lifecycle.md` | ~4.8k tokens |
+
+Skill procedures (`SKILL.md`), warm reference (`system/reference.md`), and this tier policy itself load on demand, not hot. Do not promote content to hot unless it is repeatedly needed across sessions.
+
+## Hot context
+
+The canonical hot reading list is **`system/rules.md` Step 1** — this file does not restate it. In short: the six compact public files above, plus preference scopes / a relevant project index when present. Hot context should be compact, stable, and broadly useful.
+
+## Warm context
+
+Load on demand when relevant:
+
+- `local/preferences/{organization,team,personal}/`
+- `local/projects/<name>/index.md` and optional project files
+- `local/learnings/`
+- `local/integrations/` and `local/security/` before credential-sensitive work
+- skill reference files and templates
+
+Warm context may contain real user/project knowledge and therefore belongs in `local/` when private.
+
+## Cold context
+
+Search or summarize only when needed:
+
+- session archives and journals
+- `local/reports/`
+- `local/research/`
+- stale or archived notes
+- large transcripts or generated artifacts
+
+Cold context should not be pasted wholesale into prompts. Prefer summaries, focused excerpts, file paths, or search-backed lookup.
+
+## Rules
+
+- Public files describe HOW/WHERE only; real WHAT stays in `local/`.
+- Measure before optimizing context tiers.
+- Promote cold/warm content to hot only when it is repeatedly needed across sessions.
+- If tool, job, or command output is re-injected into agent context, scan or summarize it first and truncate large output.
+
+## Related
+
+- [[rules]]
+- [[skills]]
+- [[lifecycle]]

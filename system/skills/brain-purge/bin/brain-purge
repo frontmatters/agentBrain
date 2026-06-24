@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# brain-purge — PERMANENTLY delete forget-batches from local/.trash/forget/.
+# No undo: not recoverable via /brain-recall. Default run is a preview only;
+# deletion requires restating the batch-id via --confirm (structural confirmation).
+
+set -euo pipefail
+
+resolve_brain_dir() {
+    if [ -n "${BRAIN_DIR:-}" ] && [ -d "$BRAIN_DIR" ]; then
+        echo "$BRAIN_DIR"; return 0
+    fi
+    realpath "$HOME/agentBrain" 2>/dev/null || (cd "$HOME/agentBrain" && pwd -P)
+}
+
+BRAIN_DIR="$(resolve_brain_dir)"
+TRASH_ROOT="$BRAIN_DIR/local/.trash/forget"
+
+usage() {
+    cat <<EOF
+Usage: brain-purge <batch-id>|all [--confirm <batch-id>|ALL]
+
+  Without --confirm: PREVIEW — validates and shows exactly what would be
+  permanently deleted. Nothing is removed.
+  With --confirm:    PERMANENT delete. The confirm value must restate the
+  batch-id exactly (or the literal ALL for 'all'). Not recoverable.
+
+  Batch-ids are the /brain-recall timestamps, e.g. 20260611-095532.
+EOF
+}
+
+[ $# -lt 1 ] && { usage >&2; exit 2; }
+
+ARG="$1"; shift
+CONFIRM=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --confirm) CONFIRM="${2:-}"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Unknown arg: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+# Validation — fail-closed: only well-formed batch-ids inside the trash root.
+[ -d "$TRASH_ROOT" ] || { echo "brain-purge: no trash at ${TRASH_ROOT#$BRAIN_DIR/}"; exit 2; }
+
+if [ "$ARG" = "all" ]; then
+    BATCHES="$(find "$TRASH_ROOT" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)"
+    [ -z "$BATCHES" ] && { echo "brain-purge: trash is empty — nothing to purge."; exit 0; }
+else
+    if ! echo "$ARG" | grep -qE '^[0-9]{8}-[0-9]{6}$'; then
+        echo "brain-purge: refused — '$ARG' is not a valid batch-id (expected YYYYMMDD-HHMMSS or 'all')." >&2
+        exit 3
+    fi
+    [ -d "$TRASH_ROOT/$ARG" ] || { echo "brain-purge: not found: $ARG (see: ls ${TRASH_ROOT#$BRAIN_DIR/})" >&2; exit 2; }
+    BATCHES="$ARG"
+fi
+
+# Preview — always shown, so the caller knows exactly what disappears.
+TOTAL=0
+for b in $BATCHES; do
+    DIR="$TRASH_ROOT/$b"
+    echo "── batch $b ($(du -sh "$DIR" | cut -f1))"
+    if [ -f "$DIR/.meta.json" ]; then
+        sed 's/^/   /' "$DIR/.meta.json"
+    else
+        echo "   (warning: no .meta.json manifest)"
+    fi
+    while IFS= read -r f; do
+        echo "   - ${f#$DIR/}"
+        TOTAL=$((TOTAL + 1))
+    done < <(find "$DIR" -type f ! -name ".meta.json" | sort)
+done
+echo ""
+echo "Total: $TOTAL note(s) in $(echo "$BATCHES" | wc -l | tr -d ' ') batch(es)."
+if [ -e "$BRAIN_DIR/local/.git" ]; then
+    echo "Note: purge only removes the trash copies — content may still exist in the vault's git history."
+fi
+
+EXPECT="$ARG"
+[ "$ARG" = "all" ] && EXPECT="ALL"
+
+if [ -z "$CONFIRM" ]; then
+    echo ""
+    echo "PREVIEW — nothing was deleted."
+    echo "To permanently delete: brain-purge $ARG --confirm $EXPECT"
+    exit 0
+fi
+
+if [ "$CONFIRM" != "$EXPECT" ]; then
+    echo "brain-purge: refused — confirmation mismatch (expected: --confirm $EXPECT)." >&2
+    exit 3
+fi
+
+echo ""
+for b in $BATCHES; do
+    rm -rf "$TRASH_ROOT/$b"
+    echo "PURGED: $b"
+done
+echo "Permanently deleted — NOT recoverable via /brain-recall."

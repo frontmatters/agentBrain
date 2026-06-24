@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# brain-unhide — removes `hidden:` and `hidden-at:` lines from a note's frontmatter.
+
+set -euo pipefail
+
+resolve_brain_dir() {
+    if [ -n "${BRAIN_DIR:-}" ] && [ -d "$BRAIN_DIR" ]; then
+        echo "$BRAIN_DIR"; return 0
+    fi
+    if command -v realpath >/dev/null 2>&1; then
+        realpath "$HOME/agentBrain" 2>/dev/null && return 0
+    fi
+    (cd "$HOME/agentBrain" && pwd -P)
+}
+
+BRAIN_DIR="$(resolve_brain_dir)"
+
+usage() {
+    cat <<EOF
+Usage: brain-unhide <type>/<slug> [--file <name>]
+  Removes hidden: + hidden-at: lines from the note's frontmatter.
+  Also accepts <N> as number from /list-hidden cache.
+EOF
+}
+
+[ $# -lt 1 ] && { usage >&2; exit 2; }
+
+ARG="$1"; shift
+FILE_OVERRIDE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --file) FILE_OVERRIDE="$2"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Unknown arg: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+SKIP_RESOLVER=0
+if [[ "$ARG" =~ ^[0-9]+$ ]]; then
+    CACHE="$BRAIN_DIR/local/.hidden-index.json"
+    [ ! -f "$CACHE" ] && { echo "brain-unhide: no /list-hidden cache. Run /list-hidden first." >&2; exit 2; }
+    RESOLVED=$(grep -oE "\{\"n\":$ARG,\"path\":\"[^\"]*\"" "$CACHE" | sed 's/.*"path":"//;s/"$//')
+    if [ -z "$RESOLVED" ]; then
+        if grep -qE "\{\"n\":$ARG,\"timestamp\":" "$CACHE"; then
+            echo "brain-unhide: $ARG is a trashed item. Use /brain-recall $ARG instead." >&2
+            exit 2
+        fi
+        echo "brain-unhide: $ARG not found in cache. Run /list-hidden to refresh." >&2
+        exit 2
+    fi
+    TARGET="$BRAIN_DIR/$RESOLVED"
+    SKIP_RESOLVER=1
+fi
+
+if [ "$SKIP_RESOLVER" -eq 0 ]; then
+    case "$ARG" in
+        projects/*)
+            SLUG="${ARG#projects/}"
+            if [ -n "$FILE_OVERRIDE" ]; then
+                TARGET="$BRAIN_DIR/local/projects/$SLUG/$FILE_OVERRIDE"
+            else
+                TARGET="$BRAIN_DIR/local/projects/$SLUG/index.md"
+            fi
+            ;;
+        learnings/*|preferences/*|integrations/*|troubleshooting/*|memories/*)
+            TYPE="${ARG%%/*}"
+            SLUG="${ARG#$TYPE/}"
+            TARGET="$BRAIN_DIR/local/$TYPE/$SLUG.md"
+            ;;
+        *) echo "Unknown type prefix in: $ARG" >&2; exit 2 ;;
+    esac
+fi
+
+[ ! -f "$TARGET" ] && { echo "brain-unhide: not found: $TARGET" >&2; exit 2; }
+
+if ! grep -qE '^hidden:' "$TARGET"; then
+    echo "brain-unhide: not currently hidden: $TARGET"
+    exit 0
+fi
+
+TMP="$TARGET.tmp.$$"
+awk '
+    BEGIN { in_fm = 0 }
+    /^---[[:space:]]*$/ { in_fm = !in_fm; print; next }
+    in_fm && /^hidden:[[:space:]]/ { next }
+    in_fm && /^hidden-at:[[:space:]]/ { next }
+    { print }
+' "$TARGET" > "$TMP"
+
+mv "$TMP" "$TARGET"
+echo "Unhidden: $TARGET"
+echo "Now visible in listings."
