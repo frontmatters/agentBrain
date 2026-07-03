@@ -1,0 +1,658 @@
+#!/usr/bin/env bash
+# peer-review v2.0.0 — event-bus-based async peer review.
+#
+# v1.4.2 was synchronous: invoked agent CLIs (pi/codex/gemini) headlessly with
+# heartbeat/timeout watchdogs. Real-world: pi-CLI blocked structurally; manual
+# fallbacks needed. v2 replaces that with async emit-and-poll via the event-bus
+# addon — no blocking call, no watchdog, no single-agent assumption.
+#
+# Spec refs: $AGENTBRAIN_DIR/system/addons/event-bus/SPEC.md
+# Topic: peer-review.review.requested ↔ peer-review.review.completed
+
+set -euo pipefail
+
+# ── Resolve paths ──
+# Subshell groups the fallback chain so $() captures one line, not two.
+AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(realpath ~/agentBrain 2>/dev/null || (cd ~/agentBrain && pwd))}"
+EMIT="$AGENTBRAIN_DIR/system/addons/event-bus/bin/brain-emit"
+POLL="$AGENTBRAIN_DIR/system/addons/event-bus/bin/brain-poll"
+REVIEWS_DIR="$AGENTBRAIN_DIR/local/reviews"
+
+# Sanity: event-bus addon must exist
+[ -x "$EMIT" ] || { echo "peer-review: event-bus addon not found at $EMIT" >&2; exit 4; }
+[ -x "$POLL" ] || { echo "peer-review: event-bus addon not found at $POLL" >&2; exit 4; }
+
+usage() {
+    cat <<'EOF'
+peer-review v2.0.3 — async cross-agent review via event-bus
+
+MODES:
+  peer-review <doc> [--to=<agent>] [--focus=<text>] [--wait[=sec]] [--archive]
+      Request a review. Emit peer-review.review.requested. Default: return
+      event_id immediately. --wait blocks until first completed received.
+
+  peer-review --consume --as=<agent> [--llm=<spec>] [--once] [--lookback=<dur>]
+      Listener mode (run on reviewer machine/agent). Polls requests addressed
+      to <agent>, invokes the configured LLM, emits peer-review.review.completed.
+
+  peer-review --list [--correlation=<id>] [--type=requested|completed|all]
+      Show peer-review events on the bus, optionally filtered by thread.
+
+  peer-review --archive <event_id> [--out=<path>]
+      Render a completed peer-review event to local/reviews/<ts>-<doc>-by-<reviewer>.md
+
+  peer-review --show-bus-path <event_id>
+      Print the absolute filesystem path of an event in the inbox or archive.
+      Useful when handing off a request to another agent (avoids guessing
+      timestamp-prefixes; no line-wrap-breaks-paste issues).
+
+FLAGS:
+  --to=<agent>          target reviewer (default: $PEER_REVIEW_DEFAULT_TO or "any")
+  --agent=<agent>       alias for --to (v1 compat)
+  --from=<agent>        requester identity (default: $BRAIN_AGENT or "claude")
+  --focus=<text>        what reviewer should focus on
+  --wait[=sec]          block until completed received (default 120s if no value)
+                        auto-starts a consumer if none is running, and stops it on exit
+  --heartbeat[=sec]     stderr heartbeat cadens during --wait (default 15s; 0 disables;
+                        env PEER_REVIEW_HEARTBEAT sets default)
+  --archive             after request+wait, save the review to local/reviews/
+  --llm=<spec>          consume mode: LLM backend (default: ollama-cloud:gpt-oss:20b-cloud)
+                        format: ollama-cloud:<model> | ollama:<local> | gemini | echo (test)
+  --no-autostart-consumer  with --wait: don't auto-start a consumer if none runs
+  --once                consume mode: exit after one poll cycle
+  --lookback=<dur>      poll lookback window (default 1h for consume, 7d for list)
+  --correlation=<id>    list mode: filter on thread
+  --type=<t>            list mode: requested|completed|all (default all)
+  --out=<path>          archive mode: override default output path
+
+Env:
+  AGENTBRAIN_DIR              brain checkout root
+  BRAIN_AGENT                 default --from value
+  PEER_REVIEW_DEFAULT_TO      default --to value
+  PEER_REVIEW_DEFAULT_LLM     default --llm for consume mode
+
+Exit codes:
+  0  success
+  1  invalid arg
+  2  no completed event before --wait timeout
+  3  reviewer/LLM failed
+  4  filesystem / dependency error
+EOF
+}
+
+# ── Parse args ──
+MODE="request"
+DOC_PATH=""
+TO_AGENT="${PEER_REVIEW_DEFAULT_TO:-}"
+FROM_AGENT="${BRAIN_AGENT:-claude}"
+FOCUS=""
+WAIT=0
+WAIT_SECS=120
+# Heartbeat (stderr) cadans tijdens --wait. Default 15s; env var voor
+# scriptable defaults, --heartbeat flag voor per-call override. 0 disables.
+HEARTBEAT_SECS="${PEER_REVIEW_HEARTBEAT:-15}"
+ARCHIVE=0
+AUTOSTART_CONSUMER=1
+SPAWNED_CONSUMER_PID=""
+LLM="${PEER_REVIEW_DEFAULT_LLM:-ollama-cloud:gpt-oss:20b-cloud}"
+RUN_ONCE=0
+LOOKBACK=""
+CORRELATION=""
+LIST_TYPE="all"
+ARCHIVE_ID=""
+OUT_PATH=""
+SHOW_PATH_ID=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --consume)         MODE="consume" ;;
+        --list)            MODE="list" ;;
+        --show-bus-path)   MODE="show-bus-path" ;;
+        --show-bus-path=*) MODE="show-bus-path"; SHOW_PATH_ID="${1#*=}" ;;
+        --archive)
+            if [ "$MODE" = "request" ] && [ -n "$DOC_PATH" ]; then
+                ARCHIVE=1
+            else
+                MODE="archive"
+            fi
+            ;;
+        --as=*)            FROM_AGENT="${1#*=}" ;;  # consume mode self-identity
+        --to=*)            TO_AGENT="${1#*=}" ;;
+        --agent=*)         TO_AGENT="${1#*=}" ;;    # v1 alias
+        --from=*)          FROM_AGENT="${1#*=}" ;;
+        --focus=*)         FOCUS="${1#*=}" ;;
+        --wait)            WAIT=1 ;;
+        --wait=*)          WAIT=1; WAIT_SECS="${1#*=}" ;;
+        --heartbeat)       ;;  # bare flag: keep env default
+        --heartbeat=*)     HEARTBEAT_SECS="${1#*=}" ;;
+        --llm=*)           LLM="${1#*=}" ;;
+        --no-autostart-consumer) AUTOSTART_CONSUMER=0 ;;
+        --once)            RUN_ONCE=1 ;;
+        --lookback=*)      LOOKBACK="${1#*=}" ;;
+        --correlation=*)   CORRELATION="${1#*=}" ;;
+        --type=*)          LIST_TYPE="${1#*=}" ;;
+        --out=*)           OUT_PATH="${1#*=}" ;;
+        --help|-h)         usage; exit 0 ;;
+        -*)                echo "peer-review: unknown flag: $1" >&2; usage >&2; exit 1 ;;
+        *)
+            if [ "$MODE" = "archive" ] && [ -z "$ARCHIVE_ID" ]; then
+                ARCHIVE_ID="$1"
+            elif [ "$MODE" = "show-bus-path" ] && [ -z "$SHOW_PATH_ID" ]; then
+                SHOW_PATH_ID="$1"
+            elif [ -z "$DOC_PATH" ]; then
+                DOC_PATH="$1"
+            else
+                echo "peer-review: too many positional args" >&2; exit 1
+            fi
+            ;;
+    esac
+    shift
+done
+
+# Validate HEARTBEAT_SECS: must be non-negative integer (0 disables).
+# Non-numeric or negative falls back to default 15 with a warning.
+if ! [[ "$HEARTBEAT_SECS" =~ ^[0-9]+$ ]]; then
+    echo "peer-review: invalid heartbeat '${HEARTBEAT_SECS}' (expected non-negative integer); using 15" >&2
+    HEARTBEAT_SECS=15
+fi
+
+# ── Mode: request ──
+# ── Consumer autostart helpers (used by --wait) ──
+# Detect any running peer-review consumer (request_mode is never --consume,
+# so our own PID can't match).
+consumer_running() {
+    pgrep -f -- "$(basename "$0").*--consume" > /dev/null 2>&1
+}
+
+# Spawn a consumer in the background if none is running; remember its PID so
+# we can stop it when the --wait call returns (success, timeout, or signal).
+ensure_consumer() {
+    if consumer_running; then
+        return 0
+    fi
+    if [ "$AUTOSTART_CONSUMER" -ne 1 ]; then
+        echo "peer-review: no consumer running and --no-autostart-consumer set; --wait will likely time out" >&2
+        return 0
+    fi
+    local consumer_log
+    consumer_log="$(mktemp -t peer-review-consumer)" 2>/dev/null || consumer_log="/tmp/peer-review-consumer.$$.log"
+    nohup "$0" --consume --as="${FROM_AGENT}-autostart" --llm="$LLM" \
+        > "$consumer_log" 2>&1 &
+    SPAWNED_CONSUMER_PID=$!
+    echo "peer-review: no consumer running; auto-started PID $SPAWNED_CONSUMER_PID (llm=$LLM, log=$consumer_log)" >&2
+    # Give it a moment to come up before we emit the request.
+    local tries=0
+    while ! consumer_running && [ $tries -lt 25 ]; do
+        sleep 0.2
+        tries=$((tries + 1))
+    done
+}
+
+# Stop a consumer we started. Idempotent; safe to call from a trap.
+cleanup_spawned_consumer() {
+    [ -n "$SPAWNED_CONSUMER_PID" ] || return 0
+    # Already gone?
+    if ! kill -0 "$SPAWNED_CONSUMER_PID" 2>/dev/null; then
+        SPAWNED_CONSUMER_PID=""
+        return 0
+    fi
+    kill "$SPAWNED_CONSUMER_PID" 2>/dev/null || true
+    local tries=0
+    while kill -0 "$SPAWNED_CONSUMER_PID" 2>/dev/null && [ $tries -lt 25 ]; do
+        sleep 0.2
+        tries=$((tries + 1))
+    done
+    kill -9 "$SPAWNED_CONSUMER_PID" 2>/dev/null || true
+    echo "peer-review: stopped auto-started consumer (PID $SPAWNED_CONSUMER_PID)" >&2
+    SPAWNED_CONSUMER_PID=""
+}
+
+request_mode() {
+    [ -n "$DOC_PATH" ] || { echo "peer-review: <doc> required for request mode" >&2; exit 1; }
+    [ -f "$DOC_PATH" ] || { echo "peer-review: file not found: $DOC_PATH" >&2; exit 4; }
+
+    local doc_abs doc_sha doc_lines doc_size
+    doc_abs="$(cd "$(dirname "$DOC_PATH")" && pwd)/$(basename "$DOC_PATH")"
+    doc_sha="$(shasum -a 256 "$doc_abs" | awk '{print $1}')"
+    doc_lines="$(wc -l < "$doc_abs" | tr -d ' ')"
+    doc_size="$(wc -c < "$doc_abs" | tr -d ' ')"
+
+    # Compute vault-relative path if doc is inside AGENTBRAIN_DIR
+    local vault_rel
+    case "$doc_abs" in
+        "$AGENTBRAIN_DIR"/*) vault_rel="${doc_abs#"$AGENTBRAIN_DIR/"}" ;;
+        *) vault_rel="$doc_abs" ;;
+    esac
+
+    local focus_text="${FOCUS:-correctness, completeness, clarity, edge cases}"
+
+    # Size warning: --payload becomes a single CLI argument. macOS ARG_MAX ~256KB;
+    # Linux ~2MB. Documents >100KB risk hitting the limit when JSON-encoded
+    # (escape-expansion can 2-3x the byte count).
+    if [ "$doc_size" -gt 102400 ]; then
+        echo "peer-review: warning — document is ${doc_size} bytes (>100KB); --payload may exceed ARG_MAX" >&2
+        echo "peer-review: consider splitting the document or passing via brain-emit's payload-file alternative (not yet implemented)" >&2
+    fi
+
+    local payload
+    payload="$(jq -nc \
+        --arg doc "$vault_rel" \
+        --arg sha "$doc_sha" \
+        --arg lines "$doc_lines" \
+        --arg size "$doc_size" \
+        --arg focus "$focus_text" \
+        --arg requester "$FROM_AGENT" \
+        --rawfile content "$doc_abs" \
+        '{
+            document: $doc,
+            document_sha256: $sha,
+            document_lines: ($lines | tonumber),
+            document_bytes: ($size | tonumber),
+            focus: $focus,
+            requester: $requester,
+            content: $content
+        }')"
+
+    # Build emit args
+    local emit_args=(--type=peer-review.review.requested --from="$FROM_AGENT" --ref="$vault_rel" --payload="$payload")
+    if [ -z "$TO_AGENT" ] || [ "$TO_AGENT" = "any" ]; then
+        emit_args+=(--broadcast)
+    else
+        emit_args+=(--to="$TO_AGENT")
+    fi
+
+    local event_id
+    # cc-subagent finding #3: validate event_id non-empty. With set -e, command
+    # substitution can succeed (return 0) but yield empty string if brain-emit
+    # printed nothing to stdout. Without this guard, --wait would poll for "".
+    event_id="$("$EMIT" "${emit_args[@]}")"
+    if [ -z "$event_id" ]; then
+        echo "peer-review: brain-emit succeeded but returned no event_id" >&2
+        exit 4
+    fi
+    echo "$event_id"
+
+    if [ "$WAIT" -eq 1 ]; then
+        ensure_consumer
+        trap cleanup_spawned_consumer EXIT INT TERM
+        echo "peer-review: waiting up to ${WAIT_SECS}s for completion..." >&2
+        wait_for_completion "$event_id" "$WAIT_SECS"
+        local wait_rc=$?
+        cleanup_spawned_consumer
+        return $wait_rc
+    fi
+}
+
+# Poll for a peer-review.review.completed with matching in_reply_to
+wait_for_completion() {
+    local request_id="$1"
+    local timeout="$2"
+    local start_epoch deadline_epoch completed last_heartbeat
+    start_epoch="$(date +%s)"
+    deadline_epoch=$((start_epoch + timeout))
+    last_heartbeat="$start_epoch"
+
+    while (( $(date +%s) < deadline_epoch )); do
+        # Heartbeat so --wait doesn't look hung. HEARTBEAT_SECS=0 disables.
+        if (( HEARTBEAT_SECS > 0 )); then
+            local now elapsed remaining
+            now="$(date +%s)"
+            if (( now - last_heartbeat >= HEARTBEAT_SECS )); then
+                elapsed=$((now - start_epoch))
+                remaining=$((deadline_epoch - now))
+                echo "peer-review: still waiting on $request_id (${elapsed}s elapsed, ${remaining}s remaining)" >&2
+                last_heartbeat="$now"
+            fi
+        fi
+        completed="$( { "$POLL" --agent="$FROM_AGENT" --type='peer-review.review.completed' --raw --all --lookback=1h 2>/dev/null \
+                         | jq -c --arg id "$request_id" 'select(.in_reply_to == $id)' \
+                         | head -1 ; } || true )"
+        if [ -n "$completed" ]; then
+            echo "$completed"
+            # cc-subagent finding #1: surface verdict=FAILED via exit code 3 so
+            # callers can distinguish "review delivered successfully" from
+            # "reviewer-LLM crashed and consume emitted FAILED placeholder".
+            local verdict
+            verdict="$(echo "$completed" | jq -r '.payload.verdict // "(none)"')"
+            if [ "$verdict" = "FAILED" ]; then
+                local fail_summary
+                fail_summary="$(echo "$completed" | jq -r '.payload.summary // "(no summary)"')"
+                echo "peer-review: reviewer reported FAILED — $fail_summary" >&2
+                [ "$ARCHIVE" -eq 1 ] && {
+                    local cid
+                    cid="$(echo "$completed" | jq -r .event_id)"
+                    archive_completed_event "$cid"
+                }
+                return 3
+            fi
+            if [ "$ARCHIVE" -eq 1 ]; then
+                local cid
+                cid="$(echo "$completed" | jq -r .event_id)"
+                archive_completed_event "$cid"
+            fi
+            return 0
+        fi
+        sleep 2
+    done
+
+    echo "peer-review: timeout — no completed event for $request_id within ${timeout}s" >&2
+    return 2
+}
+
+# ── Mode: consume ──
+consume_mode() {
+    [ -n "$FROM_AGENT" ] || { echo "peer-review: --as=<agent> required for consume mode" >&2; exit 1; }
+    local lookback="${LOOKBACK:-1h}"
+
+    echo "peer-review: consuming as agent=$FROM_AGENT, llm=$LLM, lookback=$lookback" >&2
+
+    while :; do
+        local requests
+        requests="$("$POLL" --agent="$FROM_AGENT" --type='peer-review.review.requested' --raw --commit --lookback="$lookback" 2>/dev/null || true)"
+
+        if [ -n "$requests" ]; then
+            while IFS= read -r req; do
+                [ -z "$req" ] && continue
+                # Keep daemon alive even if process_request fails (set-e would otherwise
+                # kill the listener on a single bad request). emit_failure inside
+                # process_request handles LLM failures; this guards against unexpected
+                # errors (jq parse, brain-emit issues, etc.).
+                process_request "$req" || {
+                    local _eid
+                    _eid="$(echo "$req" | jq -r .event_id 2>/dev/null || echo unknown)"
+                    echo "peer-review: warning — process_request failed for $_eid; continuing" >&2
+                }
+            done <<< "$requests"
+        fi
+
+        [ "$RUN_ONCE" -eq 1 ] && break
+        sleep 5
+    done
+}
+
+process_request() {
+    local req="$1"
+    local req_id req_doc req_content req_focus req_from
+    req_id="$(echo "$req" | jq -r .event_id)"
+    req_doc="$(echo "$req" | jq -r '.payload.document')"
+    req_content="$(echo "$req" | jq -r '.payload.content')"
+    req_focus="$(echo "$req" | jq -r '.payload.focus // "general correctness"')"
+    req_from="$(echo "$req" | jq -r '.from.agent')"
+
+    echo "peer-review: handling request $req_id (doc=$req_doc, from=$req_from)" >&2
+
+    local prompt
+    prompt="$(build_review_prompt "$req_doc" "$req_focus" "$req_content")"
+
+    local response
+    if ! response="$(call_llm "$LLM" "$prompt")"; then
+        echo "peer-review: LLM call failed for $req_id" >&2
+        emit_failure "$req_id" "$req_from" "LLM invocation failed"
+        return 1
+    fi
+
+    # Emit completed. Carry --ref from request so archive can resolve doc-path.
+    local completed_payload
+    completed_payload="$(jq -nc \
+        --arg verdict "see_summary" \
+        --arg summary "Review by $FROM_AGENT via $LLM" \
+        --arg reviewer "$FROM_AGENT" \
+        --arg llm "$LLM" \
+        --arg body "$response" \
+        --arg doc "$req_doc" \
+        '{
+            verdict: $verdict,
+            summary: $summary,
+            body: $body,
+            document: $doc,
+            reviewer: { agent: $reviewer, llm: $llm }
+        }')"
+
+    # cc-subagent finding #2 (deeper fix on top of existing daemon-survival wrap):
+    # ensure caller of --wait NEVER hangs by emitting peer-review.review.failed
+    # as fallback if the completed-emit itself fails. Combined with the existing
+    # || warn-continue in consume_mode, this gives at-most-once-delivery semantics
+    # from the caller's perspective: either completed OR failed, never silent.
+    if ! "$EMIT" \
+            --type=peer-review.review.completed \
+            --from="$FROM_AGENT" \
+            --to="$req_from" \
+            --in-reply-to="$req_id" \
+            --correlation-id="$req_id" \
+            --ref="$req_doc" \
+            --payload="$completed_payload" >/dev/null; then
+        echo "peer-review: emit_completed failed for $req_id — falling back to emit_failure" >&2
+        emit_failure "$req_id" "$req_from" "completed-emit failed (likely brain-emit error)"
+        return 1
+    fi
+    echo "peer-review: emitted completed for $req_id" >&2
+}
+
+# Clean ollama streaming output: ANSI escapes, CRs, braille spinners, thinking-blocks, perf-footer.
+# Required tools: perl, tr, awk, grep, sed — checked once at function start.
+clean_ollama_output() {
+    local f="$1"
+    for tool in perl tr awk grep sed; do
+        command -v "$tool" >/dev/null 2>&1 || {
+            echo "peer-review: warning — $tool not found; ollama output may contain ANSI residue" >&2
+            cat "$f"
+            return 0
+        }
+    done
+    perl -pe 's/\x1b\[\??[0-9;]*[a-zA-Z]//g; s/\x1b\][^\x07]*\x07//g' "$f" \
+        | tr -d '\r' \
+        | perl -CSD -pe 's/[\x{2800}-\x{28ff}]//g' \
+        | awk 'BEGIN{th=0}
+               /Thinking\.\.\./{th=1; next}
+               /done thinking/{th=0; next}
+               !th{print}' \
+        | grep -vE "^(total duration|prompt eval|eval count|load duration|prompt eval rate|eval rate)" \
+        | sed '/./,$!d'
+}
+
+build_review_prompt() {
+    local doc="$1" focus="$2" content="$3"
+    cat <<EOF
+You are a peer-reviewer. Review the document below.
+
+Document: $doc
+Focus: $focus
+
+OUTPUT FORMAT:
+- First line: VERDICT: APPROVE | NEEDS-MINOR-REVISION | NEEDS-REVISION | REJECT
+- Then max 8 findings: [SEVERITY] location | problem | fix
+- End with: SUMMARY: <max 2 sentences>
+- Max 400 words. No preamble, no thinking trace.
+
+---DOCUMENT---
+$content
+---END DOCUMENT---
+EOF
+}
+
+call_llm() {
+    local spec="$1" prompt="$2" tmpout
+    tmpout="$(mktemp)"
+    case "$spec" in
+        ollama-cloud:*|ollama:*)
+            local model="${spec#*:}"
+            ollama run "$model" <<< "$prompt" > "$tmpout" 2>&1 || { rm -f "$tmpout"; return 1; }
+            clean_ollama_output "$tmpout"
+            ;;
+        gemini)
+            gemini -p "$prompt" 2>/dev/null > "$tmpout" || { rm -f "$tmpout"; return 1; }
+            cat "$tmpout"
+            ;;
+        echo)
+            echo "VERDICT: APPROVE"
+            echo "[low] echo-llm | this is a test reviewer | use a real --llm spec"
+            echo "SUMMARY: Echo LLM responds with a fixed stub for testing the consume pipeline."
+            ;;
+        *)
+            echo "peer-review: unknown --llm spec: $spec" >&2
+            rm -f "$tmpout"
+            return 1
+            ;;
+    esac
+    rm -f "$tmpout"
+    return 0
+}
+
+emit_failure() {
+    local req_id="$1" req_from="$2" reason="$3"
+    local payload
+    payload="$(jq -nc --arg r "$reason" --arg rv "$FROM_AGENT" --arg llm "$LLM" \
+        '{verdict: "FAILED", summary: $r, reviewer: {agent: $rv, llm: $llm}}')"
+    "$EMIT" \
+        --type=peer-review.review.completed \
+        --from="$FROM_AGENT" \
+        --to="$req_from" \
+        --in-reply-to="$req_id" \
+        --correlation-id="$req_id" \
+        --payload="$payload" >/dev/null || true
+}
+
+# ── Mode: list ──
+# CORRELATION value is passed via --arg (jq-binding) so user-controlled strings
+# can't inject jq syntax.
+list_mode() {
+    local lookback="${LOOKBACK:-7d}"
+    local type_filter
+    case "$LIST_TYPE" in
+        requested) type_filter='select(.type == "peer-review.review.requested")' ;;
+        completed) type_filter='select(.type == "peer-review.review.completed")' ;;
+        all|"")    type_filter='select(.type | startswith("peer-review."))' ;;
+        *) echo "peer-review: bad --type: $LIST_TYPE" >&2; exit 1 ;;
+    esac
+
+    local corr_filter='.'
+    if [ -n "$CORRELATION" ]; then
+        corr_filter='select(.correlation_id == $corr)'
+    fi
+
+    # Poll as the requester agent (sees broadcasts + targeted-to-self). An empty
+    # bus makes brain-poll exit 1 (its "no events" signal); under `set -o pipefail`
+    # that would propagate and, with `set -e`, abort the whole list. For a
+    # read-only list a zero-result is valid, not an error — tolerate the poll exit.
+    { "$POLL" --agent="$FROM_AGENT" --type='peer-review.*' --raw --all --lookback="$lookback" 2>/dev/null || true; } \
+        | jq -c --arg corr "$CORRELATION" \
+            "$type_filter | $corr_filter | {event_id, type, from: .from.agent, in_reply_to, correlation_id, ts: .timestamp}"
+}
+
+# ── Mode: archive ──
+
+# Archive a completed event by id. The --wait flow already holds the event and
+# calls this with the id as an argument; archive_mode itself reads the global
+# ARCHIVE_ID, so map it here. (Fixes "archive_completed_event: command not found"
+# — the function was referenced by the wait flow but never defined after a rename.)
+archive_completed_event() {
+    ARCHIVE_ID="$1"
+    archive_mode
+}
+
+archive_mode() {
+    [ -n "$ARCHIVE_ID" ] || { echo "peer-review: <event_id> required for archive mode" >&2; exit 1; }
+
+    local event
+    event="$("$POLL" --agent="$FROM_AGENT" --type='peer-review.review.completed' --raw --all --lookback=30d 2>/dev/null \
+            | jq -c --arg id "$ARCHIVE_ID" 'select(.event_id == $id)' | head -1)"
+    [ -z "$event" ] && { echo "peer-review: no completed event with id $ARCHIVE_ID" >&2; exit 4; }
+
+    local doc reviewer llm verdict summary body ts
+    doc="$(echo "$event" | jq -r '.ref // .payload.document // "(unknown)"')"
+    reviewer="$(echo "$event" | jq -r '.payload.reviewer.agent // .from.agent')"
+    llm="$(echo "$event" | jq -r '.payload.reviewer.llm // "(unknown)"')"
+    verdict="$(echo "$event" | jq -r '.payload.verdict // "(none)"')"
+    summary="$(echo "$event" | jq -r '.payload.summary // ""')"
+    body="$(echo "$event" | jq -r '.payload.body // ""')"
+    ts="$(echo "$event" | jq -r .timestamp)"
+
+    # Sanitize fields that flow into YAML frontmatter to prevent
+    # newline/colon-based injection of arbitrary frontmatter keys.
+    # We strip newlines/CRs and replace problematic colons inside values.
+    yaml_safe() {
+        printf '%s' "$1" | tr -d '\r\n' | sed 's/"/\\"/g'
+    }
+    local doc_s reviewer_s llm_s verdict_s summary_s ts_s
+    doc_s="$(yaml_safe "$doc")"
+    reviewer_s="$(yaml_safe "$reviewer")"
+    llm_s="$(yaml_safe "$llm")"
+    verdict_s="$(yaml_safe "$verdict")"
+    summary_s="$(yaml_safe "$summary")"
+    ts_s="$(yaml_safe "$ts")"
+
+    # Sanitize reviewer for filesystem use: alphanumeric + dash + underscore only.
+    # Prevents path traversal (../) and shell-hostile chars in archive filename.
+    local reviewer_fs
+    reviewer_fs="$(printf '%s' "$reviewer" | tr -c 'a-zA-Z0-9_-' '_' | cut -c1-64)"
+    [ -z "$reviewer_fs" ] && reviewer_fs="unknown-reviewer"
+
+    mkdir -p "$REVIEWS_DIR"
+    local doc_base archive_basename archive_file uuid
+    doc_base="$(basename "$doc" .md | tr -c 'a-zA-Z0-9_.-' '_' | cut -c1-128)"
+    archive_basename="$(date -u +%Y%m%dT%H%M%S)-$doc_base-by-$reviewer_fs"
+    archive_file="${OUT_PATH:-$REVIEWS_DIR/$archive_basename.md}"
+    # UUID strategy: prefer UUID5 (deterministic, content-addressable via path),
+    # fall back to uuidgen (random v4) if UUID5 generator missing/fails.
+    # Emit a warning if both fail so frontmatter id can be backfilled manually.
+    uuid="$(bash "$AGENTBRAIN_DIR/scripts/uuid5-gen.sh" "local/reviews/$archive_basename" 2>/dev/null || true)"
+    if [ -z "$uuid" ]; then
+        uuid="$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)"
+        [ -n "$uuid" ] && echo "peer-review: info — UUID5 unavailable; archive id is random uuid4" >&2
+    fi
+    [ -z "$uuid" ] && echo "peer-review: warning — no UUID generated; archive frontmatter id omitted" >&2
+
+    {
+        echo "---"
+        echo "date: $(date -u +%Y-%m-%d)"
+        echo "type: review"
+        [ -n "$uuid" ] && echo "id: $uuid"
+        echo "doc-path: \"$doc_s\""
+        echo "reviewer: \"$reviewer_s\""
+        echo "llm: \"$llm_s\""
+        echo "event_id: \"$ARCHIVE_ID\""
+        echo "verdict: \"$verdict_s\""
+        echo "timestamp: \"$ts_s\""
+        echo "---"
+        echo ""
+        echo "# Review of \`$doc_s\` by $reviewer_s (via $llm_s)"
+        echo ""
+        [ -n "$summary_s" ] && { echo "**Summary:** $summary_s"; echo ""; }
+        # Body is markdown content; preserve as-is (not a frontmatter field).
+        echo "$body"
+    } > "$archive_file"
+
+    echo "peer-review: archived to $archive_file" >&2
+    echo "$archive_file"
+}
+
+# ── Mode: show-bus-path ──
+# Resolve event_id → absolute filesystem path. Scans inbox/ then archive/.
+# Output is a SINGLE LINE (no trailing newline issues from copy-paste handoff).
+show_bus_path_mode() {
+    [ -n "$SHOW_PATH_ID" ] || { echo "peer-review: <event_id> required for --show-bus-path" >&2; exit 1; }
+
+    local dir found
+    for dir in "$AGENTBRAIN_DIR/local/events/inbox" "$AGENTBRAIN_DIR/local/events/archive"; do
+        [ -d "$dir" ] || continue
+        # grep -l exits 1 when no match → || true prevents set-e abort.
+        found="$( { grep -l "\"event_id\": \"$SHOW_PATH_ID\"" "$dir"/*.json 2>/dev/null | head -1 ; } || true)"
+        if [ -n "$found" ]; then
+            printf '%s\n' "$found"
+            return 0
+        fi
+    done
+
+    echo "peer-review: no event with id $SHOW_PATH_ID found in inbox/ or archive/" >&2
+    exit 4
+}
+
+# ── Dispatch ──
+case "$MODE" in
+    request)        request_mode ;;
+    consume)        consume_mode ;;
+    list)           list_mode ;;
+    archive)        archive_mode ;;
+    show-bus-path)  show_bus_path_mode ;;
+    *)              echo "peer-review: unknown mode: $MODE" >&2; exit 1 ;;
+esac

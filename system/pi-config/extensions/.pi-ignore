@@ -1,0 +1,17 @@
+# .pi-ignore — files and directories to skip when symlinking into ~/.pi/agent/extensions/
+# Helper modules that are not extensions themselves but are imported by extensions.
+# Pi expects all .ts files in extensions/ to export a valid extension factory function.
+#
+# Documentation and build files should also be ignored.
+
+# Helper modules (imported by extensions, not extensions themselves)
+youtube-transcript-utils.ts
+
+# Documentation
+extensions.md
+README.md
+CHANGELOG.md
+LICENSE
+
+# Build tools
+tsconfig.template.json

@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# pre-commit — fast, path-aware quality gates (target: < 30s).
+#
+# Layers (in order, each can block):
+#   1. privacy-scan on staged files (always)
+#   2. fast checks scoped to what is actually staged:
+#      - bash -n + shellcheck on staged *.sh files only
+#      - check-addons.sh when system/addons/ is touched
+#      - check-frontmatter.sh when public *.md files are touched
+#
+# The FULL doctor.sh run moved to .githooks/pre-push (and runs inside
+# deploy's validate-install sandbox) — integral validation belongs at the
+# share boundary, not on every commit.
+#
+# Skip-escape: COMMIT_SKIP_DOCTOR=1 git commit … (skips layer 2 only;
+# privacy-scan always runs).
+
+set -euo pipefail
+
+# ── Layer 1: privacy scan ──
+if [[ -x scripts/privacy-scan.sh ]]; then
+  scripts/privacy-scan.sh --staged
+fi
+
+# ── Layer 2: fast path-aware checks ──
+if [[ "${COMMIT_SKIP_DOCTOR:-0}" = "1" ]]; then
+  echo "pre-commit: COMMIT_SKIP_DOCTOR=1 set — skipping fast checks" >&2
+  exit 0
+fi
+
+# NUL-safe collection — survives filenames with newlines/tabs/leading dashes.
+staged_sh=()
+staged_md=()
+addons_touched=0
+while IFS= read -r -d '' path; do
+  case "$path" in
+    system/addons/*) addons_touched=1 ;;
+  esac
+  case "$path" in
+    *.sh) [[ -f "$path" ]] && staged_sh+=("$path") ;;
+    system/*.md|scripts/*.md|templates/*.md|learnings/*.md|projects/*.md) staged_md+=("$path") ;;
+  esac
+done < <(git diff --cached --name-only -z --diff-filter=ACMR)
+
+fail=0
+
+if [[ ${#staged_sh[@]} -gt 0 ]]; then
+  echo "pre-commit: checking ${#staged_sh[@]} staged shell script(s)" >&2
+  for f in "${staged_sh[@]}"; do
+    bash -n "$f" || fail=1
+  done
+  if command -v shellcheck >/dev/null 2>&1; then
+    # -S warning: block on warnings/errors, not info/style noise.
+    shellcheck -S warning "${staged_sh[@]}" || fail=1
+  fi
+fi
+
+if [[ "$addons_touched" = "1" && -x scripts/check-addons.sh ]]; then
+  echo "pre-commit: system/addons/ touched — running check-addons" >&2
+  bash scripts/check-addons.sh || fail=1
+fi
+
+if [[ ${#staged_md[@]} -gt 0 && -x scripts/check-frontmatter.sh ]]; then
+  echo "pre-commit: public markdown touched — running check-frontmatter" >&2
+  bash scripts/check-frontmatter.sh || fail=1
+fi
+
+if [[ "$fail" -ne 0 ]]; then
+  echo "" >&2
+  echo "✗ pre-commit BLOCKED: fast checks failed (see above)." >&2
+  echo "Bypass (use sparingly): COMMIT_SKIP_DOCTOR=1 git commit …" >&2
+  echo "Full validation runs on push (.githooks/pre-push) and in deploy." >&2
+  exit 1
+fi
+echo "pre-commit: fast checks passed." >&2
