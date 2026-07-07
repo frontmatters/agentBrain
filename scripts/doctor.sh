@@ -177,27 +177,29 @@ for check in "${all_checks[@]}"; do
 	short_name="$(basename "$(echo "$check" | awk '{print $2}')" .sh)"
 	if [ "$SUMMARY" = true ]; then
 		printf '▶ %-30s' "$short_name"
-		if output="$(eval "$check" 2>&1)"; then
-			printf ' ✅\n'
-			passed=$((passed + 1))
-		else
+		output="$(eval "$check" 2>&1)" || {
+			output_exit=$?
 			printf ' ❌\n'
 			failed=$((failed + 1))
 			failed_names+=("$short_name")
 			echo "$output" | grep -E '(failed|Error|FATAL)' | sed 's/^/   /'
-		fi
+			continue
+		}
+		printf ' ✅\n'
+		passed=$((passed + 1))
 	else
 		printf '\n▶ %s\n' "$check"
-		if output="$(eval "$check" 2>&1)"; then
-			passed=$((passed + 1))
-			if [ "$VERBOSE" = false ] && [ "$short_name" = "check-path-naming" ]; then
-				echo "$output" | grep -E '(passed|failed|Note:|Warning|active local|Public legacy)' || true
-			else
-				echo "$output"
-			fi
-		else
+		output="$(eval "$check" 2>&1)" || {
+			output_exit=$?
 			failed=$((failed + 1))
 			failed_names+=("$short_name")
+			echo "$output"
+			continue
+		}
+		passed=$((passed + 1))
+		if [ "$VERBOSE" = false ] && [ "$short_name" = "check-path-naming" ]; then
+			echo "$output" | grep -E '(passed|failed|Note:|Warning|active local|Public legacy)' || true
+		else
 			echo "$output"
 		fi
 	fi
@@ -268,16 +270,18 @@ fi
 if [ "$WITH_SELFTEST" = true ]; then
 	printf '\n▶ selftest (agent-agnostic integration)\n'
 	if [ "$SUMMARY" = true ]; then
-		if selftest_out="$(bash scripts/selftest.sh 2>&1)"; then
-			# Parse the summary line: "  locale: X   passed: Y   failed: Z   warnings: W"
-			summary_line="$(printf '%s\n' "$selftest_out" | grep -E 'passed:.*failed:.*warnings:' | tail -1)"
-			printf '  %s\n' "${summary_line# }"
-			passed=$((passed + 1))
-		else
+		selftest_out="$(bash scripts/selftest.sh 2>&1)" || {
 			printf '  ❌\n'
 			printf '%s\n' "$selftest_out" | tail -20 | sed 's/^/   /'
 			failed=$((failed + 1))
 			failed_names+=("selftest")
+			selftest_out=""
+		}
+		if [ -n "$selftest_out" ]; then
+			# Parse the summary line: "  locale: X   passed: Y   failed: Z   warnings: W"
+			summary_line="$(printf '%s\n' "$selftest_out" | grep -E 'passed:.*failed:.*warnings:' | tail -1)"
+			printf '  %s\n' "${summary_line# }"
+			passed=$((passed + 1))
 		fi
 	else
 		if bash scripts/selftest.sh; then
