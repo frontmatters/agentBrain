@@ -1,0 +1,4 @@
+agentbrain-mcp
+event-bus
+session-journal
+extract-learnings

@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# brain-events-gc — retention GC for the agentBrain event-bus.
+# Spec ref: event-bus/SPEC-storage.md §8 (Retention + GC).
+#
+# Moves inbox events older than the retention window into archive/. Consumers
+# track what they have seen via per-host cursors (seen-ids.set), so archiving an
+# aged-out event does not drop it from a consumer's view — it stays reachable in
+# archive/ and brain-poll scans both dirs. This keeps inbox/ small so the
+# filename-window scan in brain-poll stays cheap.
+#
+# Scope (v0.3): inbox→archive retention only. The audit-retention and
+# trim-seen-ids actions sketched in SPEC §8 are not implemented yet.
+#
+# Safety: DRY-RUN BY DEFAULT — prints what it would move and changes nothing.
+# Pass --apply to actually move files. Per SPEC §8 the cross-machine "seen-by-
+# hosts" marker is not implemented, so this is only safe on a single-machine
+# deployment (the documented v0.3 risk model).
+
+set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+Usage: brain-events-gc [--retention=30d] [--apply] [--dry-run] [-h]
+
+  --retention=DUR   Age threshold for inbox events. DUR is <N>{s|h|d|w}.
+                    Events whose filename timestamp is OLDER than now-DUR
+                    are moved to archive/. Default: 30d.
+  --apply           Actually move files. Without this, runs as a dry-run.
+  --dry-run         Explicit dry-run (the default). Prints planned moves.
+  -h, --help        Show this help.
+
+Env:
+  AGENTBRAIN_DIR    brain checkout root (default: script-derived)
+EOF
+}
+
+AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}"
+RETENTION="30d"
+APPLY=false
+
+for arg in "$@"; do
+    case "$arg" in
+    --retention=*) RETENTION="${arg#--retention=}" ;;
+    --apply) APPLY=true ;;
+    --dry-run) APPLY=false ;;
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    *)
+        echo "brain-events-gc: unknown argument: $arg" >&2
+        usage >&2
+        exit 2
+        ;;
+    esac
+done
+
+# ── Parse retention duration → seconds ──
+parse_duration() {
+    local d="$1" num unit
+    if ! [[ "$d" =~ ^([0-9]+)([shdw])$ ]]; then
+        echo "brain-events-gc: invalid --retention '$d' (expected <N>{s|h|d|w})" >&2
+        exit 2
+    fi
+    num="${BASH_REMATCH[1]}"
+    unit="${BASH_REMATCH[2]}"
+    case "$unit" in
+    s) echo "$num" ;;
+    h) echo "$((num * 3600))" ;;
+    d) echo "$((num * 86400))" ;;
+    w) echo "$((num * 604800))" ;;
+    esac
+}
+RET_SEC="$(parse_duration "$RETENTION")"
+
+INBOX="$AGENTBRAIN_DIR/local/events/inbox"
+ARCHIVE="$AGENTBRAIN_DIR/local/events/archive"
+
+if [ ! -d "$INBOX" ]; then
+    echo "brain-events-gc: no inbox at $INBOX (bus not yet used) — nothing to do"
+    exit 0
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "brain-events-gc: python3 required to compute the cutoff timestamp" >&2
+    exit 1
+fi
+
+# Cutoff as YYYYMMDDTHHMMSS — string-comparable with the filename timestamp
+# prefix (same scheme brain-poll uses for its scan window).
+CUTOFF_TS="$(python3 -c "
+from datetime import datetime, timedelta, timezone
+t = datetime.now(timezone.utc) - timedelta(seconds=${RET_SEC})
+print(t.strftime('%Y%m%dT%H%M%S'))
+")"
+
+moved=0
+kept=0
+skipped=0
+
+for f in "$INBOX"/*.json; do
+    [ -e "$f" ] || continue # no matches → literal glob
+    case "$f" in *.tmp) continue ;; esac
+    fname="$(basename "$f")"
+    ts_part="${fname%%-*}"
+    # Only act on canonical YYYYMMDDTHHMMSS-prefixed events; leave anything else
+    # (hand-dropped files, odd names) untouched so GC can never misjudge age.
+    if ! [[ "$ts_part" =~ ^[0-9]{8}T[0-9]{6}$ ]]; then
+        skipped=$((skipped + 1))
+        continue
+    fi
+    if [[ "$ts_part" < "$CUTOFF_TS" ]]; then
+        if [ "$APPLY" = true ]; then
+            mkdir -p "$ARCHIVE"
+            mv "$f" "$ARCHIVE/$fname"
+        else
+            echo "would move: $fname"
+        fi
+        moved=$((moved + 1))
+    else
+        kept=$((kept + 1))
+    fi
+done
+
+if [ "$APPLY" = true ]; then
+    echo "brain-events-gc: moved $moved event(s) to archive/ (retention $RETENTION; kept $kept, skipped $skipped)"
+else
+    echo "brain-events-gc: DRY-RUN — would move $moved event(s) to archive/ (retention $RETENTION; kept $kept, skipped $skipped). Re-run with --apply to execute."
+fi

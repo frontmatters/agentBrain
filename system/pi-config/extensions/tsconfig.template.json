@@ -1,0 +1,34 @@
+{
+	"$schema": "https://json.schemastore.org/tsconfig",
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"strict": true,
+		"skipLibCheck": true,
+		"ignoreDeprecations": "6.0",
+		"allowJs": false,
+		"noEmit": true,
+		"typeRoots": [
+			"__PI_MODULES__/@types"
+		],
+		"baseUrl": ".",
+		"paths": {
+			"@earendil-works/pi-coding-agent": [
+				"__PI_MODULES__/@earendil-works/pi-coding-agent/dist/index.d.ts"
+			],
+			"@earendil-works/pi-ai": [
+				"__PI_MODULES__/@earendil-works/pi-ai/dist/index.d.ts"
+			],
+			"typebox": [
+				"__PI_MODULES__/typebox/build/index.d.mts"
+			],
+			"@earendil-works/pi-ai/compat": [
+				"__PI_MODULES__/@earendil-works/pi-ai/dist/compat.d.ts"
+			]
+		}
+	},
+	"include": [
+		"./**/*.ts"
+	]
+}

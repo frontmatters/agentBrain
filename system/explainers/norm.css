@@ -1,0 +1,21 @@
+/* brain-explain norm */
+/* Theme-agnostic structural skeleton. The semantic structure is identical for
+   every theme; only the [data-theme] layer (theme.css) differs. Self-contained:
+   fonts resolve via system-font stacks in each theme (no external load). */
+*{box-sizing:border-box}
+html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{margin:0}
+.wrap{max-width:1080px;margin:0 auto;padding:56px 40px 80px}
+.explainer > section{margin-top:40px}
+.layers{display:grid;gap:16px;grid-template-columns:repeat(3,1fr)}
+.cards{display:grid;gap:16px;grid-template-columns:1fr 1fr}
+.flow{display:grid;gap:16px}
+@media(max-width:760px){.layers,.cards{grid-template-columns:1fr}}
+.flowline{display:none}
+table{width:100%;border-collapse:collapse;margin:0 0 18px}
+th,td{padding:8px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--rule)}
+th{font-weight:600}
+pre{margin:0 0 18px;padding:14px 16px;overflow-x:auto;border-radius:3px;line-height:1.5;
+  background:color-mix(in oklch,var(--ink) 5%,transparent)}
+pre code{display:block;white-space:pre;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+blockquote{margin:18px 0;padding:6px 0 6px 16px;color:var(--soft)}
