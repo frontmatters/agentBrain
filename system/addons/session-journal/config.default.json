@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "_comment": "Default config for session-journal addon. Copy to local/sessions/journal-config.json to override.",
+
+  "enabled": true,
+
+  "stop_hook": {
+    "enabled": true,
+    "include_files": true,
+    "include_tasks": true,
+    "include_last_user_message": true,
+    "include_last_assistant_message": true,
+    "max_files": 25,
+    "max_message_chars": 280
+  },
+
+  "autosave": {
+    "mode": "throttled_tool_use",
+    "matcher": "Write|Edit|MultiEdit",
+    "throttle_seconds": 300,
+    "interval_seconds": 600
+  },
+
+  "slash_command": {
+    "default_action": "show",
+    "show_lines": 60
+  },
+
+  "general": {
+    "project_inference": "cwd_basename",
+    "transcript_max_lines": 1500,
+    "log_path": "local/sessions/.journal-hook.log",
+    "log_enabled": true
+  }
+}
