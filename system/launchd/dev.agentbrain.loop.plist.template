@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  agentBrain self-improving loop tick — Phase 5 (autonomous trigger).
+  Template: setup-launchd-loop.sh substitutes {{VAULT}} and {{HOME}}.
+
+  Schedule: 04:00 local daily. Chosen for low-impact time + once-per-day cadence
+  matches the design rationale (brain-insights has a 7-14 day analysis window
+  so hourly is overkill; once-daily keeps metrics meaningful).
+
+  Logs: {{VAULT}}/local/logs/loop-tick.{out,err}.log — live IN the brain so reading
+  loop output is part of reading the brain, not a separate ~/Library/Logs/ detour.
+  RunAtLoad: true — fires on every launchd load (= next login after laptop-off,
+  or right after setup-launchd-loop.sh re-install). Combined with the daily 04:00
+  StartCalendarInterval, this catches both states: laptop-on-overnight (04:00 fires)
+  AND laptop-off-overnight (first login fires). macOS launchd does NOT fire missed
+  StartCalendarInterval entries when machine was powered off, hence the belt-and-braces.
+  Manual fire: `launchctl kickstart -k gui/$UID/dev.agentbrain.loop`.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.agentbrain.loop</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>{{VAULT}}/scripts/loop-tick.sh</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>4</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>{{VAULT}}/local/logs/loop-tick.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{VAULT}}/local/logs/loop-tick.err.log</string>
+</dict>
+</plist>
