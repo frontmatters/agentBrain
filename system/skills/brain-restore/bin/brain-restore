@@ -1,0 +1,251 @@
+#!/usr/bin/env bash
+# brain-restore — write a brain-package back into the vault.
+# Phase 1 MVP: happy-path + default overwrite-on-collision. No lockfile, no
+# alternate collision flags. Supports space packages (--space / auto-detected
+# space_id), which are restored under local/spaces/<slug>/ only.
+
+set -euo pipefail
+
+resolve_brain_dir() {
+    if [ -n "${BRAIN_DIR:-}" ] && [ -d "$BRAIN_DIR" ]; then
+        echo "$BRAIN_DIR"; return 0
+    fi
+    # Script-relative first: <root>/system/skills/<name>/bin/<self>. cd -P
+    # resolves symlinked skill dirs, so dev/sandbox checkouts stay self-contained.
+    local root
+    root="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../../.." 2>/dev/null && pwd -P || true)"
+    if [ -n "$root" ] && [ -f "$root/system/rules.md" ]; then
+        echo "$root"; return 0
+    fi
+    if command -v realpath >/dev/null 2>&1; then
+        realpath "$HOME/agentBrain" 2>/dev/null && return 0
+    fi
+    if [ -d "$HOME/agentBrain" ]; then
+        (cd "$HOME/agentBrain" && pwd -P) && return 0
+    fi
+    echo "${0##*/}: cannot resolve the agentBrain root" >&2
+    exit 1
+}
+
+BRAIN_DIR="$(resolve_brain_dir)"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SHARED_DIR="$SCRIPT_DIR/../../_shared/brain-package"
+# shellcheck source=/dev/null
+source "$SHARED_DIR/manifest.sh"
+
+usage() {
+  cat <<EOF
+Usage: brain-restore <package-path> [--move] [--space] [--vault <path>]
+
+Phase 1 MVP — happy path, default overwrite + warn on collision.
+
+  --space   Require the package to be a space package (carries space_id) and
+            restore its notes under local/spaces/<slug>/ only. Space packages
+            are auto-detected from the manifest even without this flag.
+  --move    Remove the package after a successful restore.
+  --vault   Vault root (default: \$BRAIN_DIR/local or ~/agentBrain/local).
+EOF
+  exit 2
+}
+
+PACKAGE=""
+MOVE=0
+WANT_SPACE=0
+VAULT="$BRAIN_DIR/local"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --move) MOVE=1; shift ;;
+    --space) WANT_SPACE=1; shift ;;
+    --vault) VAULT="$2"; shift 2 ;;
+    -h|--help) usage ;;
+    --*) echo "unknown flag: $1" >&2; exit 2 ;;
+    *) PACKAGE="$1"; shift ;;
+  esac
+done
+
+[ -n "$PACKAGE" ] || usage
+[ -d "$PACKAGE" ] || { echo "brain-restore: package not found: $PACKAGE" >&2; exit 1; }
+
+# === Step 1: Resolve + validate ===
+MANIFEST="$PACKAGE/manifest.yml"
+[ -f "$MANIFEST" ] || { echo "brain-restore: no manifest.yml in $PACKAGE" >&2; exit 1; }
+manifest_validate "$MANIFEST" || exit 1
+
+CHECKSUMS="$PACKAGE/CHECKSUMS.txt"
+[ -f "$CHECKSUMS" ] || { echo "brain-restore: no CHECKSUMS.txt in $PACKAGE" >&2; exit 1; }
+
+# Verify CHECKSUMS
+while IFS= read -r line; do
+  expected=$(echo "$line" | awk '{print $1}')
+  path=$(echo "$line" | awk '{print $2}')
+  [ "$path" = "__dir-tree__" ] && continue
+  actual=$( (command -v sha256sum >/dev/null && sha256sum "$PACKAGE/$path") || shasum -a 256 "$PACKAGE/$path")
+  actual=$(echo "$actual" | awk '{print $1}')
+  if [ "$expected" != "$actual" ]; then
+    echo "brain-restore: CHECKSUMS mismatch on $path" >&2
+    exit 1
+  fi
+done < "$CHECKSUMS"
+
+# === Step 2: Space detection + slug safety ===
+# A space package carries a top-level space_id; its notes belong under
+# local/spaces/<slug>/ and must never be written anywhere else.
+SPACE_ID=$(yq -r '.space_id // ""' "$MANIFEST" 2>/dev/null || echo "")
+IS_SPACE=0
+[ -n "$SPACE_ID" ] && IS_SPACE=1
+
+if [ "$WANT_SPACE" -eq 1 ] && [ "$IS_SPACE" -eq 0 ]; then
+  echo "brain-restore: --space given but package has no space_id: $MANIFEST" >&2
+  exit 1
+fi
+
+# === Step 3: Determine targets ===
+SLUG=$(yq -r '.project' "$MANIFEST")
+if [ "$IS_SPACE" -eq 1 ]; then
+  # Prefer the explicit slug field; fall back to project.
+  space_slug=$(yq -r '.slug // .project' "$MANIFEST")
+  case "$space_slug" in
+    ""|*/*|*..*) echo "brain-restore: unsafe space slug: '$space_slug'" >&2; exit 1 ;;
+  esac
+  SLUG="$space_slug"
+fi
+
+INCLUDES=$(yq -r '.include[]?' "$MANIFEST")
+
+# Build a map: source-uuid -> target-vault-path
+declare -a TARGETS
+while IFS= read -r path; do
+  [ -z "$path" ] && continue
+  if [[ "$path" == *"*"* ]]; then
+    # Glob: not stored expanded in manifest. For MVP, ignore globs in restore —
+    # treat each note in the package as authoritative.
+    continue
+  fi
+  # The package's notes are uuid-named; map by content-id (frontmatter id field)
+  TARGETS+=("$path")
+done <<< "$INCLUDES"
+
+# === Step 4: Stage in tmp ===
+RESTORE_TMP="$VAULT/.restore.tmp.$$"
+mkdir -p "$RESTORE_TMP"
+
+# For each note in package, look up its frontmatter `id` and find target path
+# by reverse-lookup in vault manifest's include list.
+collision_count=0
+overwrite_paths=()
+
+for note in "$PACKAGE"/notes/*.md; do
+  [ -f "$note" ] || continue
+  uuid=$(basename "$note" .md)
+
+  # Find target by ID match in TARGETS frontmatter scan
+  target=""
+  for t in "${TARGETS[@]}"; do
+    src_uuid=$(yq -r '.id // ""' "$VAULT/$t" 2>/dev/null || echo "")
+    if [ "$src_uuid" = "$uuid" ]; then
+      target="$t"
+      break
+    fi
+    # If target doesn't exist yet, compute its expected UUID5
+    if [ ! -f "$VAULT/$t" ]; then
+      rel_no_ext="${t%.md}"
+      expected_uuid=$("$BRAIN_DIR/scripts/uuid5-gen.sh" "local/$rel_no_ext" 2>/dev/null || echo "")
+      if [ "$expected_uuid" = "$uuid" ]; then
+        target="$t"
+        break
+      fi
+    fi
+  done
+
+  if [ -z "$target" ]; then
+    echo "brain-restore: cannot map package note $uuid to any include path" >&2
+    continue
+  fi
+
+  # Space safety: refuse to write outside local/spaces/<slug>/.
+  if [ "$IS_SPACE" -eq 1 ]; then
+    # 1) Reject path-escape ('..') and absolute targets BEFORE anything is
+    #    staged. Bash `case` globs let `*` match both `/` and `..`, so the
+    #    prefix check below is NOT escape-proof on its own: a target such as
+    #    spaces/<slug>/../../learnings/pwned.md matches spaces/<slug>/* yet
+    #    resolves outside the space (and a longer `..` chain escapes the vault
+    #    entirely). Reject here, before any cp/mv/mkdir of the target, so a
+    #    hostile package can never write outside RESTORE_TMP even transiently.
+    case "$target" in
+      *..* | /*)
+        echo "brain-restore: unsafe space note path: $target" >&2
+        rm -rf "$RESTORE_TMP"
+        exit 1 ;;
+    esac
+    # 2) Confinement: space notes live under spaces/<slug>/ only.
+    case "$target" in
+      spaces/"$SLUG"/*) : ;;
+      *) echo "brain-restore: refusing to restore space note outside spaces/$SLUG/: $target" >&2
+         rm -rf "$RESTORE_TMP"
+         exit 1 ;;
+    esac
+  fi
+
+  staged="$RESTORE_TMP/$target"
+  mkdir -p "$(dirname "$staged")"
+  cp "$note" "$staged.write"
+  mv "$staged.write" "$staged"
+
+  # Defense-in-depth (space mode): the realized staged file must resolve under
+  # RESTORE_TMP/spaces/<slug>/ (the atomic swap later re-bases it to
+  # $VAULT/spaces/<slug>/). realpath collapses any '..', so this fails closed
+  # if a future change ever lets one slip past the guard above.
+  if [ "$IS_SPACE" -eq 1 ]; then
+    staged_real=$(realpath "$staged")
+    space_root_real=$(realpath "$RESTORE_TMP/spaces/$SLUG")
+    case "$staged_real/" in
+      "$space_root_real"/*) : ;;
+      *) echo "brain-restore: staged path escaped space confinement: $staged" >&2
+         rm -rf "$RESTORE_TMP"; exit 1 ;;
+    esac
+  fi
+
+  if [ -f "$VAULT/$target" ]; then
+    collision_count=$((collision_count + 1))
+    overwrite_paths+=("$target")
+  fi
+done
+
+# === Step 5: Integrity gate (basic — staged files exist) ===
+staged_count=$(find "$RESTORE_TMP" -type f | wc -l | awk '{print $1}')
+if [ "$staged_count" -eq 0 ]; then
+  echo "brain-restore: no files staged — restore aborted" >&2
+  rm -rf "$RESTORE_TMP"
+  exit 1
+fi
+
+# === Step 6: Atomic per-file swap with default policy (overwrite + warn) ===
+for target in "${overwrite_paths[@]}"; do
+  echo "brain-restore: WARN: overwriting existing $target" >&2
+done
+
+cd "$RESTORE_TMP"
+find . -type f | while IFS= read -r rel; do
+  rel="${rel#./}"
+  mkdir -p "$VAULT/$(dirname "$rel")"
+  mv "$RESTORE_TMP/$rel" "$VAULT/$rel"
+done
+cd - >/dev/null
+rm -rf "$RESTORE_TMP"
+
+# === Step 7: Package disposition ===
+if [ "$MOVE" -eq 1 ]; then
+  rm -rf "$PACKAGE"
+  echo "brain-restore: package removed (--move)"
+else
+  echo "brain-restore: package retained at $PACKAGE"
+fi
+
+if [ "$IS_SPACE" -eq 1 ]; then
+  echo "brain-restore: restored space '$SLUG' (space-id $SPACE_ID): $staged_count files ($collision_count overwrites)"
+else
+  echo "brain-restore: restored $staged_count files to vault ($collision_count overwrites)"
+fi
+exit 0

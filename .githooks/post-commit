@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# post-commit — OPT-IN auto-push to origin, gated by git config.
+#
+# Shipped tracked, but a NO-OP by default: auto-push is a maintainer convenience,
+# not something a user who installs agentBrain should inherit. Enable per checkout:
+#
+#     git config agentbrain.autopush true      # turn ON  (maintainer machines)
+#     git config --unset agentbrain.autopush   # back to default (OFF)
+#
+# When ON, pushes HEAD to origin in the background after each successful commit;
+# failures are logged, non-fatal (the commit still lands locally).
+#
+# Per-commit opt-out (when auto-push is ON) — use either:
+#   1. env:    COMMIT_SKIP_PUSH=1 git commit ...
+#   2. marker: [skip-push]  (also [no-push] / [local-only])  in the commit message
+#              — self-documenting, decided AT commit time; the natural fit for
+#              release-prep commits you want to review locally before pushing.
+
+# --- Gate: default OFF. Silent no-op for anyone who has not opted in. ----------
+if [ "$(git config --get agentbrain.autopush 2>/dev/null || echo false)" != "true" ]; then
+  exit 0
+fi
+
+# --- Per-commit skip escapes (env or self-documenting message marker) ---------
+commit_msg="$(git log -1 --pretty=%B 2>/dev/null || true)"
+if [[ "${COMMIT_SKIP_PUSH:-0}" = "1" ]] \
+  || printf '%s' "$commit_msg" | grep -qiE '\[(skip[ _-]?push|no[ _-]?push|local[ _-]?only)\]'; then
+  echo "post-commit: skip-push requested (env or [skip-push] marker) — auto-push skipped" >&2
+  exit 0
+fi
+
+# Skip during rebase / cherry-pick / revert — non-fast-forward is guaranteed and
+# per-commit force-push is dangerous. Catch-up happens with a single push after.
+git_dir=$(git rev-parse --git-dir 2>/dev/null)
+if [ -n "$git_dir" ] && { [ -d "$git_dir/rebase-merge" ] || [ -d "$git_dir/rebase-apply" ] || [ -d "$git_dir/sequencer" ]; }; then
+  echo "post-commit: rebase/cherry-pick in progress — skipping auto-push" >&2
+  exit 0
+fi
+
+# --- Background push so the terminal does not block on network -----------------
+log="/tmp/agentbrain-$(basename "$(git rev-parse --show-toplevel 2>/dev/null || echo repo)")-push.log"
+(
+  if git push origin HEAD >>"$log" 2>&1; then
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] push OK: $(git rev-parse --short HEAD)" >> "$log"
+  else
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] push FAILED for $(git rev-parse --short HEAD)" >> "$log"
+  fi
+) &
+disown $!
+
+echo "post-commit: auto-push backgrounded (log: $log)" >&2

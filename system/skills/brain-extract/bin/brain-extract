@@ -1,0 +1,346 @@
+#!/usr/bin/env bash
+# brain-extract — move a project's knowledge bundle from vault to project folder,
+# or bundle a whole space (--space) as a portable, space-id-stamped package.
+# Phase 1 MVP: happy-path only. See vault project doc for full spec.
+
+set -euo pipefail
+
+# Hard dependency: yq (mikefarah, Go) parses every manifest and paspoort here.
+# Without this check a missing yq surfaces as a misleading downstream error
+# ("no space-id", empty includes) because the call sites default to "".
+command -v yq >/dev/null 2>&1 || {
+    echo "brain-extract: 'yq' (https://github.com/mikefarah/yq) is required but not installed" >&2
+    exit 1
+}
+
+resolve_brain_dir() {
+    if [ -n "${BRAIN_DIR:-}" ] && [ -d "$BRAIN_DIR" ]; then
+        echo "$BRAIN_DIR"; return 0
+    fi
+    # Script-relative first: <root>/system/skills/<name>/bin/<self>. cd -P
+    # resolves symlinked skill dirs, so dev/sandbox checkouts stay self-contained.
+    local root
+    root="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../../.." 2>/dev/null && pwd -P || true)"
+    if [ -n "$root" ] && [ -f "$root/system/rules.md" ]; then
+        echo "$root"; return 0
+    fi
+    if command -v realpath >/dev/null 2>&1; then
+        realpath "$HOME/agentBrain" 2>/dev/null && return 0
+    fi
+    if [ -d "$HOME/agentBrain" ]; then
+        (cd "$HOME/agentBrain" && pwd -P) && return 0
+    fi
+    echo "${0##*/}: cannot resolve the agentBrain root" >&2
+    exit 1
+}
+
+BRAIN_DIR="$(resolve_brain_dir)"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SHARED_DIR="$SCRIPT_DIR/../../_shared/brain-package"
+# shellcheck source=/dev/null
+source "$SHARED_DIR/manifest.sh"
+# shellcheck source=/dev/null
+source "$SHARED_DIR/wiki-link-crawler.sh"
+
+usage() {
+  cat <<EOF
+Usage: brain-extract <slug> [--keep] [--to <path>] [--vault <path>]
+       brain-extract --space <slug> [--out <path>] [--vault <path>]
+
+Phase 1 MVP — happy path only. No lockfile, no checkpoint.
+
+  <slug>           Project slug; bundles per projects/<slug>/.export-manifest.yml.
+  --space <slug>   Bundle the whole space tree at spaces/<slug>/ (no manifest
+                   needed); the package is stamped with the space's space-id.
+  --keep           Retain vault originals (default; only mode in Phase 1).
+  --to <path>      Destination root for the .brain-package/ (project mode).
+  --out <path>     Destination root for the .brain-package/ (alias of --to).
+  --vault <path>   Vault root (default: \$BRAIN_DIR/local or ~/agentBrain/local).
+EOF
+  exit 2
+}
+
+# --- shared helpers (used by both project and space modes) -------------------
+
+# stage_notes <tmp> <vault> <vault-rel-path...>
+# Copies each note into <tmp>/notes/<id>.md (id = frontmatter id, else UUID5 of
+# path) and appends a sha256 line to <tmp>/CHECKSUMS.txt. Atomic per-file write.
+stage_notes() {
+  local tmp="$1" vault="$2"; shift 2
+  local checksums="$tmp/CHECKSUMS.txt"
+  local path src rel_no_ext uuid dst
+  for path in "$@"; do
+    src="$vault/$path"
+    # UUID5 of the vault-rel path without .md extension is the note id
+    rel_no_ext="${path%.md}"
+    uuid=$(yq -r '.id // ""' "$src" 2>/dev/null || echo "")
+    if [ -z "$uuid" ]; then
+      # Fallback: derive UUID5 from path (uses uuid5-gen.sh from installed agentBrain)
+      uuid=$("$BRAIN_DIR/scripts/uuid5-gen.sh" "local/$rel_no_ext")
+    fi
+    dst="$tmp/notes/$uuid.md"
+
+    # Atomic per-file write: write to .tmp, then rename
+    cp "$src" "$dst.write"
+    mv "$dst.write" "$dst"
+
+    # Record sha256 (BSD vs GNU compat)
+    if command -v sha256sum >/dev/null 2>&1; then
+      sha256sum "$dst" | awk -v p="notes/$uuid.md" '{print $1 "  " p}' >> "$checksums"
+    else
+      shasum -a 256 "$dst" | awk -v p="notes/$uuid.md" '{print $1 "  " p}' >> "$checksums"
+    fi
+  done
+}
+
+# finalize_package <tmp>
+# Adds the manifest hash + dir-tree hash to CHECKSUMS, then re-verifies every
+# file against CHECKSUMS. Returns non-zero if any file fails the integrity gate.
+finalize_package() {
+  local tmp="$1"
+  local checksums="$tmp/CHECKSUMS.txt"
+
+  # Manifest hash + dir-tree hash
+  local manifest_hash dir_tree_hash
+  manifest_hash=$( (command -v sha256sum >/dev/null && sha256sum "$tmp/manifest.yml") || shasum -a 256 "$tmp/manifest.yml")
+  manifest_hash=$(echo "$manifest_hash" | awk '{print $1}')
+  echo "$manifest_hash  manifest.yml" >> "$checksums"
+
+  # Dir-tree hash: sorted (rel_path:file_sha256) lines, then sha256 of that
+  dir_tree_hash=$(sort "$checksums" | awk '{print $2 ":" $1}' | (command -v sha256sum >/dev/null && sha256sum || shasum -a 256) | awk '{print $1}')
+  echo "$dir_tree_hash  __dir-tree__" >> "$checksums"
+
+  # Integrity gate: recompute fresh hashes and compare to CHECKSUMS
+  local fail=0 line expected path actual
+  while IFS= read -r line; do
+    expected=$(echo "$line" | awk '{print $1}')
+    path=$(echo "$line" | awk '{print $2}')
+    [ "$path" = "__dir-tree__" ] && continue
+    actual=$( (command -v sha256sum >/dev/null && sha256sum "$tmp/$path") || shasum -a 256 "$tmp/$path")
+    actual=$(echo "$actual" | awk '{print $1}')
+    if [ "$expected" != "$actual" ]; then
+      echo "brain-extract: integrity FAIL on $path" >&2
+      fail=1
+    fi
+  done < "$checksums"
+  return "$fail"
+}
+
+# --- argument parsing --------------------------------------------------------
+
+SLUG=""
+SPACE_SLUG=""
+KEEP=0
+DEST_OVERRIDE=""
+VAULT="$BRAIN_DIR/local"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --space) SPACE_SLUG="$2"; shift 2 ;;
+    --keep) KEEP=1; shift ;;
+    --to|--out) DEST_OVERRIDE="$2"; shift 2 ;;
+    --vault) VAULT="$2"; shift 2 ;;
+    -h|--help) usage ;;
+    --*) echo "unknown flag: $1" >&2; exit 2 ;;
+    *) SLUG="$1"; shift ;;
+  esac
+done
+
+# =============================================================================
+# SPACE MODE — bundle a whole sealed space, stamped with its space-id.
+# =============================================================================
+if [ -n "$SPACE_SLUG" ]; then
+  # Slug safety: never traverse out of spaces/
+  case "$SPACE_SLUG" in
+    */*|*..*) echo "brain-extract: unsafe space slug: $SPACE_SLUG" >&2; exit 1 ;;
+  esac
+
+  SPACE_DIR="$VAULT/spaces/$SPACE_SLUG"
+  if [ ! -d "$SPACE_DIR" ]; then
+    echo "brain-extract: no such space: $SPACE_DIR" >&2
+    exit 1
+  fi
+  if [ ! -f "$SPACE_DIR/index.md" ]; then
+    echo "brain-extract: space has no index.md (paspoort): $SPACE_DIR" >&2
+    exit 1
+  fi
+
+  # Read the stable space-id from the paspoort frontmatter. select(di==0)
+  # pins the read to the first YAML document (the frontmatter); the trailing
+  # markdown body is a separate doc and is ignored, so body text that happens
+  # to parse as YAML can never leak into SPACE_ID.
+  SPACE_ID=$(yq -r 'select(di==0) | .["space-id"] // ""' "$SPACE_DIR/index.md" 2>/dev/null || echo "")
+  if [ -z "$SPACE_ID" ]; then
+    echo "brain-extract: space index.md has no space-id: $SPACE_DIR/index.md" >&2
+    exit 1
+  fi
+
+  # Scope = every .md under the space tree (the space dir IS the scope).
+  SCOPE=()
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    SCOPE+=("${f#"$VAULT"/}")
+  done < <(find "$SPACE_DIR" -type f -name '*.md' | sort)
+
+  if [ ${#SCOPE[@]} -eq 0 ]; then
+    echo "brain-extract: space has no .md files: $SPACE_DIR" >&2
+    exit 1
+  fi
+
+  echo "brain-extract: resolved space '$SPACE_SLUG' (space-id $SPACE_ID, ${#SCOPE[@]} files):"
+  for p in "${SCOPE[@]}"; do echo "  $p"; done
+
+  # Destination
+  DEST_ROOT="${DEST_OVERRIDE:-$(pwd)}"
+  DEST="$DEST_ROOT/.brain-package"
+  if [ -e "$DEST" ]; then
+    echo "brain-extract: destination already exists: $DEST" >&2
+    exit 1
+  fi
+
+  # Stage in tmp
+  TMP="$DEST.tmp.$$"
+  mkdir -p "$TMP/notes"
+  : > "$TMP/CHECKSUMS.txt"
+
+  stage_notes "$TMP" "$VAULT" "${SCOPE[@]}"
+
+  # Write the space manifest. The package's provenance is the space (space_id),
+  # not a project. We reuse the 'project' field (carries the slug) so the shared
+  # manifest_validate / brain-restore machinery keeps working unchanged.
+  {
+    echo "version: 1"
+    echo "project: $SPACE_SLUG"
+    echo "slug: $SPACE_SLUG"
+    echo "space_id: $SPACE_ID"
+    echo "kind: space"
+    echo "include:"
+    for p in "${SCOPE[@]}"; do echo "  - $p"; done
+    echo "exclude: []"
+    echo "metadata:"
+    echo "  created: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "  kind: space"
+    echo "  space_id: $SPACE_ID"
+  } > "$TMP/manifest.yml"
+
+  if ! finalize_package "$TMP"; then
+    echo "brain-extract: tmp/ retained at $TMP for inspection" >&2
+    exit 1
+  fi
+
+  echo "brain-extract: staged + integrity-verified at $TMP"
+  mv "$TMP" "$DEST"
+  echo "brain-extract: package at $DEST"
+
+  # Phase 1: default --keep (no auto-forget for spaces).
+  echo "brain-extract: --keep: space originals retained"
+
+  file_count=$(find "$DEST/notes" -type f | wc -l | awk '{print $1}')
+  echo "brain-extract: $file_count space notes packaged to $DEST"
+  exit 0
+fi
+
+# =============================================================================
+# PROJECT MODE — unchanged behaviour.
+# =============================================================================
+[ -n "$SLUG" ] || usage
+
+# === Step 1: Resolve & validate ===
+MANIFEST_FILE="$VAULT/projects/$SLUG/.export-manifest.yml"
+
+if [ ! -f "$MANIFEST_FILE" ]; then
+  echo "brain-extract: no manifest found at $MANIFEST_FILE" >&2
+  echo "  (Phase 1 MVP does not yet support auto-seeding via wiki-link crawl.)" >&2
+  exit 1
+fi
+
+if ! manifest_validate "$MANIFEST_FILE"; then
+  echo "brain-extract: manifest validation failed" >&2
+  exit 1
+fi
+
+# Resolve include paths against vault
+INCLUDES=$(yq -r '.include[]?' "$MANIFEST_FILE")
+SCOPE=()
+while IFS= read -r p; do
+  [ -z "$p" ] && continue
+  if [[ "$p" == *"*"* ]]; then
+    # Glob: expand against vault
+    while IFS= read -r m; do
+      [ -n "$m" ] && SCOPE+=("${m#$VAULT/}")
+    done < <(cd "$VAULT" && compgen -G "$p" || true)
+  else
+    if [ -f "$VAULT/$p" ]; then
+      SCOPE+=("$p")
+    else
+      echo "brain-extract: scope path missing: $p" >&2
+      exit 1
+    fi
+  fi
+done <<< "$INCLUDES"
+
+if [ ${#SCOPE[@]} -eq 0 ]; then
+  echo "brain-extract: empty scope after resolution" >&2
+  exit 1
+fi
+
+# Apply exclude
+EXCLUDES=$(yq -r '.exclude[]?' "$MANIFEST_FILE")
+while IFS= read -r e; do
+  [ -z "$e" ] && continue
+  for i in "${!SCOPE[@]}"; do
+    [ "${SCOPE[$i]}" = "$e" ] && unset 'SCOPE[i]'
+  done
+done <<< "$EXCLUDES"
+SCOPE=("${SCOPE[@]}")  # reindex
+
+echo "brain-extract: resolved scope (${#SCOPE[@]} files):"
+for p in "${SCOPE[@]}"; do echo "  $p"; done
+
+# === Step 2: Determine destination ===
+PROJECT_ROOT="${DEST_OVERRIDE:-$(pwd)}"
+DEST="$PROJECT_ROOT/.brain-package"
+
+if [ -e "$DEST" ]; then
+  echo "brain-extract: destination already exists: $DEST" >&2
+  exit 1
+fi
+
+# === Step 3: Stage package in tmp ===
+TMP="$DEST.tmp.$$"
+mkdir -p "$TMP/notes"
+: > "$TMP/CHECKSUMS.txt"
+
+stage_notes "$TMP" "$VAULT" "${SCOPE[@]}"
+
+# Copy manifest (with metadata.created updated)
+yq ".metadata.created = \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"" "$MANIFEST_FILE" > "$TMP/manifest.yml"
+
+# === Step 4: Integrity gate ===
+if ! finalize_package "$TMP"; then
+  echo "brain-extract: tmp/ retained at $TMP for inspection" >&2
+  exit 1
+fi
+
+echo "brain-extract: staged + integrity-verified at $TMP"
+
+# === Step 7: Atomic swap ===
+mv "$TMP" "$DEST"
+echo "brain-extract: package at $DEST"
+
+# === Step 8: Cascade brain-forget (skipped in MVP if --keep is default) ===
+# In Phase 1 MVP, only --keep behavior is implemented. The cascade path
+# (without --keep) is deferred to Phase 2 because it requires the brain-forget
+# pre-check + checkpoint + resume infrastructure that is also Phase 2.
+if [ "$KEEP" -eq 1 ]; then
+  echo "brain-extract: --keep: vault originals retained"
+else
+  echo "brain-extract: Phase 1 MVP only supports --keep. Originals retained." >&2
+  echo "  (Cascade to brain-forget arrives in Phase 2.)" >&2
+fi
+
+# === Step 9: Final report ===
+file_count=$(find "$DEST/notes" -type f | wc -l | awk '{print $1}')
+echo "brain-extract: $file_count notes packaged to $DEST"
+exit 0

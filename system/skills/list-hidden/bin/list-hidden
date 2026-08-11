@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# list-hidden — dashboard of hidden + optionally forgotten notes.
+
+set -euo pipefail
+
+resolve_brain_dir() {
+    if [ -n "${BRAIN_DIR:-}" ] && [ -d "$BRAIN_DIR" ]; then
+        echo "$BRAIN_DIR"; return 0
+    fi
+    # Script-relative first: <root>/system/skills/<name>/bin/<self>. cd -P
+    # resolves symlinked skill dirs, so dev/sandbox checkouts stay self-contained.
+    local root
+    root="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../../.." 2>/dev/null && pwd -P || true)"
+    if [ -n "$root" ] && [ -f "$root/system/rules.md" ]; then
+        echo "$root"; return 0
+    fi
+    if command -v realpath >/dev/null 2>&1; then
+        realpath "$HOME/agentBrain" 2>/dev/null && return 0
+    fi
+    if [ -d "$HOME/agentBrain" ]; then
+        (cd "$HOME/agentBrain" && pwd -P) && return 0
+    fi
+    echo "${0##*/}: cannot resolve the agentBrain root" >&2
+    exit 1
+}
+
+BRAIN_DIR="$(resolve_brain_dir)"
+source "$BRAIN_DIR/system/lib/visibility.sh"
+
+INCLUDE_TRASH=0
+for arg in "$@"; do
+    case "$arg" in
+        --include-trash) INCLUDE_TRASH=1 ;;
+        -h|--help) echo "Usage: list-hidden [--include-trash]"; exit 0 ;;
+    esac
+done
+
+declare -a HIDDEN_FILES=()
+while IFS= read -r f; do
+    is_hidden "$f" && HIDDEN_FILES+=("$f")
+done < <(find "$BRAIN_DIR/local" -name "*.md" -type f \
+    -not -path "*/.trash/*" \
+    -not -path "*/sessions/*" \
+    -not -path "*/daily-notes/*" 2>/dev/null)
+
+idx=1
+if [ ${#HIDDEN_FILES[@]} -eq 0 ] && [ "$INCLUDE_TRASH" -eq 0 ]; then
+    echo "No hidden notes. (Run with --include-trash to also see forgotten notes.)"
+fi
+
+if [ ${#HIDDEN_FILES[@]} -gt 0 ]; then
+    printf '%-4s %-12s %-17s %s\n' "#" "TYPE" "LAST TOUCHED" "PATH"
+    for f in "${HIDDEN_FILES[@]}"; do
+        rel="${f#$BRAIN_DIR/}"
+        type=$(echo "$rel" | awk -F/ '{print $2}')
+        # LAST TOUCHED — mtime (consistent met andere /list-* skills)
+        if touched=$(date -r "$f" "+%Y-%m-%d %H:%M" 2>/dev/null); then
+            :
+        elif touched=$(stat -c "%y" "$f" 2>/dev/null | awk '{print $1, substr($2,1,5)}'); then
+            :
+        else
+            touched="-"
+        fi
+        printf '[%-2d] %-12s %-17s %s\n' "$idx" "$type" "$touched" "$rel"
+        idx=$((idx+1))
+    done
+fi
+
+declare -a TRASH_BATCHES=()
+if [ "$INCLUDE_TRASH" -eq 1 ]; then
+    TRASH_DIR="$BRAIN_DIR/local/.trash/forget"
+    if [ -d "$TRASH_DIR" ]; then
+        for batch in "$TRASH_DIR"/*/; do
+            [ -d "$batch" ] || continue
+            META="$batch/.meta.json"
+            [ ! -f "$META" ] && continue
+            TRASH_BATCHES+=("$batch")
+        done
+    fi
+    if [ ${#TRASH_BATCHES[@]} -gt 0 ]; then
+        echo ""
+        printf '%-4s %-18s %s\n' "#" "BATCH" "ORIGINAL PATHS"
+        for batch in "${TRASH_BATCHES[@]}"; do
+            META="$batch/.meta.json"
+            TS=$(basename "$batch")
+            PATHS=$(grep -oE '"[^"]+"' "$META" \
+                | grep -v "forgotten_at\|reason\|null\|original_paths" \
+                | grep -vE '[0-9]T[0-9].*Z' \
+                | tr -d '"' | paste -sd "," -)
+            printf '[%-2d] %-18s %s\n' "$idx" "$TS" "$PATHS"
+            idx=$((idx+1))
+        done
+    fi
+fi
+
+CACHE="$BRAIN_DIR/local/.hidden-index.json"
+{
+    printf '{"hidden":['
+    first=1
+    idx_cache=1
+    for f in "${HIDDEN_FILES[@]:-}"; do
+        rel="${f#$BRAIN_DIR/}"
+        [ $first -eq 0 ] && printf ','
+        first=0
+        hidden_at=$(grep -E '^hidden-at:' "$f" | head -1 | awk '{print $2}')
+        printf '{"n":%d,"path":"%s","hidden_at":"%s"}' "$idx_cache" "$rel" "${hidden_at:-unknown}"
+        idx_cache=$((idx_cache+1))
+    done
+    printf '],"trashed":['
+    first=1
+    for batch in "${TRASH_BATCHES[@]:-}"; do
+        TS=$(basename "$batch")
+        [ $first -eq 0 ] && printf ','
+        first=0
+        printf '{"n":%d,"timestamp":"%s"}' "$idx_cache" "$TS"
+        idx_cache=$((idx_cache+1))
+    done
+    printf ']}\n'
+} > "$CACHE"
+
+if [ ${#HIDDEN_FILES[@]} -gt 0 ] || [ ${#TRASH_BATCHES[@]} -gt 0 ]; then
+    echo ""
+    echo "Resume: /brain-unhide <name|N>  OR  /brain-recall <TS|name|N>  (numbers valid until next /list-hidden)"
+fi

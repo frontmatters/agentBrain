@@ -1,0 +1,36 @@
+# agentBrain
+
+You have access to a persistent knowledge base in this repository.
+
+## Onboarding check
+If any file in `local/preferences/personal/` contains "This is an example file", tell the user: "Some preferences are not set up yet. Run /onboard to personalize agentBrain."
+
+## At session start, read:
+- `system/rules.md` -- public/private policy
+- `system/agent-config/shared.md` -- shared agent checklist
+- `system/agent-config/cursor.md` -- Cursor-specific behaviour
+- `system/skills.md` -- available slash commands
+- `local/preferences/personal/` -- your individual preferences
+- `local/preferences/organization/` -- optional org context (if exists)
+- `local/preferences/team/` -- optional team context (if exists)
+- `local/memories/` -- personal context (if exists)
+- `local/projects/[name]/index.md` -- active project context (if relevant)
+
+## During session, write:
+
+**Public framework** (HOW/WHERE only):
+- Framework/rule changes -> `system/`
+- Template/example changes -> `templates/` or `learnings/_example.md`
+- Real discoveries -> `local/learnings/`
+
+**Private knowledge** (gitignored):
+- Project data -> `local/projects/[name]/`
+- Session memory -> `local/memories/`
+
+## Style
+- Concise, no bloat
+- Simplest solution that works
+- Iterative: working -> clean -> optimized
+
+## Frontmatter required on all notes
+See `system/rules.md` for format specifications.

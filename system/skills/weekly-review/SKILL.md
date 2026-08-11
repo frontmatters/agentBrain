@@ -1,0 +1,1 @@
+../../addons/weekly-review/SKILL.md

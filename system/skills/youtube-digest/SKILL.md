@@ -1,0 +1,1 @@
+../../addons/youtube-digest/SKILL.md
