@@ -1,0 +1,33 @@
+# Brewfile — agentBrain macOS dev environment
+# Install: brew bundle --file=system/pi-config/setup/Brewfile
+# Called automatically by bootstrap-pi-macos.sh when brew is available.
+#
+# Rule: brew-installed tools only here.
+# npm-global tools (Pi, opensrc, pi-lens, etc.) are managed by bootstrap-pi-macos.sh.
+
+# ── Core dev tools ────────────────────────────────────────────────────────────
+brew "git"
+brew "git-lfs"
+# Node/npm is managed via nvm by bootstrap-pi-macos.sh, not Homebrew.
+brew "ripgrep"               # rg — used by agents and opensrc patterns
+brew "fd"                    # fast find — used by agents
+brew "jq"                    # JSON on the CLI
+brew "wget"
+
+# ── AI / agent tooling ────────────────────────────────────────────────────────
+brew "yt-dlp"                # required by youtube-transcript Pi extension
+
+# ── Media ─────────────────────────────────────────────────────────────────────
+brew "ffmpeg"
+brew "imagemagick"
+
+# ── GitHub CLI ────────────────────────────────────────────────────────────────
+brew "gh"
+
+# ── Productivity ──────────────────────────────────────────────────────────────
+brew "fzf"
+
+# ── Optional / install manually if needed ────────────────────────────────────
+# brew "bun"                 # fast JS runtime — Pi works without it
+# brew "python@3.13"         # only needed for Python projects
+# brew "deno"                # only needed for Deno projects

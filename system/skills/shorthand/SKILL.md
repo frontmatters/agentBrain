@@ -1,0 +1,1 @@
+/Users/mistermeneer/agentBrain/system/addons/shorthand/SKILL.md

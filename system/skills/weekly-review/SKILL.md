@@ -1,0 +1,1 @@
+/Users/mistermeneer/agentBrain/system/addons/weekly-review/SKILL.md

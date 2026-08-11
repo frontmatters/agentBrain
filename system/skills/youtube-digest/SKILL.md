@@ -1,0 +1,1 @@
+/Users/mistermeneer/agentBrain/system/addons/youtube-digest/SKILL.md

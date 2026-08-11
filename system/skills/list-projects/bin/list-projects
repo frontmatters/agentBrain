@@ -1,0 +1,247 @@
+#!/usr/bin/env bash
+# list-projects — list all agentBrain projects with filters
+# See ../SKILL.md for usage. Read-only.
+
+set -uo pipefail
+
+resolve_brain_dir() {
+    if [ -n "${BRAIN_DIR:-}" ] && [ -d "$BRAIN_DIR" ]; then
+        echo "$BRAIN_DIR"; return 0
+    fi
+    # Script-relative first: <root>/system/skills/<name>/bin/<self>. cd -P
+    # resolves symlinked skill dirs, so dev/sandbox checkouts stay self-contained.
+    local root
+    root="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../../.." 2>/dev/null && pwd -P || true)"
+    if [ -n "$root" ] && [ -f "$root/system/rules.md" ]; then
+        echo "$root"; return 0
+    fi
+    if command -v realpath >/dev/null 2>&1; then
+        realpath "$HOME/agentBrain" 2>/dev/null && return 0
+    fi
+    if [ -d "$HOME/agentBrain" ]; then
+        (cd "$HOME/agentBrain" && pwd -P) && return 0
+    fi
+    echo "${0##*/}: cannot resolve the agentBrain root" >&2
+    exit 1
+}
+
+BRAIN_DIR="$(resolve_brain_dir)"
+
+# Source visibility helpers (added by brain-hide-forget)
+source "$BRAIN_DIR/system/lib/visibility.sh" 2>/dev/null || true
+
+PROJECTS_DIR="$BRAIN_DIR/local/projects"
+
+FORMAT="table"
+STATUS_FILTER=""
+PRIORITY_FILTER=""
+SINCE_FILTER=""
+TAG_FILTER=""
+INCLUDE_HIDDEN=0
+SPACE_SLUG=""
+SPACE_GIVEN=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --json)         FORMAT="json"; shift ;;
+        --table)        FORMAT="table"; shift ;;
+        --status)       STATUS_FILTER="$2"; shift 2 ;;
+        --status=*)     STATUS_FILTER="${1#--status=}"; shift ;;
+        --priority)     PRIORITY_FILTER="$2"; shift 2 ;;
+        --priority=*)   PRIORITY_FILTER="${1#--priority=}"; shift ;;
+        --since)        SINCE_FILTER="$2"; shift 2 ;;
+        --since=*)      SINCE_FILTER="${1#--since=}"; shift ;;
+        --tag)          TAG_FILTER="$2"; shift 2 ;;
+        --tag=*)        TAG_FILTER="${1#--tag=}"; shift ;;
+        --space)        SPACE_SLUG="$2"; SPACE_GIVEN=1; shift 2 ;;
+        --space=*)      SPACE_SLUG="${1#--space=}"; SPACE_GIVEN=1; shift ;;
+        --include-hidden) INCLUDE_HIDDEN=1; shift ;;
+        -h|--help)
+            cat <<EOF
+list-projects — list all agentBrain projects
+
+Usage:
+  list-projects [--status active,paused,blocked,done,abandoned,none]
+              [--priority high,medium,low]
+              [--since YYYY-MM-DD] [--tag NAME]
+              [--table|--json]
+  list-projects --include-hidden    # include hidden projects (marked [H])
+  list-projects --space <slug>      # list a space's own projects (local/spaces/<slug>/projects)
+
+No filters → all projects. Filters are comma-separated lists, AND-combined
+across filter types, OR-combined within a single filter. Space content is
+opt-in via --space and never shown otherwise.
+EOF
+            exit 0 ;;
+        *) echo "list-projects: unknown arg '$1'" >&2; exit 1 ;;
+    esac
+done
+
+# --space: opt-in view of a single space's own projects. Validate the slug
+# first: an empty slug or one containing '/', '..', a leading dot, or any char
+# outside [a-z0-9._-] could escape local/spaces/<slug>/ (path traversal).
+if [ "$SPACE_GIVEN" = "1" ]; then
+    case "$SPACE_SLUG" in
+        *[!a-z0-9._-]* | "" | .* | *..* )
+            echo "list-projects: invalid --space slug: '$SPACE_SLUG' (allowed: lowercase a-z 0-9 . _ -, no '/' or '..')" >&2
+            exit 2 ;;
+    esac
+    PROJECTS_DIR="$BRAIN_DIR/local/spaces/$SPACE_SLUG/projects"
+fi
+
+if [ ! -d "$PROJECTS_DIR" ]; then
+    echo "list-projects: no projects directory at $PROJECTS_DIR" >&2
+    exit 1
+fi
+
+read_fm_field() {
+    local file="$1" field="$2"
+    awk -v f="$field" '
+        BEGIN { in_fm=0 }
+        /^---[[:space:]]*$/ { in_fm = !in_fm; if (in_fm == 0) exit; next }
+        in_fm && $0 ~ "^"f":" {
+            sub("^"f":[[:space:]]*", "")
+            gsub(/^["'"'"']|["'"'"']$/, "")
+            print
+            exit
+        }
+    ' "$file"
+}
+
+parse_tag_list() {
+    local raw="$1"
+    raw="${raw#[}"; raw="${raw%]}"
+    echo "$raw" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | tr '\n' ' '
+}
+
+# Extract a representative one-liner from the project, with fallback chain:
+# 1. First non-empty line of ## Status section (current work state)
+# 2. First non-empty line of ## Goal section (what the project does)
+# 3. First H1 title (project name)
+# Then strip markdown formatting and truncate on a word boundary.
+read_one_liner() {
+    local file="$1"
+    awk '
+        BEGIN { in_status=0; in_goal=0; status_line=""; goal_line=""; h1_line="" }
+        /^# / && h1_line == "" {
+            line = $0; sub(/^# +/, "", line); h1_line = line
+        }
+        /^## Status/ { in_status=1; in_goal=0; next }
+        /^## Goal/   { in_status=0; in_goal=1; next }
+        /^## / && $0 !~ /^## Status/ && $0 !~ /^## Goal/ { in_status=0; in_goal=0; next }
+        in_status && NF > 0 && !/^---/ && status_line == "" { status_line = $0 }
+        in_goal   && NF > 0 && !/^---/ && goal_line   == "" { goal_line   = $0 }
+        END {
+            if (status_line != "") print status_line
+            else if (goal_line != "") print goal_line
+            else if (h1_line != "") print h1_line
+        }
+    ' "$file" | sed -E '
+        s/^[[:space:]]*[>#*-]+[[:space:]]*//
+        s/\*\*//g
+        s/__//g
+        s/\*//g
+        s/`//g
+        s/[[:space:]]+$//
+    ' | awk '
+        {
+            if (length($0) <= 60) { print; exit }
+            line = substr($0, 1, 60)
+            for (i = length(line); i >= 40; i--) {
+                if (substr(line, i, 1) == " ") {
+                    print substr(line, 1, i - 1) "…"
+                    exit
+                }
+            }
+            print line "…"
+        }
+    '
+}
+
+# Membership check: does $1 appear in comma-separated $2 (case-sensitive)?
+in_csv() {
+    local needle="$1" haystack="$2"
+    echo ",$haystack," | grep -q ",$needle,"
+}
+
+rows=()
+shopt -s nullglob
+for index in "$PROJECTS_DIR"/*/index.md; do
+    name="$(basename "$(dirname "$index")")"
+
+    status="$(read_fm_field "$index" status)"
+    [ -z "$status" ] && status="none"
+    priority="$(read_fm_field "$index" priority)"
+    [ -z "$priority" ] && priority="-"
+
+    # LAST TOUCHED — mtime (precieser dan frontmatter date, auto-update)
+    if date_str=$(date -r "$index" "+%Y-%m-%d %H:%M" 2>/dev/null); then
+        date="$date_str"
+    elif date_str=$(stat -c "%y" "$index" 2>/dev/null | awk '{print $1, substr($2,1,5)}'); then
+        date="$date_str"
+    else
+        date="$(read_fm_field "$index" date)"
+        [ -z "$date" ] && date="0000-00-00 00:00"
+    fi
+    tags_raw="$(read_fm_field "$index" tags)"
+    tags_list="$(parse_tag_list "$tags_raw")"
+
+    # Filters
+    if [ -n "$STATUS_FILTER" ] && ! in_csv "$status" "$STATUS_FILTER"; then
+        continue
+    fi
+    if [ -n "$PRIORITY_FILTER" ] && ! in_csv "$priority" "$PRIORITY_FILTER"; then
+        continue
+    fi
+    if [ -n "$SINCE_FILTER" ] && [ "$date" \< "$SINCE_FILTER" ]; then
+        continue
+    fi
+    if [ -n "$TAG_FILTER" ] && ! echo " $tags_list " | grep -q " $TAG_FILTER "; then
+        continue
+    fi
+
+    # Hide filter (brain-hide-forget)
+    HIDDEN_MARKER=""
+    if is_hidden "$index" 2>/dev/null; then
+        if [ "$INCLUDE_HIDDEN" -eq 0 ]; then
+            continue
+        fi
+        HIDDEN_MARKER="[H] "
+    fi
+
+    oneline="$(read_one_liner "$index")"
+    [ -z "$oneline" ] && oneline="(no Status paragraph)"
+    rows+=("$date|$name|$status|$priority|$oneline|$HIDDEN_MARKER")
+done
+shopt -u nullglob
+
+if [ ${#rows[@]} -eq 0 ]; then
+    if [ "$FORMAT" = "json" ]; then
+        echo "[]"
+    else
+        echo "No projects match the filters."
+    fi
+    exit 0
+fi
+
+sorted=()
+while IFS= read -r _row; do sorted+=("$_row"); done < <(printf '%s\n' "${rows[@]}" | sort -r)
+
+if [ "$FORMAT" = "json" ]; then
+    printf '['
+    first=1
+    for row in "${sorted[@]}"; do
+        IFS='|' read -r d n s p o m <<< "$row"
+        [ $first -eq 0 ] && printf ','
+        first=0
+        printf '{"name":"%s","status":"%s","priority":"%s","date":"%s","oneline":"%s"}' \
+            "${n//\"/\\\"}" "${s//\"/\\\"}" "${p//\"/\\\"}" "${d//\"/\\\"}" "${o//\"/\\\"}"
+    done
+    printf ']\n'
+else
+    printf '%-25s %-10s %-9s %-17s %s\n' "PROJECT" "STATUS" "PRIORITY" "LAST TOUCHED" "ONE-LINE"
+    for row in "${sorted[@]}"; do
+        IFS='|' read -r d n s p o m <<< "$row"
+        printf '%-25s %-10s %-9s %-17s %s\n' "${m}$n" "$s" "$p" "$d" "$o"
+    done
+fi

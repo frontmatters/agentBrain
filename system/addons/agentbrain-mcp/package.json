@@ -1,0 +1,13 @@
+{
+  "name": "agentbrain-mcp",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "gray-matter": "^4.0.3"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

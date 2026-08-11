@@ -1,0 +1,5 @@
+{
+  "_comment": "Locale heuristic for the explainer index. Each locale maps to a set of high-frequency stopwords; detect_lang() picks the locale with the most matches in a note's title+description. This is only a FALLBACK — a note's frontmatter `lang:` field always wins. To add a locale, add an entry here (framework default) or in local/explainers/locales.json (per-machine, merged over this). No code change needed.",
+  "en": ["the","a","an","of","and","is","are","to","for","with","how","this","that","you","your","not","on","in","as","it","from","what","can","be","we","will"],
+  "nl": ["de","het","een","van","en","is","zijn","naar","voor","wordt","dat","met","op","niet","je","hoe","wat","aan","als","ook","maar","door","zoals","kan","worden","we"]
+}

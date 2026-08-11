@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# brain-emit — publish an event onto the agentBrain event-bus.
+# Spec refs: spec-envelope, spec-topics, spec-filesystem, spec-routing, spec-threading, spec-audit.
+
+set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+brain-emit — publish event to agentBrain event-bus
+
+Required:
+  --type=<topic>           e.g. peer-review.review.requested
+                           Format: <context>.<entity>.<action> (lowercase kebab)
+  Either:
+    --to=<a1,a2>           comma-list of target agents
+  Or:
+    --broadcast            send to everyone listening
+
+Optional:
+  --payload=<json>         JSON object string (default: {})
+  --from=<agent>           publisher agent (default: $BRAIN_AGENT or "claude")
+  --to-hosts=<h1,h2>       restrict targets to specific hosts (default: all)
+  --reply-to=<agent>       where replies should go (default: --from)
+  --ref=<vault-path>       reference to a vault file
+  --correlation-id=<id>    thread initiator (default: this event_id = new thread)
+  --in-reply-to=<id>       this is a direct reply to event <id>
+  --causation-ids=<i1,i2>  events that caused this one (fan-in)
+
+Env:
+  AGENTBRAIN_DIR    brain checkout root (default: script-derived)
+  BRAIN_AGENT       default --from value
+  BRAIN_INSTANCE_ID default instance_id (default: pid-$$)
+
+Output: event_id to stdout on success (so caller can capture for threading)
+
+Exit codes:
+  0  success
+  1  missing/invalid arg
+  2  invalid type format
+  3  invalid JSON payload
+  4  missing brain.json
+  5  mkdir failure
+  6  write failure
+  7  atomic-rename failure
+EOF
+}
+
+# Defaults
+AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}"
+HOST_NAME="$(hostname -s)"
+# instance_id: prefer UUID (survives PID-recycling). Fallback pid-$$ if uuidgen unavailable.
+INSTANCE_ID="${BRAIN_INSTANCE_ID:-$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' || echo "pid-$$")}"
+FROM_AGENT="${BRAIN_AGENT:-claude}"
+
+# Args
+TYPE=""
+TO_AGENTS=""
+TO_HOSTS=""
+BROADCAST="false"
+REPLY_TO=""
+PAYLOAD="{}"
+REF=""
+CORRELATION_ID=""
+IN_REPLY_TO=""
+CAUSATION_IDS=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --type=*)           TYPE="${1#*=}" ;;
+        --to=*)             TO_AGENTS="${1#*=}" ;;
+        --to-hosts=*)       TO_HOSTS="${1#*=}" ;;
+        --broadcast)        BROADCAST="true" ;;
+        --from=*)           FROM_AGENT="${1#*=}" ;;
+        --reply-to=*)       REPLY_TO="${1#*=}" ;;
+        --payload=*)        PAYLOAD="${1#*=}" ;;
+        --ref=*)            REF="${1#*=}" ;;
+        --correlation-id=*) CORRELATION_ID="${1#*=}" ;;
+        --in-reply-to=*)    IN_REPLY_TO="${1#*=}" ;;
+        --causation-ids=*)  CAUSATION_IDS="${1#*=}" ;;
+        --help|-h)          usage; exit 0 ;;
+        *) echo "brain-emit: unknown arg: $1" >&2; usage >&2; exit 1 ;;
+    esac
+    shift
+done
+
+# Required-arg validation
+[ -z "$TYPE" ] && { echo "brain-emit: --type required" >&2; exit 1; }
+if [ "$BROADCAST" = "false" ] && [ -z "$TO_AGENTS" ]; then
+    echo "brain-emit: must specify --to=<agents> or --broadcast" >&2
+    exit 1
+fi
+
+# Validate type format
+if ! [[ "$TYPE" =~ ^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$ ]]; then
+    echo "brain-emit: invalid type: $TYPE" >&2
+    echo "  expected <context>.<entity>.<action>, lowercase kebab" >&2
+    exit 2
+fi
+
+# Validate JSON payload
+if ! echo "$PAYLOAD" | jq . >/dev/null 2>&1; then
+    echo "brain-emit: invalid JSON in --payload" >&2
+    exit 3
+fi
+
+# Read namespace from brain.json
+[ -f "$AGENTBRAIN_DIR/brain.json" ] || {
+    echo "brain-emit: missing $AGENTBRAIN_DIR/brain.json" >&2
+    exit 4
+}
+NAMESPACE="$(jq -r .namespace "$AGENTBRAIN_DIR/brain.json")"
+
+# Timestamp (ISO-8601 µs UTC) — used both for envelope.timestamp and filename
+TIMESTAMP="$(python3 -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ'))")"
+TS_SAFE="$(python3 -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S-%fZ'))")"
+
+# Nonce
+NONCE="$(openssl rand -hex 4)"  # 8 hex chars
+
+# event_id derivation (spec-threading).
+# Inputs passed via sys.argv (not f-string interpolation) so that any quotes/newlines
+# in user-controlled fields (FROM_AGENT, INSTANCE_ID) cannot inject Python code.
+EVENT_ID_INPUT="${TYPE}:${TIMESTAMP}:${FROM_AGENT}:${HOST_NAME}:${INSTANCE_ID}:${NONCE}"
+EVENT_ID="$(python3 -c 'import sys,uuid; print(uuid.uuid5(uuid.UUID(sys.argv[1]), sys.argv[2]))' "$NAMESPACE" "$EVENT_ID_INPUT")"
+ID8="${EVENT_ID:0:8}"
+
+# Default correlation_id = event_id (new thread initiator)
+[ -z "$CORRELATION_ID" ] && CORRELATION_ID="$EVENT_ID"
+
+# Comma-lists → JSON arrays
+to_agents_json="$(echo "$TO_AGENTS" | jq -Rc 'split(",") | map(select(length > 0))')"
+to_hosts_json="$(echo "$TO_HOSTS" | jq -Rc 'split(",") | map(select(length > 0))')"
+causation_json="$(echo "$CAUSATION_IDS" | jq -Rc 'split(",") | map(select(length > 0))')"
+
+# Build envelope
+ENVELOPE="$(jq -n \
+    --arg eid "$EVENT_ID" \
+    --arg type "$TYPE" \
+    --arg from_agent "$FROM_AGENT" \
+    --arg host "$HOST_NAME" \
+    --arg iid "$INSTANCE_ID" \
+    --argjson to_agents "$to_agents_json" \
+    --argjson to_hosts "$to_hosts_json" \
+    --argjson broadcast "$BROADCAST" \
+    --arg reply_to "$REPLY_TO" \
+    --arg ref "$REF" \
+    --arg ts "$TIMESTAMP" \
+    --arg cid "$CORRELATION_ID" \
+    --arg in_reply "$IN_REPLY_TO" \
+    --argjson causation "$causation_json" \
+    --argjson payload "$PAYLOAD" \
+    '{
+        event_id: $eid,
+        type: $type,
+        envelope_schema_version: 1,
+        payload_schema_version: 1,
+        from: { agent: $from_agent, host: $host, instance_id: $iid },
+        to: { agents: $to_agents, hosts: $to_hosts, broadcast: $broadcast },
+        timestamp: $ts,
+        correlation_id: $cid,
+        payload: $payload
+    }
+    + (if $reply_to == "" then {} else {reply_to: {agent: $reply_to, host: $host}} end)
+    + (if $ref == "" then {} else {ref: $ref} end)
+    + (if $in_reply == "" then {} else {in_reply_to: $in_reply} end)
+    + (if ($causation | length) == 0 then {} else {causation_ids: $causation} end)
+    ')"
+
+# Filename: <ts>-<topic-slug>-<id8>.json (NTFS-safe; lexicographically sortable)
+TOPIC_SLUG="$(echo "$TYPE" | tr '.' '-')"
+FILENAME="${TS_SAFE}-${TOPIC_SLUG}-${ID8}.json"
+
+INBOX="$AGENTBRAIN_DIR/local/events/inbox"
+AUDIT_DIR="$AGENTBRAIN_DIR/local/events/audit/$HOST_NAME/$FROM_AGENT"
+mkdir -p "$INBOX" "$AUDIT_DIR" || { echo "brain-emit: mkdir failed" >&2; exit 5; }
+
+# Atomic write: .tmp → mv
+TMP="$INBOX/$FILENAME.tmp"
+FINAL="$INBOX/$FILENAME"
+
+# Cleanup-trap: if script exits before mv (write fails, signal, etc.) the .tmp lingers.
+# trap removes orphan .tmp; disabled right after successful mv.
+# Must return 0 explicitly so trap doesn't overwrite the script's exit code.
+cleanup_tmp() { rm -f "$TMP" 2>/dev/null; return 0; }
+trap cleanup_tmp EXIT
+
+printf '%s\n' "$ENVELOPE" > "$TMP" || { echo "brain-emit: write failed" >&2; exit 6; }
+mv "$TMP" "$FINAL" || { echo "brain-emit: atomic rename failed" >&2; exit 7; }
+trap - EXIT  # success → disarm cleanup
+
+# Audit log.
+# NDJSON-append onder POSIX O_APPEND is atomic voor writes ≤ PIPE_BUF (typisch 4KB).
+# Typische entries ~300-500B → safe. Bij grote payloads (>4KB) zou flock nodig zijn.
+DATE_TODAY="$(date -u +%Y-%m-%d)"
+AUDIT_FILE="$AUDIT_DIR/$DATE_TODAY.ndjson"
+audit_entry="$(jq -c -n \
+    --arg ts "$TIMESTAMP" \
+    --arg action "emit" \
+    --arg eid "$EVENT_ID" \
+    --arg type "$TYPE" \
+    --arg file "$FILENAME" \
+    '{timestamp: $ts, action: $action, event_id: $eid, type: $type, file: $file}')"
+# Sanity check: warn if entry exceeds PIPE_BUF (atomicity not guaranteed)
+if [ "${#audit_entry}" -gt 4000 ]; then
+    echo "brain-emit: warning — audit entry ${#audit_entry} bytes > PIPE_BUF; concurrent writes may interleave" >&2
+fi
+echo "$audit_entry" >> "$AUDIT_FILE"
+
+# Emit event_id to stdout
+echo "$EVENT_ID"
