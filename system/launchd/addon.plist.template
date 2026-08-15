@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Generic addon launchd template. Rendered by scripts/setup-addon-launchd.sh
+  using each addon's manifest `schedule:` block (cron expression + optional args).
+
+  Placeholders substituted:
+    {{LABEL}}         e.g. local.agentbrain.weekly-review
+    {{COMMAND_PATH}}  absolute path to the addon's CLI binary
+    {{ARGS_XML}}      <string>...</string> entries for any extra args
+    {{CALENDAR_XML}}  <key>Hour</key><integer>X</integer> etc. from cron parsing
+    {{LOG_OUT}}       {VAULT}/local/logs/<addon-id>.out.log
+    {{LOG_ERR}}       {VAULT}/local/logs/<addon-id>.err.log
+    {{HOME}}          user's $HOME
+    {{AGENT_PATH}}    colon-separated PATH built at setup time (bun + brew + system)
+
+  Schedule semantics: StartCalendarInterval fires at the next match of all
+  specified keys. Missing a fire window (machine off/asleep) skips it — launchd
+  does NOT replay missed StartCalendarInterval entries. For addons where missing
+  a week is critical, add RunAtLoad in a per-addon override (not generic here).
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{{LABEL}}</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{COMMAND_PATH}}</string>
+{{ARGS_XML}}
+    </array>
+
+{{SCHEDULE_XML}}
+
+    <key>StandardOutPath</key>
+    <string>{{LOG_OUT}}</string>
+
+    <key>StandardErrorPath</key>
+    <string>{{LOG_ERR}}</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>{{HOME}}</string>
+        <key>PATH</key>
+        <string>{{AGENT_PATH}}</string>
+    </dict>
+</dict>
+</plist>

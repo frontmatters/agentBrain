@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# brain-poll — read events from agentBrain event-bus matching this agent.
+# Spec refs: spec-cursor, spec-routing, spec-filesystem.
+
+set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+brain-poll — read events from agentBrain event-bus
+
+Required:
+  --agent=<name>      who am I (filters via spec-routing matches_me)
+
+Optional:
+  --host=<name>       override hostname (default: hostname -s)
+  --type=<glob>       filter by topic (shell glob, e.g. "peer-review.*")
+  --lookback=<dur>    scan window (default: 7d). Use Ns/Nm/Nh/Nd
+  --commit            append yielded event_ids to seen-ids.set
+  --all               include already-seen events (no dedup)
+  --limit=<N>         max events to yield
+  --raw               output only envelope JSON (default: adds _file)
+  --help, -h          show this help
+
+Env:
+  AGENTBRAIN_DIR      brain checkout root (default: script-derived)
+
+Output: NDJSON of matching events (oldest first), one per line.
+
+Exit codes:
+  0  success (may yield 0 events)
+  1  missing/invalid arg
+  4  filesystem error
+EOF
+}
+
+AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}"
+HOST_NAME="$(hostname -s)"
+AGENT_NAME=""
+TYPE_GLOB=""
+LOOKBACK="7d"
+COMMIT="false"
+ALL="false"
+LIMIT=""
+RAW="false"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --agent=*)    AGENT_NAME="${1#*=}" ;;
+        --host=*)     HOST_NAME="${1#*=}" ;;
+        --type=*)     TYPE_GLOB="${1#*=}" ;;
+        --lookback=*) LOOKBACK="${1#*=}" ;;
+        --commit)     COMMIT="true" ;;
+        --all)        ALL="true" ;;
+        --limit=*)    LIMIT="${1#*=}" ;;
+        --raw)        RAW="true" ;;
+        --help|-h)    usage; exit 0 ;;
+        *) echo "brain-poll: unknown arg: $1" >&2; exit 1 ;;
+    esac
+    shift
+done
+
+[ -z "$AGENT_NAME" ] && { echo "brain-poll: --agent required" >&2; exit 1; }
+
+# Parse lookback (Ns/Nm/Nh/Nd) → seconds. Strict regex prevents silent fallthrough
+# for malformed values like "-5d" or "10x".
+parse_lookback() {
+    local v="$1"
+    if ! [[ "$v" =~ ^[1-9][0-9]*[smhd]$ ]]; then
+        echo "brain-poll: invalid --lookback: $v (expected Ns/Nm/Nh/Nd, N≥1)" >&2
+        exit 1
+    fi
+    local n="${v%[smhd]}"
+    local unit="${v: -1}"
+    case "$unit" in
+        s) echo $((n)) ;;
+        m) echo $((n * 60)) ;;
+        h) echo $((n * 3600)) ;;
+        d) echo $((n * 86400)) ;;
+    esac
+}
+LOOKBACK_SEC="$(parse_lookback "$LOOKBACK")"
+
+# Scan window start as YYYYMMDDTHHMMSS prefix (string-comparable with filename ts)
+SCAN_START_TS="$(python3 -c "
+from datetime import datetime, timedelta, timezone
+t = datetime.now(timezone.utc) - timedelta(seconds=${LOOKBACK_SEC})
+print(t.strftime('%Y%m%dT%H%M%S'))
+")"
+
+INBOX="$AGENTBRAIN_DIR/local/events/inbox"
+ARCHIVE="$AGENTBRAIN_DIR/local/events/archive"
+CURSOR_DIR="$AGENTBRAIN_DIR/local/events/cursors/$HOST_NAME/$AGENT_NAME"
+mkdir -p "$CURSOR_DIR" || { echo "brain-poll: mkdir cursor failed" >&2; exit 4; }
+
+SEEN_FILE="$CURSOR_DIR/seen-ids.set"
+[ -f "$SEEN_FILE" ] || : > "$SEEN_FILE"
+
+# Build candidate file list (chronological via lex sort)
+candidates=()
+for d in "$INBOX" "$ARCHIVE"; do
+    [ -d "$d" ] || continue
+    while IFS= read -r f; do
+        [ -n "$f" ] && candidates+=("$f")
+    done < <(find "$d" -maxdepth 1 -name "*.json" ! -name "*.tmp" -type f 2>/dev/null | sort)
+done
+
+yielded=0
+yielded_ids=()
+
+for f in "${candidates[@]}"; do
+    fname="$(basename "$f")"
+    ts_part="${fname%%-*}"
+    # Window filter (string compare on YYYYMMDDTHHMMSS prefix)
+    [ "$ts_part" \< "$SCAN_START_TS" ] && continue
+
+    # Parse envelope once
+    if ! envelope="$(jq -c . "$f" 2>/dev/null)"; then
+        echo "brain-poll: invalid JSON, skipping: $fname" >&2
+        continue
+    fi
+
+    event_id="$(echo "$envelope" | jq -r '.event_id // empty')"
+    [ -z "$event_id" ] && {
+        echo "brain-poll: missing event_id, skipping: $fname" >&2
+        continue
+    }
+
+    # Type-glob filter (if specified)
+    if [ -n "$TYPE_GLOB" ]; then
+        topic="$(echo "$envelope" | jq -r '.type // empty')"
+        # shellcheck disable=SC2254
+        case "$topic" in
+            $TYPE_GLOB) ;;
+            *) continue ;;
+        esac
+    fi
+
+    # Routing filter (matches_me per spec-routing)
+    matches="$(echo "$envelope" | jq --arg agent "$AGENT_NAME" --arg host "$HOST_NAME" '
+        if .to.broadcast == true then
+            (.to.hosts | length == 0) or (.to.hosts | index($host) != null)
+        else
+            ((.to.agents | index($agent)) != null) and
+            ((.to.hosts | length == 0) or (.to.hosts | index($host) != null))
+        end
+    ')"
+    [ "$matches" != "true" ] && continue
+
+    # Dedup against seen-ids
+    if [ "$ALL" != "true" ] && grep -qxF "$event_id" "$SEEN_FILE" 2>/dev/null; then
+        continue
+    fi
+
+    # Yield
+    if [ "$RAW" = "true" ]; then
+        echo "$envelope"
+    else
+        echo "$envelope" | jq -c --arg file "$fname" '. + {_file: $file}'
+    fi
+    yielded_ids+=("$event_id")
+    yielded=$((yielded + 1))
+    [ -n "$LIMIT" ] && [ "$yielded" -ge "$LIMIT" ] && break
+done
+
+# Commit yielded IDs to seen-ids.set (atomic-rename, mkdir-locked).
+# Lock: mkdir is atomic on POSIX, so it doubles as a cross-platform mutex.
+# Two concurrent brain-poll --commit calls for the same cursor would otherwise lose
+# IDs (each copies the file before the other appends).
+if [ "$COMMIT" = "true" ] && [ "${#yielded_ids[@]}" -gt 0 ]; then
+    LOCK_DIR="$SEEN_FILE.lock"
+    LOCK_TIMEOUT=5
+    LOCK_START="$(date +%s)"
+    while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+        if [ "$(($(date +%s) - LOCK_START))" -ge "$LOCK_TIMEOUT" ]; then
+            echo "brain-poll: lock timeout on $SEEN_FILE.lock (${LOCK_TIMEOUT}s)" >&2
+            exit 4
+        fi
+        sleep 0.1
+    done
+    trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
+
+    TMP_SEEN="$SEEN_FILE.tmp.$$"
+    cp "$SEEN_FILE" "$TMP_SEEN" || { echo "brain-poll: cursor write failed" >&2; exit 4; }
+    for eid in "${yielded_ids[@]}"; do
+        echo "$eid" >> "$TMP_SEEN"
+    done
+    mv "$TMP_SEEN" "$SEEN_FILE"
+
+    rmdir "$LOCK_DIR" 2>/dev/null || true
+    trap - EXIT
+fi

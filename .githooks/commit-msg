@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# commit-msg — enforce Conventional Commits on the subject line.
+# Spec: https://www.conventionalcommits.org/en/v1.0.0/
+# The subject must be <type>(<optional-scope>)?<optional-!>: <description>.
+# Bypass a single commit with: git commit --no-verify
+set -euo pipefail
+
+MSG_FILE="$1"
+
+# Subject = first line that is neither a git comment (#…) nor blank.
+subject="$(grep -vE '^[[:space:]]*#' "$MSG_FILE" | grep -vE '^[[:space:]]*$' | head -n1 || true)"
+
+# Exempt machine-/rebase-generated subjects that legitimately don't follow the format.
+case "$subject" in
+	"Merge "* | "Revert "* | "fixup! "* | "squash! "* | "amend! "*) exit 0 ;;
+esac
+
+# Empty subject: leave it to git's own emptiness check.
+if [ -z "$subject" ]; then
+	exit 0
+fi
+
+types='feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert'
+
+# type(scope)?!?: description — scope is optional, ! flags a breaking change.
+if printf '%s' "$subject" | grep -qE "^(${types})(\([a-z0-9._/-]+\))?!?: .+"; then
+	exit 0
+fi
+
+cat >&2 <<EOF
+✗ commit-msg: subject does not follow Conventional Commits.
+
+  Got:      ${subject}
+  Expected: <type>(<optional-scope>): <description>
+  Types:    feat fix docs style refactor perf test build ci chore revert
+
+  Examples:
+    feat(queue): add dispatch board
+    fix: guard against an empty note path
+    chore(release): v1.7.0
+    feat(api)!: drop the deprecated v1 endpoint   (! marks a breaking change)
+
+  Spec: https://www.conventionalcommits.org/   ·   bypass once: git commit --no-verify
+EOF
+exit 1

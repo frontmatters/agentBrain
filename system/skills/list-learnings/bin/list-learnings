@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+# learnlist — list captured learnings sorted by date desc
+# See ../SKILL.md for usage. Read-only.
+
+set -uo pipefail
+
+resolve_brain_dir() {
+    if [ -n "${BRAIN_DIR:-}" ] && [ -d "$BRAIN_DIR" ]; then
+        echo "$BRAIN_DIR"; return 0
+    fi
+    # Script-relative first: <root>/system/skills/<name>/bin/<self>. cd -P
+    # resolves symlinked skill dirs, so dev/sandbox checkouts stay self-contained.
+    local root
+    root="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../../.." 2>/dev/null && pwd -P || true)"
+    if [ -n "$root" ] && [ -f "$root/system/rules.md" ]; then
+        echo "$root"; return 0
+    fi
+    if command -v realpath >/dev/null 2>&1; then
+        realpath "$HOME/agentBrain" 2>/dev/null && return 0
+    fi
+    if [ -d "$HOME/agentBrain" ]; then
+        (cd "$HOME/agentBrain" && pwd -P) && return 0
+    fi
+    echo "${0##*/}: cannot resolve the agentBrain root" >&2
+    exit 1
+}
+
+BRAIN_DIR="$(resolve_brain_dir)"
+
+# Source visibility helpers (added by brain-hide-forget)
+source "$BRAIN_DIR/system/lib/visibility.sh" 2>/dev/null || true
+
+LEARNINGS_DIR="$BRAIN_DIR/local/learnings"
+
+FORMAT="table"
+LIMIT=20
+TAG_FILTER=""
+SINCE_FILTER=""
+INCLUDE_HIDDEN=0
+SPACE_SLUG=""
+SPACE_GIVEN=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --json)        FORMAT="json"; shift ;;
+        --table)       FORMAT="table"; shift ;;
+        --recent)      LIMIT="$2"; shift 2 ;;
+        --recent=*)    LIMIT="${1#--recent=}"; shift ;;
+        --tag)         TAG_FILTER="$2"; shift 2 ;;
+        --tag=*)       TAG_FILTER="${1#--tag=}"; shift ;;
+        --since)       SINCE_FILTER="$2"; shift 2 ;;
+        --since=*)     SINCE_FILTER="${1#--since=}"; shift ;;
+        --space)       SPACE_SLUG="$2"; SPACE_GIVEN=1; shift 2 ;;
+        --space=*)     SPACE_SLUG="${1#--space=}"; SPACE_GIVEN=1; shift ;;
+        --include-hidden) INCLUDE_HIDDEN=1; shift ;;
+        -h|--help)
+            cat <<EOF
+learnlist — list captured learnings
+
+Usage:
+  learnlist [--recent N] [--tag NAME] [--since YYYY-MM-DD] [--table|--json]
+  learnlist --include-hidden    # include hidden learnings (marked [H])
+  learnlist --space <slug>      # list a space's own learnings (local/spaces/<slug>/learnings)
+
+Reads local/learnings/*.md and shows date / tags / title, sorted by date desc.
+Default: 20 most recent. Space content is opt-in via --space and never shown otherwise.
+EOF
+            exit 0 ;;
+        *) echo "learnlist: unknown arg '$1'" >&2; exit 1 ;;
+    esac
+done
+
+# Validate --recent
+case "$LIMIT" in
+    ''|*[!0-9]*) echo "learnlist: --recent must be a positive integer" >&2; exit 1 ;;
+esac
+
+# --space: opt-in view of a single space's own learnings. Validate the slug
+# first: an empty slug or one containing '/', '..', a leading dot, or any char
+# outside [a-z0-9._-] could escape local/spaces/<slug>/ (path traversal).
+if [ "$SPACE_GIVEN" = "1" ]; then
+    case "$SPACE_SLUG" in
+        *[!a-z0-9._-]* | "" | .* | *..* )
+            echo "learnlist: invalid --space slug: '$SPACE_SLUG' (allowed: lowercase a-z 0-9 . _ -, no '/' or '..')" >&2
+            exit 2 ;;
+    esac
+    LEARNINGS_DIR="$BRAIN_DIR/local/spaces/$SPACE_SLUG/learnings"
+fi
+
+if [ ! -d "$LEARNINGS_DIR" ]; then
+    echo "learnlist: no learnings directory at $LEARNINGS_DIR" >&2
+    exit 1
+fi
+
+read_fm_field() {
+    local file="$1" field="$2"
+    awk -v f="$field" '
+        BEGIN { in_fm=0 }
+        /^---[[:space:]]*$/ { in_fm = !in_fm; if (in_fm == 0) exit; next }
+        in_fm && $0 ~ "^"f":" {
+            sub("^"f":[[:space:]]*", "")
+            gsub(/^["'"'"']|["'"'"']$/, "")
+            print
+            exit
+        }
+    ' "$file"
+}
+
+read_title() {
+    local file="$1"
+    awk '/^# / { sub(/^# +/, ""); print; exit }' "$file"
+}
+
+# Parse YAML inline list [a, b, c] → space-separated "a b c"
+parse_tag_list() {
+    local raw="$1"
+    raw="${raw#[}"; raw="${raw%]}"
+    echo "$raw" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | tr '\n' ' '
+}
+
+# Collect rows
+rows=()
+shopt -s nullglob
+for file in "$LEARNINGS_DIR"/*.md; do
+    [ -f "$file" ] || continue
+    # Skip extracted/ subfolder is automatic since we only glob top-level
+    type_field="$(read_fm_field "$file" type)"
+    [ "$type_field" = "learning" ] || continue
+
+    # LAST TOUCHED — mtime (precieser dan frontmatter date, auto-update)
+    if date_str=$(date -r "$file" "+%Y-%m-%d %H:%M" 2>/dev/null); then
+        date="$date_str"
+    elif date_str=$(stat -c "%y" "$file" 2>/dev/null | awk '{print $1, substr($2,1,5)}'); then
+        date="$date_str"
+    else
+        date="$(read_fm_field "$file" date)"
+        [ -z "$date" ] && date="0000-00-00 00:00"
+    fi
+    tags_raw="$(read_fm_field "$file" tags)"
+    tags_list="$(parse_tag_list "$tags_raw")"
+
+    # Tag filter
+    if [ -n "$TAG_FILTER" ]; then
+        if ! echo " $tags_list " | grep -q " $TAG_FILTER "; then
+            continue
+        fi
+    fi
+    # Since filter (lexicographic compare works for YYYY-MM-DD)
+    if [ -n "$SINCE_FILTER" ] && [ "$date" \< "$SINCE_FILTER" ]; then
+        continue
+    fi
+
+    # Hide filter (brain-hide-forget)
+    HIDDEN_MARKER=""
+    if is_hidden "$file" 2>/dev/null; then
+        if [ "$INCLUDE_HIDDEN" -eq 0 ]; then
+            continue
+        fi
+        HIDDEN_MARKER="[H] "
+    fi
+
+    title="$(read_title "$file")"
+    [ -z "$title" ] && title="(no title)"
+
+    # Strip the `learning, ` prefix from tags for brevity in display
+    display_tags="$(echo "$tags_list" | sed 's/^learning //; s/  */ /g; s/[[:space:]]*$//')"
+
+    rows+=("$date|$display_tags|$title|$HIDDEN_MARKER")
+done
+shopt -u nullglob
+
+if [ ${#rows[@]} -eq 0 ]; then
+    if [ "$FORMAT" = "json" ]; then
+        echo "[]"
+    else
+        echo "No learnings found matching filters."
+    fi
+    exit 0
+fi
+
+# Sort descending by date
+sorted=()
+while IFS= read -r _row; do sorted+=("$_row"); done < <(printf '%s\n' "${rows[@]}" | sort -r)
+
+# Apply limit
+if [ ${#sorted[@]} -gt "$LIMIT" ]; then
+    sorted=("${sorted[@]:0:$LIMIT}")
+fi
+
+if [ "$FORMAT" = "json" ]; then
+    printf '['
+    first=1
+    for row in "${sorted[@]}"; do
+        IFS='|' read -r d t ti m <<< "$row"
+        [ $first -eq 0 ] && printf ','
+        first=0
+        printf '{"date":"%s","tags":"%s","title":"%s"}' \
+            "${d//\"/\\\"}" "${t//\"/\\\"}" "${ti//\"/\\\"}"
+    done
+    printf ']\n'
+else
+    printf '%-17s  %-35s  %s\n' "DATE" "TAGS" "TITLE"
+    for row in "${sorted[@]}"; do
+        IFS='|' read -r d t ti m <<< "$row"
+        # Truncate tags to fit column (32 chars)
+        if [ "${#t}" -gt 32 ]; then
+            t="$(printf '%s' "$t" | cut -c1-32)…"
+        fi
+        # Truncate title to 65 chars on word boundary
+        if [ "${#ti}" -gt 65 ]; then
+            short="${ti:0:65}"
+            short="${short% *}…"
+            ti="$short"
+        fi
+        printf '%-17s  %-35s  %s\n' "$d" "$t" "${m}$ti"
+    done
+fi
