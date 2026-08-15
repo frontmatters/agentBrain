@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# skills — thin orchestrator CLI for the agentBrain skill lifecycle.
+#
+# Deterministic mechanics only: list / sources / audit / sync. Anything that needs
+# an agent's judgement (discover, deep-audit, scaffold a repo addon, promote) is
+# DELEGATED — this CLI just prints the exact next command. That keeps it thin: it
+# reuses addons.sh, check-skills-index.sh, setup-skills.sh, skill-finder, promote
+# instead of re-implementing them. See SKILL.md for the routing table.
+set -euo pipefail
+
+# local/ is a symlink to the vault, so walking up from this file can't reach the
+# checkout that holds system/ + scripts/. Anchor on the stable brain alias instead.
+BRAIN="${AGENTBRAIN_HOME:-$HOME/agentBrain}"
+
+die() { printf 'skills: %s\n' "$*" >&2; exit 1; }
+[ -d "$BRAIN/system/skills" ] || die "brain root not found at $BRAIN (set AGENTBRAIN_HOME)"
+
+bold() { printf '\033[1m%s\033[0m\n' "$*"; }
+
+# Pull a short, single-line description out of a SKILL.md (inline or YAML-folded).
+skill_desc() {
+	awk '
+		/^description:[[:space:]]*[|>]/ { folded=1; next }              # >- or |  -> desc on next lines
+		!folded && /^description:[[:space:]]*[^[:space:]]/ {           # inline desc
+			sub(/^description:[[:space:]]*/, ""); print; exit
+		}
+		folded && /^[[:space:]]+[^[:space:]]/ {                        # first folded line
+			sub(/^[[:space:]]+/, ""); print; exit
+		}
+	' "$1" 2>/dev/null | cut -c1-72
+}
+
+# Print "  /name   <scope>   description" for every SKILL.md under a tree.
+list_tree() {
+	local root="$1" scope="$2" d name desc
+	for d in "$root"/*/; do
+		[ -f "${d}SKILL.md" ] || continue
+		name="$(basename "$d")"
+		[ "$name" = "_shared" ] && continue
+		desc="$(skill_desc "${d}SKILL.md")"
+		printf '  /%-22s %-7s %s\n' "$name" "$scope" "$desc"
+	done
+}
+
+cmd_list() {
+	bold "system skills — canonical framework ($BRAIN/system/skills)"
+	list_tree "$BRAIN/system/skills" system
+	echo
+	bold "local skills — private / experimental ($BRAIN/local/skills)"
+	list_tree "$BRAIN/local/skills" local
+	echo
+	bold "addon skills — enabled skill-providing addons"
+	local a id shown=0
+	for a in "$BRAIN"/system/addons/*/; do
+		[ -f "${a}SKILL.md" ] || continue
+		id="$(basename "$a")"
+		[ -f "$BRAIN/local/addons/$id/enabled" ] || continue
+		printf '  /%-22s %-7s %s\n' "$id" "addon" "$(skill_desc "${a}SKILL.md")"
+		shown=1
+	done
+	[ "$shown" = 1 ] || echo "  (none enabled)"
+}
+
+cmd_sources() {
+	bold "skill-repo & skill-providing addons"
+	echo "Skill repositories are included as addons (e.g. anthropic-skills,"
+	echo "trailofbits-skills — registry pointers). Full addon list + enabled state:"
+	echo
+	bash "$BRAIN/scripts/addons.sh" status 2>/dev/null \
+		|| echo "  (addons.sh status unavailable)"
+	echo
+	echo "Enable/disable:  bash scripts/addons.sh {enable,disable} <id>"
+	echo "Add a new repo:  bash bin/skills add-repo <url>"
+}
+
+# Layered static audit that folds in the skill-auditor methodology: it checks the
+# INSTRUCTIONS (prompt-injection) and PERMISSIONS — the two things a plain code grep
+# (and skill-finder's security_audit.py) miss for skills — plus PRECISE code patterns
+# that don't false-positive on `function(){}` or `regex.exec()`. Still heuristic; for
+# a forking deep audit use /skill-auditor.
+cmd_audit() {
+	local target="${1:-}"
+	[ -n "$target" ] || die "usage: skills audit <skill-dir | SKILL.md | path>"
+	[ -e "$target" ] || die "no such path: $target"
+	local root="$target"; [ -f "$target" ] && root="$(dirname "$target")"
+	bold "audit: $root"
+	echo "(heuristic; deep forking audit = /skill-auditor)"
+	echo
+	local flags=0
+	local CODE='--include=*.py --include=*.js --include=*.ts --include=*.sh --include=*.rb'
+	# grep, minus the auditor's own pattern-definition lines (so it never flags itself).
+	_hits() { grep -rInE "$@" "$root" 2>/dev/null | grep -vE 'audit-rule-line|_hits |_report ' | head -6; }
+	_report() {  # <label> <hits>
+		if [ -n "$2" ]; then
+			printf '  \033[33mFLAG\033[0m %s\n' "$1"; printf '%s\n' "$2" | sed 's/^/       /'; flags=$((flags + 1))
+		else printf '  \033[32mok\033[0m   %s\n' "$1"; fi
+	}
+	# 1. permissions — wildcard tool grants in the SKILL.md frontmatter          # audit-rule-line
+	_report "permissions: Bash(*) / Write wildcard" "$(_hits --include=*.md 'Bash\(\*\)|allowed-tools:[^]]*(\*|Write)')"
+	# 2. instructions — prompt-injection / directive hijack (skills are mostly prose)
+	_report "instructions: prompt-injection" "$(_hits --include=*.md 'ignore (previous|prior|above)|system prompt|disregard (previous|all|prior)|exfiltrat|~/\.ssh|disable (safety|security)|reveal.*(prompt|secret|key|token)')"
+	# 3. code — dynamic execution (precise: real eval/Function/subprocess, not function(){})
+	_report "code: dynamic execution" "$(_hits $CODE 'new Function\(|(^|[^.a-zA-Z_])eval\(|\bos\.system\b|subprocess\.|child[_]process|execSync|(^|[^a-z])Popen\(')"
+	# 4. code — outbound network
+	_report "code: network calls" "$(_hits $CODE 'requests\.(get|post|put)|urllib\.request|fetch\(.?.?https?|curl .*http|wget .*http|socket\.socket')"
+	# 5. code — pipe download straight into an interpreter
+	_report "code: download|shell" "$(_hits --include=*.sh --include=*.py --include=*.js 'curl .*\| *(ba)?sh|wget .*\| *(ba)?sh')"
+	# 6. exfil — env/secrets/home reads-and-writes
+	_report "exfil: env / secrets / home" "$(_hits $CODE 'os\.environ|getenv|process\.env|expanduser|Path\.home|id_rsa|\.aws/|/etc/passwd')"
+	# 7. payloads — encoded blobs
+	_report "payloads: base64 / hex" "$(_hits $CODE 'base64|atob|btoa|fromCharCode')"
+	# 8. hidden files (structural)
+	_report "hidden files" "$(find "$root" -name '.*' -type f ! -name '.gitignore' 2>/dev/null | head -4)"
+	# 9. supply chain — bundled manifests (note, not a flag)
+	local deps; deps="$(find "$root" \( -name requirements.txt -o -name package.json -o -name setup.py -o -name pyproject.toml \) 2>/dev/null | head)"
+	[ -n "$deps" ] && printf '  \033[36mnote\033[0m review bundled deps:\n%s\n' "$(printf '%s\n' "$deps" | sed 's/^/       /')"
+	echo
+	if [ "$flags" -eq 0 ]; then bold "verdict: clean on all checks (heuristic)"
+	else bold "verdict: $flags category(ies) flagged — review above, then /skill-auditor"; fi
+}
+
+cmd_sync() {
+	bold "1/2 · skills.md index parity"
+	bash "$BRAIN/scripts/check-skills-index.sh" || true
+	echo
+	bold "2/2 · re-wire enabled skills + addons into the agent skill dirs"
+	if [ -x "$BRAIN/scripts/setup-skills.sh" ] || [ -f "$BRAIN/scripts/setup-skills.sh" ]; then
+		bash "$BRAIN/scripts/setup-skills.sh"
+	else
+		echo "  setup-skills.sh not found — skip wiring"
+	fi
+}
+
+cmd_add_repo() {
+	local url="${1:-<repo-url>}"
+	bold "add a skill repository: $url"
+	cat <<EOF
+A skill repo is included as an ADDON (registry pointer). Run these in order — the
+first two are agent-skills, so invoke them from the agent, not this CLI:
+
+  1. /skill-finder $url        discover + security-audit (SAFE / REVIEW / DANGEROUS)
+  2. /addon-create             scaffold the pointer addon (manifest + README)
+  3. bash scripts/addons.sh enable <id>
+  4. bash bin/skills sync      wire into agent dirs + verify the index
+
+Vendor into local/skills/ instead of referencing only if you want the skills
+versioned with your vault (then step 2 is a copy, not a pointer).
+EOF
+}
+
+cmd_promote() {
+	bold "promote / demote a skill"
+	echo "Use the /promote skill (handles the local/ ↔ system/ mirror move + index):"
+	echo "  /promote            then follow its prompts, or"
+	echo "  bash $BRAIN/system/skills/promote/bin/promote skills <name>"
+	echo "  bash $BRAIN/system/skills/promote/bin/demote  skills <name>"
+}
+
+usage() {
+	cat <<'EOF'
+skills — thin orchestrator for the agentBrain skill lifecycle
+
+  skills list            every skill: scope (system/local/addon) + one-line desc
+  skills sources         skill-repo / skill-providing addons + enabled state
+  skills audit <path>    layered audit: instructions + permissions + code patterns
+  skills sync            check skills.md parity + re-wire enabled skills/addons
+  skills add-repo <url>  print the orchestrated "add a skill repository" flow
+  skills promote         how to promote/demote a skill (delegates to /promote)
+  skills help
+
+Deep discovery/audit/scaffold are delegated to /skill-finder, /skill-auditor,
+/addon-create, /promote — this CLI only does the deterministic parts.
+EOF
+}
+
+case "${1:-help}" in
+	list)              cmd_list ;;
+	sources)           cmd_sources ;;
+	audit)             shift; cmd_audit "${1:-}" ;;
+	sync)              cmd_sync ;;
+	add-repo|add)      shift; cmd_add_repo "${1:-}" ;;
+	promote|demote)    cmd_promote ;;
+	help|-h|--help)    usage ;;
+	*)                 die "unknown command: $1 (try: skills help)" ;;
+esac

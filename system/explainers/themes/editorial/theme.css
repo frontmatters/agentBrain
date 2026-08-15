@@ -1,0 +1,44 @@
+/* editorial — longread-magazine (default). Een artikel uit je eigen magazine. */
+[data-theme="editorial"]{
+  --bg:oklch(0.987 0.006 80); --ink:oklch(0.26 0.014 70); --soft:oklch(0.46 0.012 70);
+  --faint:oklch(0.58 0.010 70); --rule:oklch(0.87 0.012 80);
+  --accent:oklch(0.48 0.142 32); --wash:oklch(0.96 0.022 40);
+  --serif:'Newsreader',Georgia,serif; --sans:'Inter',-apple-system,sans-serif;
+}
+[data-theme="editorial"] body{background:var(--bg);color:var(--ink);
+  font-family:var(--serif);font-size:19px;line-height:1.62}
+[data-theme="editorial"] .kicker{font-family:var(--sans);font-size:12px;font-weight:600;
+  letter-spacing:.22em;text-transform:uppercase;color:var(--accent);margin:0 0 16px;
+  padding-bottom:12px;border-bottom:1.5px solid var(--ink)}
+[data-theme="editorial"] h1{font-family:var(--serif);font-weight:500;
+  font-size:clamp(38px,6vw,62px);line-height:1.03;letter-spacing:-0.015em;margin:0;max-width:17ch}
+[data-theme="editorial"] .lead{font-size:23px;line-height:1.45;color:var(--soft);
+  max-width:54ch;margin:20px 0 0}
+[data-theme="editorial"] .lead::first-letter{float:left;font-family:var(--serif);font-weight:500;
+  color:var(--accent);font-size:3.3em;line-height:0.72;margin:0.02em 0.1em 0 0}
+[data-theme="editorial"] h2{font-family:var(--serif);font-weight:500;font-size:30px;
+  line-height:1.12;margin:0 0 14px;letter-spacing:-0.01em}
+[data-theme="editorial"] h3{font-family:var(--serif);font-weight:600;font-size:20px;margin:0 0 6px}
+[data-theme="editorial"] p{margin:0 0 14px;max-width:68ch}
+[data-theme="editorial"] .layers .layer{border:1px solid var(--rule);background:var(--wash);
+  border-radius:2px;padding:16px 18px}
+[data-theme="editorial"] .cards .card{border-top:1.5px solid var(--ink);padding-top:12px}
+[data-theme="editorial"] .pull{margin:34px 0;padding:24px 0;border-top:1.5px solid var(--ink);
+  border-bottom:1.5px solid var(--ink);font-style:italic;font-size:29px;line-height:1.28;
+  text-align:center;letter-spacing:-0.01em}
+[data-theme="editorial"] .note{font-family:var(--sans);font-size:14.5px;line-height:1.5;
+  color:var(--soft);border-left:0;border-top:2px solid var(--ink);padding-top:10px;margin-top:18px}
+[data-theme="editorial"] .note b{display:block;color:var(--ink);font-size:12px;
+  letter-spacing:.04em;margin-bottom:4px}
+[data-theme="editorial"] code{font-family:ui-monospace,Menlo,monospace;font-size:.84em;
+  background:color-mix(in oklch,var(--ink) 7%,transparent);padding:1px 5px;border-radius:3px}
+[data-theme="editorial"] footer{margin-top:50px;padding-top:14px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:12px;letter-spacing:.03em;color:var(--faint)}
+[data-theme="editorial"] table{font-family:var(--sans);font-size:15px;line-height:1.4}
+[data-theme="editorial"] th{border-bottom:1.5px solid var(--ink);font-size:12px;
+  letter-spacing:.04em;text-transform:uppercase;color:var(--soft)}
+[data-theme="editorial"] tbody tr:last-child td{border-bottom:0}
+[data-theme="editorial"] pre{background:var(--wash);border:1px solid var(--rule)}
+[data-theme="editorial"] pre code{background:none;padding:0;color:var(--ink);font-size:13px}
+[data-theme="editorial"] blockquote{font-family:var(--sans);font-size:15px;font-style:italic;
+  border-top:1px solid var(--rule);padding:12px 0 0;color:var(--soft)}

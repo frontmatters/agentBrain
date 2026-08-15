@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# brain-ping — emit a system.bus.ping and wait for matching pong.
+# Spec ref: spec-ping.
+
+set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+brain-ping — emit ping and wait for matching pong
+
+Required:
+  --agent=<name>      target agent to ping
+
+Optional:
+  --hosts=<h1,h2>     restrict ping target to specific hosts
+  --timeout=<sec>     wait deadline (default: 10)
+  --interval=<ms>     poll interval in ms (default: 200)
+  --from=<agent>      who am I (default: $BRAIN_AGENT or "claude")
+  --quiet             only output PONG line on success
+  --help, -h          show this help
+
+Env:
+  AGENTBRAIN_DIR      brain checkout root
+  BRAIN_AGENT         default --from value
+
+Exit codes:
+  0  pong received with matching echo
+  1  timeout (no pong before deadline)
+  2  echo mismatch (payload integrity fail)
+  3  schema-invalid pong (missing required fields)
+EOF
+}
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$SCRIPT_DIR/../../../.." && pwd)}"
+export AGENTBRAIN_DIR
+
+TARGET_AGENT=""
+TARGET_HOSTS=""
+TIMEOUT_SEC="10"
+INTERVAL_MS="200"
+FROM_AGENT="${BRAIN_AGENT:-claude}"
+QUIET="false"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --agent=*)    TARGET_AGENT="${1#*=}" ;;
+        --hosts=*)    TARGET_HOSTS="${1#*=}" ;;
+        --timeout=*)  TIMEOUT_SEC="${1#*=}" ;;
+        --interval=*) INTERVAL_MS="${1#*=}" ;;
+        --from=*)     FROM_AGENT="${1#*=}" ;;
+        --quiet)      QUIET="true" ;;
+        --help|-h)    usage; exit 0 ;;
+        *) echo "brain-ping: unknown arg: $1" >&2; exit 1 ;;
+    esac
+    shift
+done
+
+[ -z "$TARGET_AGENT" ] && { echo "brain-ping: --agent required" >&2; exit 1; }
+
+# Echo token + sent_at
+ECHO_TOKEN="$(openssl rand -hex 16)"
+SENT_AT="$(python3 -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ'))")"
+SENT_EPOCH="$(python3 -c "import time; print(time.time())")"
+
+PAYLOAD="$(jq -nc --arg e "$ECHO_TOKEN" --arg s "$SENT_AT" '{echo: $e, sent_at: $s}')"
+
+# Emit ping
+EMIT_ARGS=(--type=system.bus.ping --to="$TARGET_AGENT" --from="$FROM_AGENT" --payload="$PAYLOAD")
+[ -n "$TARGET_HOSTS" ] && EMIT_ARGS+=(--to-hosts="$TARGET_HOSTS")
+
+PING_ID="$("$SCRIPT_DIR/brain-emit" "${EMIT_ARGS[@]}")"
+
+[ "$QUIET" = "false" ] && echo "brain-ping: sent event_id=$PING_ID echo=$ECHO_TOKEN to=$TARGET_AGENT (timeout=${TIMEOUT_SEC}s)" >&2
+
+INTERVAL_SEC="$(python3 -c "print(${INTERVAL_MS}/1000.0)")"
+DEADLINE_EPOCH="$(python3 -c "print($SENT_EPOCH + $TIMEOUT_SEC)")"
+
+while :; do
+    NOW="$(python3 -c "import time; print(time.time())")"
+    over="$(python3 -c "print('1' if $NOW >= $DEADLINE_EPOCH else '0')")"
+    [ "$over" = "1" ] && break
+
+    # Poll for pongs addressed to us, narrow window for speed
+    pongs="$("$SCRIPT_DIR/brain-poll" --agent="$FROM_AGENT" --type='system.bus.pong' --raw --lookback=5m --all 2>/dev/null || true)"
+
+    if [ -n "$pongs" ]; then
+        match="$(echo "$pongs" | jq -c --arg pid "$PING_ID" 'select(.in_reply_to == $pid)' | head -1)"
+        if [ -n "$match" ]; then
+            # Validate schema basics
+            received_echo="$(echo "$match" | jq -r '.payload.echo // empty')"
+            received_at="$(echo "$match" | jq -r '.payload.received_at // empty')"
+            responded_at="$(echo "$match" | jq -r '.payload.responded_at // empty')"
+            pong_agent="$(echo "$match" | jq -r '.from.agent // empty')"
+            pong_host="$(echo "$match" | jq -r '.from.host // empty')"
+
+            if [ -z "$received_echo" ] || [ -z "$received_at" ] || [ -z "$responded_at" ] || [ -z "$pong_agent" ]; then
+                echo "brain-ping: schema-invalid pong (missing required field)" >&2
+                exit 3
+            fi
+
+            if [ "$received_echo" != "$ECHO_TOKEN" ]; then
+                echo "brain-ping: echo mismatch (sent=$ECHO_TOKEN got=$received_echo)" >&2
+                exit 2
+            fi
+
+            # Round-trip time
+            RTT="$(python3 -c "import time; print(round(time.time() - $SENT_EPOCH, 3))")"
+            echo "PONG from $pong_agent@$pong_host rtt=${RTT}s echo=$received_echo"
+            exit 0
+        fi
+    fi
+
+    sleep "$INTERVAL_SEC"
+done
+
+echo "brain-ping: timeout — no pong from $TARGET_AGENT within ${TIMEOUT_SEC}s (ping event_id=$PING_ID)" >&2
+exit 1

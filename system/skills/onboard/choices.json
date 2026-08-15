@@ -1,0 +1,443 @@
+{
+  "$comment": "Canonical fixed-choice sets for /onboard intake (G5). Every option is {value, desc} — the desc IS shown to the user (self-explaining options). The language question is asked in English (askedIn) with each desc in that option's own language; artifactLanguage replaces the old unclear 'Mixed'. locales.supported must equal the scripts/lib/_strings.sh normalize case (G6).",
+  "fields": {
+    "language": {
+      "type": "choice",
+      "file": "communication.md",
+      "askedIn": "en",
+      "derivesLocale": true,
+      "options": [
+        {
+          "value": "English",
+          "desc": "conversation + UI scripts in English"
+        },
+        {
+          "value": "Nederlands",
+          "desc": "gesprek + UI-scripts in het Nederlands"
+        },
+        {
+          "value": "Deutsch",
+          "desc": "Unterhaltung auf Deutsch (UI-Skripte → en)"
+        },
+        {
+          "value": "Français",
+          "desc": "conversation en français (scripts UI → en)"
+        },
+        {
+          "value": "Español",
+          "desc": "conversación en español (scripts UI → en)"
+        },
+        {
+          "value": "中文",
+          "desc": "对话使用中文（界面脚本 → en）"
+        },
+        {
+          "value": "日本語",
+          "desc": "日本語で会話（UIスクリプト → en）"
+        }
+      ]
+    },
+    "artifactLanguage": {
+      "type": "choice",
+      "file": "communication.md",
+      "condition": {
+        "field": "language",
+        "not": "English"
+      },
+      "options": [
+        {
+          "value": "english-artifacts",
+          "desc": "chat in your language; code, commits & docs in English (recommended — common in most ecosystems)"
+        },
+        {
+          "value": "same-language",
+          "desc": "EVERYTHING in your language — also commit messages, code comments and docs"
+        }
+      ]
+    },
+    "verbosity": {
+      "type": "choice",
+      "file": "communication.md",
+      "options": [
+        {
+          "value": "concise",
+          "desc": "short answers, minimal explanation"
+        },
+        {
+          "value": "detailed",
+          "desc": "thorough explanations"
+        },
+        {
+          "value": "depends on topic",
+          "desc": "the agent judges per topic"
+        }
+      ]
+    },
+    "askFirst": {
+      "type": "choice",
+      "file": "communication.md",
+      "options": [
+        {
+          "value": "ask before acting",
+          "desc": "confirm every non-trivial action"
+        },
+        {
+          "value": "just do trivial things",
+          "desc": "small things directly; big things are asked"
+        }
+      ]
+    },
+    "autonomy": {
+      "type": "choice",
+      "file": "workflow.md",
+      "options": [
+        {
+          "value": "ask often",
+          "desc": "check in frequently before acting"
+        },
+        {
+          "value": "only for blockers",
+          "desc": "keep going, ask only when truly stuck"
+        },
+        {
+          "value": "full autonomy",
+          "desc": "run the whole task without interrupting"
+        }
+      ]
+    },
+    "design": {
+      "type": "choice",
+      "file": "design-philosophy.md",
+      "options": [
+        {
+          "value": "dark",
+          "desc": "dark as default for generated UI"
+        },
+        {
+          "value": "light",
+          "desc": "light as default"
+        },
+        {
+          "value": "both",
+          "desc": "follow the system / offer a toggle"
+        }
+      ]
+    },
+    "decision": {
+      "type": "choice",
+      "file": "decision-making.md",
+      "options": [
+        {
+          "value": "pragmatic",
+          "desc": "simplest thing that works wins"
+        },
+        {
+          "value": "thorough",
+          "desc": "weigh options carefully first"
+        },
+        {
+          "value": "move fast",
+          "desc": "ship, then iterate"
+        }
+      ]
+    },
+    "channel": {
+      "type": "choice",
+      "options": [
+        {
+          "value": "stable",
+          "desc": "finished releases only — the safe choice",
+          "apply": "ask"
+        },
+        {
+          "value": "prerelease",
+          "desc": "new features earlier, occasionally rough",
+          "apply": "ask"
+        },
+        {
+          "value": "edge",
+          "desc": "every change immediately — for working on agentBrain itself",
+          "apply": "notify"
+        }
+      ]
+    },
+    "updateMode": {
+      "type": "choice",
+      "options": [
+        {
+          "value": "ask",
+          "desc": "prompt when an update is available"
+        },
+        {
+          "value": "notify",
+          "desc": "only mention it at session start"
+        },
+        {
+          "value": "auto",
+          "desc": "update automatically behind the doctor gate (rolls back on failure)"
+        },
+        {
+          "value": "off",
+          "desc": "manual only"
+        }
+      ]
+    },
+    "scope": {
+      "type": "choice",
+      "options": [
+        {
+          "value": "personal only",
+          "desc": "individual use — most users"
+        },
+        {
+          "value": "personal + organization",
+          "desc": "also org-wide rules under organization/"
+        },
+        {
+          "value": "personal + organization + team",
+          "desc": "plus team agreements under team/"
+        }
+      ]
+    },
+    "os": {
+      "type": "choice",
+      "file": "tech-stack.md",
+      "detect": "os",
+      "options": [
+        {
+          "value": "macOS",
+          "desc": "Apple Silicon or Intel Mac"
+        },
+        {
+          "value": "Linux",
+          "desc": "desktop or server distro"
+        },
+        {
+          "value": "Windows (WSL)",
+          "desc": "Windows with WSL for dev work"
+        },
+        {
+          "value": "Raspberry Pi",
+          "desc": "Pi or other ARM single-board"
+        },
+        {
+          "value": "other",
+          "custom": true,
+          "desc": "type your own"
+        }
+      ]
+    },
+    "editor": {
+      "type": "multi",
+      "file": "tech-stack.md",
+      "detect": "editor",
+      "options": [
+        {
+          "value": "VS Code",
+          "desc": "or a VS Code fork"
+        },
+        {
+          "value": "Cursor",
+          "desc": "AI-first VS Code fork"
+        },
+        {
+          "value": "JetBrains",
+          "desc": "IntelliJ, WebStorm, PyCharm, …"
+        },
+        {
+          "value": "Neovim / Vim",
+          "desc": "terminal editing"
+        },
+        {
+          "value": "Zed",
+          "desc": "fast collaborative editor"
+        },
+        {
+          "value": "other",
+          "custom": true,
+          "desc": "type your own"
+        }
+      ]
+    },
+    "languages": {
+      "type": "multi",
+      "file": "tech-stack.md",
+      "options": [
+        {
+          "value": "TypeScript",
+          "desc": "typed JS — web, Node, tooling"
+        },
+        {
+          "value": "JavaScript",
+          "desc": "plain JS"
+        },
+        {
+          "value": "Python",
+          "desc": "scripting, data, backend"
+        },
+        {
+          "value": "Node.js",
+          "desc": "JS runtime for backend/tooling"
+        },
+        {
+          "value": "Bun",
+          "desc": "fast all-in-one JS runtime"
+        },
+        {
+          "value": "Lit",
+          "desc": "web components, framework-agnostic"
+        },
+        {
+          "value": "React",
+          "desc": "component UI library"
+        },
+        {
+          "value": "Vue",
+          "desc": "progressive UI framework"
+        },
+        {
+          "value": "Svelte",
+          "desc": "compiled UI framework"
+        },
+        {
+          "value": "Rust",
+          "desc": "systems, Tauri, CLI tools"
+        },
+        {
+          "value": "Go",
+          "desc": "services and CLI tools"
+        },
+        {
+          "value": "Swift",
+          "desc": "Apple platforms"
+        },
+        {
+          "value": "other",
+          "custom": true,
+          "desc": "type your own (comma-separate multiple)"
+        }
+      ]
+    },
+    "hosting": {
+      "type": "multi",
+      "file": "tech-stack.md",
+      "options": [
+        {
+          "value": "GitHub",
+          "desc": "github.com"
+        },
+        {
+          "value": "GitLab",
+          "desc": "gitlab.com or self-hosted"
+        },
+        {
+          "value": "Gitea",
+          "desc": "self-hosted, lightweight"
+        },
+        {
+          "value": "Bitbucket",
+          "desc": "Atlassian"
+        },
+        {
+          "value": "Codeberg",
+          "desc": "non-profit Gitea instance"
+        },
+        {
+          "value": "Azure DevOps",
+          "desc": "dev.azure.com"
+        },
+        {
+          "value": "other",
+          "custom": true,
+          "desc": "type your own"
+        }
+      ]
+    }
+  },
+  "locales": {
+    "supported": [
+      "en",
+      "nl"
+    ],
+    "note": "Single source: scripts/lib/_strings.sh normalize case. An unsupported code -> notice + fallback en (never a blocking question); /add-locale adds it later."
+  },
+  "profiles": {
+    "question": "What describes you best?",
+    "note": "Preselects tech answers; everything stays editable in the review step. 'no profile' walks the full question flow.",
+    "options": [
+      {
+        "value": "frontend / web",
+        "desc": "TypeScript, Lit, React · GitHub",
+        "preselect": {
+          "languages": [
+            "TypeScript",
+            "Lit",
+            "React"
+          ],
+          "hosting": [
+            "GitHub"
+          ]
+        }
+      },
+      {
+        "value": "full-stack",
+        "desc": "TypeScript, Node.js, Python · GitHub",
+        "preselect": {
+          "languages": [
+            "TypeScript",
+            "Node.js",
+            "Python"
+          ],
+          "hosting": [
+            "GitHub"
+          ]
+        }
+      },
+      {
+        "value": "systems / CLI",
+        "desc": "Rust, Go · Neovim",
+        "preselect": {
+          "languages": [
+            "Rust",
+            "Go"
+          ],
+          "editor": [
+            "Neovim / Vim"
+          ],
+          "hosting": [
+            "GitHub"
+          ]
+        }
+      },
+      {
+        "value": "data / AI",
+        "desc": "Python · GitHub",
+        "preselect": {
+          "languages": [
+            "Python"
+          ],
+          "hosting": [
+            "GitHub"
+          ]
+        }
+      },
+      {
+        "value": "maker / Raspberry Pi",
+        "desc": "Python · Raspberry Pi",
+        "preselect": {
+          "languages": [
+            "Python"
+          ],
+          "os": [
+            "Raspberry Pi"
+          ]
+        }
+      },
+      {
+        "value": "no profile",
+        "desc": "walk every question",
+        "full": true
+      }
+    ]
+  }
+}
