@@ -1,0 +1,1 @@
+tests/test-spaces-seal.sh

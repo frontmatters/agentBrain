@@ -1,0 +1,119 @@
+{
+  "spec": "ab-question-api",
+  "version": 1,
+  "description": "Contract for the agentBrain interactive prompt layer (prompt-helper.sh). All first-party installer and onboarding questions must be expressible in this spec. A question = type + title + options + orientation (default/required) + view style.",
+  "implementation": "scripts/installer/prompt-helper.sh",
+  "functions": {
+    "select": "ab_prompt_select \u2014 single-choice enum",
+    "multi": "ab_prompt_multi \u2014 checkbox list, one or more choices",
+    "confirm": "ab_prompt_confirm \u2014 yes/no question",
+    "text": "ab_prompt_text \u2014 free-form input (planned, not yet implemented)"
+  },
+  "types": {
+    "select": {
+      "flags": [
+        "--default N (1-based orientation row)",
+        "--required (Esc must not cancel)"
+      ],
+      "args": [
+        "title",
+        "row..."
+      ],
+      "result": "REPLY = zero-based chosen index, exit 0",
+      "exit_codes": {
+        "0": "chosen",
+        "1": "cancelled (Esc/Ctrl-C/EOF)",
+        "2": "no rows or no TTY"
+      }
+    },
+    "multi": {
+      "flags": [
+        "--default \"1 3\" (1-based preselected rows)",
+        "--required"
+      ],
+      "args": [
+        "title",
+        "row..."
+      ],
+      "result": "REPLY = space-separated zero-based indices, exit 0",
+      "exit_codes": {
+        "0": "applied",
+        "1": "cancelled",
+        "2": "no rows or no TTY"
+      }
+    },
+    "confirm": {
+      "flags": [
+        "--default yes|no (orientation; fallback prompt shows [Y/n] or [y/N])",
+        "--layout vertical|inline (per question; global default via AB_PROMPT_LAYOUT, default vertical)"
+      ],
+      "args": [
+        "title"
+      ],
+      "result": "exit 0 = yes, exit 1 = no/cancel",
+      "exit_codes": {
+        "0": "yes",
+        "1": "no or cancelled"
+      }
+    },
+    "text": {
+      "flags": [
+        "--default \"value\"",
+        "--required"
+      ],
+      "args": [
+        "title"
+      ],
+      "result": "REPLY = entered line",
+      "status": "planned"
+    }
+  },
+  "view_styles": {
+    "numbered": "\u25b8 1) keep \u2014 present and fine \u00b7 default row suffixed '(default)'",
+    "checkbox": "\u25b8 1) [x] addon \u00b7 default/preselection via --default indices",
+    "plain": "\u25b8 keep \u2014 present and fine \u00b7 no numbers, narrow terminals",
+    "inline": "\u25b8 1) Yes    2) No \u00b7 confirm only",
+    "vertical": "\u25b8 1) Yes / \u25b8 2) No as numbered rows (confirm default)"
+  },
+  "keys": {
+    "UP": "ESC[A or ESCOA",
+    "DOWN": "ESC[B or ESCOB",
+    "RIGHT": "ESC[C or ESCOC",
+    "LEFT": "ESC[D or ESCOD",
+    "HOME": "ESC[H or ESCOH",
+    "END": "ESC[F or ESCOF",
+    "SPACE": "toggle row (multi)",
+    "1-9": "direct select (select) / direct toggle (multi)",
+    "y/n": "direct answer (confirm)",
+    "ENTER": "confirm/apply",
+    "ESC": "cancel (stays in the question when --required)"
+  },
+  "guarantees": [
+    "no external dependencies: bash 3.2+ and a tty only",
+    "first key read blocks; a timeout can never be interpreted as Enter",
+    "menu block redraws strictly in place with a fixed line count",
+    "terminal state always restored, also on Ctrl-C",
+    "safe under set -euo pipefail",
+    "a lone ESC followed quickly by another key never swallows that key (replay buffer)",
+    "known limitation: a lone ESC immediately followed (<1s) by arrow keys may misparse; the keys are replayed safely and never select the wrong row \u2014 press Esc and arrows separately"
+  ],
+  "env": {
+    "AB_PROMPT_TTY": "tty device (default /dev/tty)",
+    "AB_PROMPT_DEBUG": "when set: append key/decision trace to this file",
+    "AB_PROMPT_HELPER_STANDALONE": "set to 1 to run the helper as a CLI (select|multi|confirm); required because the helper is embedded into standalone installers",
+    "AB_PROMPT_LAYOUT": "global question layout: vertical (default) or inline"
+  },
+  "consumers": [
+    "scripts/installer/install.sh (embedded copy)",
+    "scripts/tools/install-agent-clis.sh",
+    "scripts/tools/install-prerequisites.sh",
+    "scripts/configure-pi.sh",
+    "scripts/onboard-wizard.sh (via standalone CLI)",
+    "system/skills/onboard/choices.json (declarative question bank)"
+  ],
+  "orientation_policy": {
+    "configure-pi:install-pi": "yes (recommended, part of installer step 3)",
+    "configure-pi:install-opensrc": "yes",
+    "prereq:fast-runtime-ollama": "no (optional, large download)"
+  }
+}

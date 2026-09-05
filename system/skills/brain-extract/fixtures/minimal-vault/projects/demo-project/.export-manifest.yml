@@ -1,0 +1,16 @@
+version: 1
+project: demo-project
+include:
+  - projects/demo-project/index.md
+  - learnings/Demo-Learning.md
+exclude: []
+transformations:
+  strip_frontmatter:
+    enabled: false
+    lossy: false
+  resolve_wiki_links:
+    enabled: false
+    lossy: false
+  redact_identifiers:
+    enabled: false
+    lossy: true
