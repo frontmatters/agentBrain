@@ -1,0 +1,1 @@
+sync/sync-vault.sh

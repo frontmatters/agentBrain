@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# brain-ops — the ITSM-inspired ops-records layer (block 2). Query and scaffold
+# incident / problem / known-error / postmortem notes, CI-anchored via the block-1.5
+# stable ci-id and joined to the CMDB through `brain-cmdb resolve`. Read-only except
+# `new` (scaffold a record) and `promote` (anonymized space->personal lift, deferred).
+# Mirrors brain-cmdb: same space-context resolution, same frontmatter readers, self-
+# contained bash+awk. Design record: 2026-08-16-ops-records-design, in the maintainer's vault.
+set -euo pipefail
+
+LOCAL_DIR="${AGENTBRAIN_LOCAL_DIR:-${AGENTBRAIN_DIR:-$HOME/agentBrain}/local}"
+
+# --- Space-context resolution (identical contract to brain-cmdb) -------------------
+SPACE=""
+if [ "${1:-}" = "--space" ]; then
+	[ -n "${2:-}" ] || { echo "brain-ops: --space requires a slug argument" >&2; exit 2; }
+	SPACE="$2"; shift 2
+fi
+SPACE="${SPACE:-${AGENTBRAIN_CONTEXT:-${AGENTBRAIN_SPACE:-}}}"
+if [ -z "$SPACE" ] && [ -z "${AGENTBRAIN_LOCAL_DIR:-}" ]; then
+	CTX_LIB="${AGENTBRAIN_DIR:-$HOME/agentBrain}/system/lib/context.sh"
+	if [ -f "$CTX_LIB" ]; then
+		# shellcheck source=/dev/null
+		. "$CTX_LIB"
+		_inferred_space="$(infer_context 2>/dev/null || true)"
+		case "$_inferred_space" in ""|unknown|ambiguous) ;; *) SPACE="$_inferred_space" ;; esac
+	fi
+fi
+if [ -n "$SPACE" ]; then OPS_BASE="$LOCAL_DIR/spaces/$SPACE/ops"; else OPS_BASE="$LOCAL_DIR/ops"; fi
+KINDS="incidents problems known-errors postmortems"
+
+# --- Frontmatter readers (mirrors brain-cmdb / addons.sh) --------------------------
+# Read a scalar frontmatter field.
+_fm() {  # <file> <key>
+	awk -v k="$2" '/^---[[:space:]]*$/{fm++;next} fm==1 && $0 ~ "^"k":"{sub("^"k":[[:space:]]*","");sub(/[[:space:]]*#.*$/,"");gsub(/^["'\''"]|["'\''"]$/,"");print;exit}' "$1"
+}
+# Read a YAML-list frontmatter field (inline `[a, b]` or block `- a`) as space-separated tokens.
+_relfield() {  # <file> <key>
+	awk -v key="$2" '
+		/^---[[:space:]]*$/ { fm++; next }
+		fm==1 && $0 ~ "^"key":[[:space:]]*\\[" {
+			line=$0; sub("^"key":[[:space:]]*\\[","",line); sub("\\].*$","",line);
+			gsub(/[[:space:]]/,"",line); gsub(/,/," ",line); print line; exit
+		}
+		fm==1 && $0 ~ "^"key":[[:space:]]*$" { inblk=1; next }
+		fm==1 && inblk && /^[[:space:]]*-[[:space:]]/ {
+			sub(/^[[:space:]]*-[[:space:]]*/,""); sub(/[[:space:]]*#.*$/,""); out=(out==""?$0:out" "$0); next
+		}
+		fm==1 && inblk && /^[^[:space:]-]/ { inblk=0 }
+		END { if (out != "") print out }
+	' "$1"
+}
+
+# --- Record enumeration ------------------------------------------------------------
+# List record files, optionally restricted to one kind. Prints paths, one per line.
+_ops_files() {  # [kind]
+	local kinds="${1:-$KINDS}" k
+	for k in $kinds; do
+		[ -d "$OPS_BASE/$k" ] || continue
+		find "$OPS_BASE/$k" -maxdepth 1 -type f -name '*.md' 2>/dev/null
+	done
+}
+# Find a single record file by slug across all kinds. Empty + exit 1 if none.
+_slug_file() {  # <slug>
+	local f
+	while IFS= read -r f; do
+		[ "$(basename "$f" .md)" = "$1" ] && { printf '%s\n' "$f"; return 0; }
+	done < <(_ops_files)
+	return 1
+}
+# Does a record's `ci:` list contain any token in the space-separated <tokens> list?
+_ci_contains() {  # <file> <tokens>
+	local f="$1" tokens="$2" have t
+	have=" $(_relfield "$f" ci) "
+	# shellcheck disable=SC2086  # intentional split of the space-separated token list
+	for t in $tokens; do
+		[ -n "$t" ] && case "$have" in *" $t "*) return 0 ;; esac
+	done
+	return 1
+}
+# Resolve a CI token to BOTH its slug and its ci-id (via brain-cmdb, soft dependency).
+# Echoes every form on one line (dedup'd) so _ci_contains can match records regardless
+# of whether they stored the slug or the id. Falls back to the raw token.
+_ci_forms() {  # <token>
+	local tok="$1"; local forms="$tok" cmdb
+	cmdb="${AGENTBRAIN_DIR:-$HOME/agentBrain}/system/skills/brain-cmdb/bin/brain-cmdb"
+	if [ -x "$cmdb" ]; then
+		local args=(); [ -n "$SPACE" ] && args=(--space "$SPACE")
+		local other; other="$("$cmdb" "${args[@]}" resolve "$tok" 2>/dev/null || true)"
+		[ -n "$other" ] && forms="$forms $other"
+		# If we were given a slug, also fetch its ci-id form.
+		case "$tok" in ci-*) ;; *)
+			local ciid; ciid="$("$cmdb" "${args[@]}" rel "$tok" ci 2>/dev/null || true)"
+			[ -n "$ciid" ] && forms="$forms $ciid" ;;
+		esac
+	fi
+	printf '%s\n' "$forms" | tr ' ' '\n' | awk 'NF && !seen[$0]++' | tr '\n' ' '
+}
+
+# --- Presentation ------------------------------------------------------------------
+_kind_of() { basename "$(dirname "$1")"; }   # incidents|problems|known-errors|postmortems
+_row() {  # <file>
+	local f="$1" kind status
+	kind="$(_kind_of "$f")"; status="$(_fm "$f" status)"
+	printf '  %-13s %-24s %-12s %s\n' "${kind%s}" "$(basename "$f" .md)" "${status:--}" "ci:[$(_relfield "$f" ci)]"
+}
+
+# --- Queries -----------------------------------------------------------------------
+cmd_on() {  # <ci>  — every ops record touching a CI
+	local tok="${1:?usage: brain-ops on <ci>}" forms
+	forms="$(_ci_forms "$tok")"
+	local f n=0
+	while IFS= read -r f; do
+		[ -n "$f" ] || continue
+		_ci_contains "$f" "$forms" && { _row "$f"; n=$((n+1)); }
+	done < <(_ops_files)
+	[ "$n" -gt 0 ] || { echo "no ops records touch: $tok" >&2; return 1; }
+}
+cmd_incidents() {  # [--open]
+	local only_open=0; [ "${1:-}" = "--open" ] && only_open=1
+	local f
+	while IFS= read -r f; do
+		[ "$only_open" = 1 ] && [ "$(_fm "$f" status)" != "open" ] && continue
+		_row "$f"
+	done < <(_ops_files incidents)
+}
+cmd_known_errors() {  # [--ci <c>]
+	local ci=""; [ "${1:-}" = "--ci" ] && { ci="${2:?--ci requires a CI}"; }
+	local forms=""; [ -n "$ci" ] && forms="$(_ci_forms "$ci")"
+	local f
+	while IFS= read -r f; do
+		[ -n "$ci" ] && { _ci_contains "$f" "$forms" || continue; }
+		_row "$f"
+	done < <(_ops_files known-errors)
+}
+cmd_problems() { local f; while IFS= read -r f; do _row "$f"; done < <(_ops_files problems); }
+cmd_timeline() {  # <ci> — chronological incidents + postmortems for a CI
+	local tok="${1:?usage: brain-ops timeline <ci>}" forms f
+	forms="$(_ci_forms "$tok")"
+	while IFS= read -r f; do
+		[ -n "$f" ] || continue
+		_ci_contains "$f" "$forms" || continue
+		printf '%s\t%s\n' "$(_fm "$f" occurred)$(_fm "$f" date)" "$f"
+	done < <(_ops_files "incidents postmortems") | sort | while IFS=$'\t' read -r _ f; do _row "$f"; done
+}
+cmd_show() {  # <slug>
+	local f; f="$(_slug_file "$1")" || { echo "unknown ops record: $1" >&2; return 1; }
+	echo "$f"; echo "---"; sed -n '/^---$/,/^---$/p' "$f" | sed '1d;$d'
+	echo "--- links ---"
+	local k; for k in problem problems incident incidents known_error postmortem ci; do
+		local v; v="$(_relfield "$f" "$k")"; [ -z "$v" ] && v="$(_fm "$f" "$k")"
+		[ -n "$v" ] && printf '  %-12s %s\n' "$k:" "$v"
+	done
+}
+
+# --- Scaffolding -------------------------------------------------------------------
+# new <kind> <slug> — scaffold a record with correct, namespace-aware UUID5 by
+# delegating to new-note.sh (carrier type), then rewriting `type:` + ops fields.
+cmd_new() {  # <kind> <slug>
+	local kind="${1:?usage: brain-ops new <incident|problem|known-error|postmortem> <slug>}"
+	local slug="${2:?usage: brain-ops new <kind> <slug>}"
+	case "$kind" in incident|problem|known-error|postmortem) ;; *) echo "brain-ops: unknown kind '$kind' (incident|problem|known-error|postmortem)" >&2; exit 2 ;; esac
+	local dir="${kind}s"; case "$kind" in known-error) dir="known-errors" ;; esac
+	local nn="${AGENTBRAIN_DIR:-$HOME/agentBrain}/scripts/new-note.sh"
+	[ -x "$nn" ] || { echo "brain-ops: new-note.sh not found (needed for UUID5); author the note by hand" >&2; exit 1; }
+	local args=(reference "ops/$dir/$slug"); [ -n "$SPACE" ] && args+=(--space "$SPACE")
+	local path; path="$(bash "$nn" "${args[@]}" 2>/dev/null | tail -1)"
+	[ -f "$path" ] || { echo "brain-ops: scaffold failed for $slug" >&2; exit 1; }
+	# Rewrite carrier frontmatter -> the ops note-type + starter fields.
+	local today; today="$(date +%Y-%m-%d)"
+	local extra
+	case "$kind" in
+		incident)    extra="status: open\noccurred: $today\nci: []\nproblem:\npostmortem:" ;;
+		problem)     extra="status: investigating\nci: []\nincidents: []\nknown_error:" ;;
+		known-error) extra="status: active\nci: []\nproblem:" ;;
+		postmortem)  extra="incident:\nci: []" ;;
+	esac
+	awk -v type="$kind" -v extra="$extra" '
+		/^type:[[:space:]]/ && !done { print "type: " type; n=split(extra, a, "\\n"); for(i=1;i<=n;i++) print a[i]; done=1; next }
+		/^tags:[[:space:]]/ { print "tags: [ops, " type "]"; next }   # replace carrier tags
+		{ print }
+	' "$path" > "$path.tmp" && mv "$path.tmp" "$path"
+	echo "brain-ops: scaffolded $kind -> $path"
+}
+
+# --- Dispatch ----------------------------------------------------------------------
+cmd="${1:-help}"; shift || true
+case "$cmd" in
+	on)            cmd_on "$@" ;;
+	incidents)     cmd_incidents "$@" ;;
+	known-errors)  cmd_known_errors "$@" ;;
+	problems)      cmd_problems "$@" ;;
+	timeline)      cmd_timeline "$@" ;;
+	show)          cmd_show "$@" ;;
+	new)           cmd_new "$@" ;;
+	promote)       echo "brain-ops: 'promote' not implemented yet (deferred — spec §7)" >&2; exit 2 ;;
+	*) echo "usage: brain-ops [--space <slug>] on <ci> | incidents [--open] | known-errors [--ci <c>] | problems | timeline <ci> | show <slug> | new <kind> <slug>" >&2; exit 2 ;;
+esac

@@ -1,0 +1,1 @@
+hooks/vault-pre-commit.sh
