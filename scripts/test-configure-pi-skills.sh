@@ -1,0 +1,1 @@
+tests/test-configure-pi-skills.sh

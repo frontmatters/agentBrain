@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# pre-push — fast doctor gate before sharing commits.
+#
+# Runs `doctor.sh --fast` (the cheap, high-signal structural + privacy checks +
+# bash syntax) so the safe path is also the fast path — no reflex to bypass it.
+# The slow checks (TypeScript pi-extension checks, the test suites, shellcheck)
+# run in the FULL doctor, which still gates release-check, deploy's
+# validate-install sandbox, and CI. Set PUSH_FULL_DOCTOR=1 to run the full
+# doctor here too.
+#
+# Skip-escape: PUSH_SKIP_DOCTOR=1 git push … (use sparingly).
+
+set -euo pipefail
+
+if [[ "${PUSH_SKIP_DOCTOR:-0}" = "1" ]]; then
+  echo "pre-push: PUSH_SKIP_DOCTOR=1 set — skipping doctor.sh" >&2
+  exit 0
+fi
+
+# Concurrent runs are serialized by doctor itself (scripts/lib/lock.sh), so a
+# push racing the post-commit auto-push, or a manual doctor, waits its turn
+# instead of tripping over the other run's vault fixtures.
+if [[ -x scripts/doctor.sh ]]; then
+  if [[ "${PUSH_FULL_DOCTOR:-0}" = "1" ]]; then
+    DOCTOR_ARGS=""; echo "pre-push: running FULL doctor.sh (PUSH_FULL_DOCTOR=1)" >&2
+  else
+    DOCTOR_ARGS="--fast"; echo "pre-push: running doctor.sh --fast (full doctor runs in release-check/deploy/CI)" >&2
+  fi
+  # mktemp avoids symlink-clobber footgun in /tmp with predictable filename.
+  log="$(mktemp -t agentbrain-doctor-prepush.XXXXXX)"
+  # shellcheck disable=SC2086
+  if ! bash scripts/doctor.sh $DOCTOR_ARGS >"$log" 2>&1; then
+    echo "" >&2
+    echo "✗ pre-push BLOCKED: doctor.sh failed. Last 30 lines:" >&2
+    tail -30 "$log" >&2
+    echo "" >&2
+    echo "Full log: $log" >&2
+    echo "Bypass (use sparingly): PUSH_SKIP_DOCTOR=1 git push …" >&2
+    exit 1
+  fi
+  rm -f "$log"
+  echo "pre-push: doctor.sh passed." >&2
+fi

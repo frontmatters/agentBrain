@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  agentBrain LAN install channel — serves the engaging installer + a FRESH git
+  bundle on :7780 so a second machine (e.g. a WSL distro) can install with:
+      curl -fsSL http://<this-lan-ip>:7780/install.sh | bash
+
+  serve-lan.sh REBUILDS the bundle and the injected AB_VERSION banner from the
+  current main on every run — RunAtLoad fires at every login, so a reboot can
+  never serve a stale version (this exact staleness bit the WSL installer on
+  2026-09: the old server kept advertising v1.10.2-prerelease-70-2-ge2e5517).
+  After pushing new commits, refresh the served bundle without rebooting:
+      launchctl kickstart -k gui/$UID/dev.agentbrain.lan-install
+  (rebuilds the bundle, then re-execs the server).
+
+  With --daemon the script execs the http.server in the FOREGROUND: launchd
+  supervises it directly. (A nohup-detached child does not survive the job's
+  exit — launchd reaps the process group.)
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.agentbrain.lan-install</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>{{VAULT}}/scripts/installer/serve-lan.sh</string>
+        <string>--daemon</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>{{VAULT}}/local/logs/lan-install.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{VAULT}}/local/logs/lan-install.err.log</string>
+</dict>
+</plist>
