@@ -1,0 +1,1 @@
+scanman/scanman-compare.sh

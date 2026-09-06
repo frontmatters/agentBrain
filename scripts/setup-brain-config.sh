@@ -1,0 +1,1 @@
+setup/setup-brain-config.sh

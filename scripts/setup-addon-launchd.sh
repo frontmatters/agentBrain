@@ -1,0 +1,1 @@
+setup/setup-addon-launchd.sh

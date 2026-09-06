@@ -1,0 +1,1 @@
+checks/check-skill-links.sh
