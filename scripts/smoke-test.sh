@@ -1,0 +1,1 @@
+checks/smoke-test.sh

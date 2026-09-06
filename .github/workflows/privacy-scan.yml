@@ -1,0 +1,21 @@
+name: Health checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Run agentBrain doctor (CI mode)
+        run: bash scripts/doctor.sh --ci
+      - name: Run space boundary guard
+        run: bash scripts/check-space-boundary.sh
+      - name: Run session continuity tests
+        run: bash scripts/test-session-continuity.sh

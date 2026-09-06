@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# Pi wrapper: prompt for self-update on interactive startup.
+# Public-safe: no machine-specific paths or secrets.
+
+set -euo pipefail
+
+PACKAGE_NAME="@earendil-works/pi-coding-agent"
+AUTO_UPDATE_TIMEOUT="${PI_AUTO_UPDATE_TIMEOUT:-60}"
+PI_CONFIG_DIR="${PI_CONFIG_DIR:-$HOME/.pi/agent}"
+
+log() { printf '%s\n' "$*" >&2; }
+
+find_real_pi() {
+	if [[ -n "${PI_REAL_BIN:-}" && -x "${PI_REAL_BIN}" ]]; then
+		printf '%s\n' "${PI_REAL_BIN}"
+		return 0
+	fi
+
+	local self candidate dir
+	self="$0"
+	IFS=':' read -r -a path_parts <<< "${PATH:-}"
+	for dir in "${path_parts[@]}"; do
+		[[ -n "$dir" ]] || dir="."
+		candidate="$dir/pi"
+		if [[ -x "$candidate" && "$candidate" != "$self" ]]; then
+			printf '%s\n' "$candidate"
+			return 0
+		fi
+	done
+
+	return 1
+}
+
+should_skip_update_check() {
+	[[ "${PI_AUTO_UPDATE:-1}" == "0" ]] && return 0
+	[[ "${PI_SKIP_VERSION_CHECK:-}" == "1" ]] && return 0
+	[[ "${PI_OFFLINE:-}" == "1" ]] && return 0
+	[[ -t 0 && -t 1 ]] || return 0
+
+	local arg
+	for arg in "$@"; do
+		case "$arg" in
+			update|install|remove|uninstall|list|config|--offline|--help|-h|--version|-v|--print|-p|--mode=rpc|--mode=json)
+				return 0
+				;;
+		esac
+	done
+
+	return 1
+}
+
+latest_version() {
+	node --input-type=module - "$PACKAGE_NAME" <<'NODE'
+const packageName = process.argv[2];
+const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(), 10000);
+try {
+  const url = `https://registry.npmjs.org/${encodeURIComponent(packageName).replace('%40', '@')}/latest`;
+  const response = await fetch(url, { signal: controller.signal });
+  if (!response.ok) process.exit(0);
+  const data = await response.json();
+  if (typeof data.version === 'string') console.log(data.version);
+} catch {
+  // Network/update check failures must never block Pi startup.
+} finally {
+  clearTimeout(timeout);
+}
+NODE
+}
+
+is_newer_version() {
+	local latest="$1" current="$2"
+	node - "$latest" "$current" <<'NODE'
+const [latest, current] = process.argv.slice(2);
+const parse = (v) => String(v).split(/[.-]/).map((part) => /^\d+$/.test(part) ? Number(part) : part);
+const a = parse(latest);
+const b = parse(current);
+const len = Math.max(a.length, b.length);
+for (let i = 0; i < len; i++) {
+  const x = a[i] ?? 0;
+  const y = b[i] ?? 0;
+  if (typeof x === 'number' && typeof y === 'number') {
+    if (x > y) process.exit(0);
+    if (x < y) process.exit(1);
+  } else {
+    const cmp = String(x).localeCompare(String(y));
+    if (cmp > 0) process.exit(0);
+    if (cmp < 0) process.exit(1);
+  }
+}
+process.exit(1);
+NODE
+}
+
+postinstall_patch_enabled() {
+	[[ "${PI_POSTINSTALL_PATCH:-}" == "1" ]] && return 0
+	[[ "${PI_POSTINSTALL_PATCH:-}" == "true" ]] && return 0
+
+	local config_file="$PI_CONFIG_DIR/pi-postinstall-patch.json"
+	[[ -f "$config_file" ]] || return 1
+	grep -Eq '"postInstall"[[:space:]]*:[[:space:]]*true' "$config_file"
+}
+
+run_postinstall_patch_if_enabled() {
+	postinstall_patch_enabled || return 0
+
+	local patch_script="$PI_CONFIG_DIR/skills/pi-postinstall-patch/scripts/apply-pi-postinstall-patches.sh"
+	if [[ ! -x "$patch_script" ]]; then
+		patch_script="$HOME/Developer/agentBrain/system/pi-config/skills/pi-postinstall-patch/scripts/apply-pi-postinstall-patches.sh"
+	fi
+
+	if [[ -x "$patch_script" ]]; then
+		log "Running Pi postinstall compatibility patches..."
+		"$patch_script"
+	else
+		log "WARN: Pi postinstall patch enabled but script not found: $patch_script"
+	fi
+}
+
+maybe_update_pi() {
+	local real_pi="$1"
+	shift
+
+	should_skip_update_check "$@" && return 0
+	command -v node >/dev/null 2>&1 || return 0
+
+	local current latest answer do_update
+	current="$($real_pi --version 2>/dev/null || true)"
+	latest="$(latest_version | tail -n 1)"
+	[[ -n "$current" && -n "$latest" ]] || return 0
+	is_newer_version "$latest" "$current" || return 0
+
+	log ""
+	log "Pi update beschikbaar: v$current -> v$latest"
+	printf 'Nu updaten? [Y/n] (auto-update over %ss): ' "$AUTO_UPDATE_TIMEOUT" >&2
+
+	do_update=1
+	if read -r -t "$AUTO_UPDATE_TIMEOUT" answer; then
+		case "${answer,,}" in
+			n|no|nee) do_update=0 ;;
+			*) do_update=1 ;;
+		esac
+	else
+		printf '\n' >&2
+		do_update=1
+	fi
+
+	if [[ "$do_update" == "1" ]]; then
+		log "Pi wordt bijgewerkt..."
+		"$real_pi" update pi
+		run_postinstall_patch_if_enabled
+		log "Update klaar. Pi start opnieuw..."
+	else
+		log "Update overgeslagen."
+	fi
+}
+
+main() {
+	local real_pi
+	if ! real_pi="$(find_real_pi)"; then
+		log "Error: kon de echte pi executable niet vinden. Zet PI_REAL_BIN=/pad/naar/pi."
+		exit 127
+	fi
+
+	maybe_update_pi "$real_pi" "$@"
+	exec "$real_pi" "$@"
+}
+
+main "$@"
