@@ -1,0 +1,1 @@
+tools/install-agent-clis.sh

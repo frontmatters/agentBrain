@@ -1,0 +1,9 @@
+# key	tier	location	label	detector-regex (grep -iE)
+# Human doc: system/work-note-contract.md
+problem	MUST	body	## Probleem	(^#+ *(probleem|context|aanleiding|waarom|motivat|problem|why|rationale))|(\b(zodat|so that)\b)
+acceptance	MUST	body	## Acceptatiecriteria	^#+ *(acceptatie|acceptance|definition of done|dod|klaar wanneer|succes ?criteria|success criteria|criteria)
+status	MUST	frontmatter	status:	^status:
+owner	SHOULD	frontmatter	owner:	^owner:|^#+ *(owner|eigenaar|verantwoordelijk)
+priority	SHOULD	frontmatter	priority:	^priority:|^#+ *(prioriteit|priority|waarde|value)
+depends_on	SHOULD	frontmatter	depends_on:	^depends_on:|^#+ *(dependenc|afhankelijk|blocker|blokkad)
+risk	SHOULD	body	## Risico's	^#+ *(risico|risks|aannames|assumptions)

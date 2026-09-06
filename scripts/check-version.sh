@@ -1,0 +1,1 @@
+checks/check-version.sh
