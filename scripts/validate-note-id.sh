@@ -1,0 +1,1 @@
+hooks/validate-note-id.sh

@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# commit-msg — enforce Conventional Commits on the subject line.
+# Spec: https://www.conventionalcommits.org/en/v1.0.0/
+# The subject must be <type>(<optional-scope>)?<optional-!>: <description>.
+# Bypass a single commit with: git commit --no-verify
+set -euo pipefail
+
+MSG_FILE="$1"
+
+# Subject = first line that is neither a git comment (#…) nor blank.
+subject="$(grep -vE '^[[:space:]]*#' "$MSG_FILE" | grep -vE '^[[:space:]]*$' | head -n1 || true)"
+
+# Exempt machine-/rebase-generated subjects that legitimately don't follow the format.
+case "$subject" in
+	"Merge "* | "Revert "* | "fixup! "* | "squash! "* | "amend! "*) exit 0 ;;
+esac
+
+# Prose gate. The rule is the maintainer's own and names commit bodies
+# explicitly, yet only rendered explainers were gated before this. A ratchet: it
+# reads the message being written, never the tree, so existing text is left
+# alone.
+# The hook lives in <root>/.githooks/, so its own location IS the root. Asking
+# git instead goes wrong in two ways: an unpacked archive has no repository,
+# and one that sits inside another repository (the release check's test
+# install, inside the factory) gets that outer root and skips every gate
+# silently.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -x "$ROOT/scripts/checks/check-em-dash.sh" ]; then
+	bash "$ROOT/scripts/checks/check-em-dash.sh" --message "$MSG_FILE" >/dev/null || exit 1
+fi
+
+# A message that names a file the commit does not carry, while that file sits
+# dirty behind a symlink shim: the commit describes work not in the tree.
+if [ -x "$ROOT/scripts/checks/check-shim-staging.sh" ]; then
+	bash "$ROOT/scripts/checks/check-shim-staging.sh" --message "$MSG_FILE" || exit 1
+fi
+
+# Empty subject: leave it to git's own emptiness check.
+if [ -z "$subject" ]; then
+	exit 0
+fi
+
+types='feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert'
+
+# type(scope)?!?: description — scope is optional, ! flags a breaking change.
+if printf '%s' "$subject" | grep -qE "^(${types})(\([a-z0-9._/-]+\))?!?: .+"; then
+	exit 0
+fi
+
+cat >&2 <<EOF
+✗ commit-msg: subject does not follow Conventional Commits.
+
+  Got:      ${subject}
+  Expected: <type>(<optional-scope>): <description>
+  Types:    feat fix docs style refactor perf test build ci chore revert
+
+  Examples:
+    feat(queue): add dispatch board
+    fix: guard against an empty note path
+    chore(release): v1.7.0
+    feat(api)!: drop the deprecated v1 endpoint   (! marks a breaking change)
+
+  Spec: https://www.conventionalcommits.org/   ·   bypass once: git commit --no-verify
+EOF
+exit 1
+

@@ -1,0 +1,1 @@
+hooks/validate-staged-note-ids.sh
