@@ -1,0 +1,1 @@
+setup/setup-claude-code.sh

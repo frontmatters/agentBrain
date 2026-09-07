@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  agentBrain LAN git daemon — exposes the dev checkout as
+      git://<this-lan-ip>/agentBrain-dev
+  so installs done via the LAN bundle keep a working origin for updates/pulls
+  (the Tailscale-only Gitea is unreachable from plain-LAN machines).
+
+  Only repos containing a git-daemon-export-ok file at their root are exported;
+  without --export-all everything else under {{HOME}}/Developer stays private.
+  Foreground process on purpose: launchd supervises it and KeepAlive restarts
+  it if it dies (it was found down on 2026-09 — "updates enabled when
+  reachable" had silently stopped being true).
+  Manual fire: launchctl kickstart -k gui/$UID/dev.agentbrain.git-daemon
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.agentbrain.git-daemon</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/git</string>
+        <string>daemon</string>
+        <string>--base-path={{HOME}}/Developer</string>
+        <string>--reuseaddr</string>
+        <string>--informative-errors</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>{{VAULT}}/vault/logs/git-daemon.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{VAULT}}/vault/logs/git-daemon.err.log</string>
+</dict>
+</plist>
