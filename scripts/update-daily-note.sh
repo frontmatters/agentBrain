@@ -1,0 +1,1 @@
+flow/update-daily-note.sh

@@ -1,0 +1,1 @@
+hooks/claude-code-validate-note-id-hook.sh

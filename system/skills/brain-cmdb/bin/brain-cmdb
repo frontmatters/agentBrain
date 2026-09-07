@@ -1,0 +1,297 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# brain-cmdb — query the CMDB: the type: device + type: integration notes and their
+# typed frontmatter relations (hosted_on / depends_on / provides). Read-only except
+# `sync`, which regenerates each CI's `## Relations` section from its frontmatter.
+set -euo pipefail
+
+LOCAL_DIR="${AGENTBRAIN_LOCAL_DIR:-${AGENTBRAIN_DIR:-$HOME/agentBrain}/local}"
+
+# Resolve the CI root through the space context. A leading `--space <slug>` flag or
+# AGENTBRAIN_CONTEXT/AGENTBRAIN_SPACE scopes the CMDB to local/spaces/<slug>/; else
+# personal (shared local/). Interactive fallback: infer_context() from context.sh —
+# skipped when AGENTBRAIN_LOCAL_DIR is set (hermetic tests never hit python).
+SPACE=""
+if [ "${1:-}" = "--space" ]; then
+	[ -n "${2:-}" ] || { echo "brain-cmdb: --space requires a slug argument" >&2; exit 2; }
+	SPACE="$2"; shift 2
+fi
+SPACE="${SPACE:-${AGENTBRAIN_CONTEXT:-${AGENTBRAIN_SPACE:-}}}"
+if [ -z "$SPACE" ] && [ -z "${AGENTBRAIN_LOCAL_DIR:-}" ]; then
+	CTX_LIB="${AGENTBRAIN_DIR:-$HOME/agentBrain}/system/lib/context.sh"
+	if [ -f "$CTX_LIB" ]; then
+		# shellcheck source=/dev/null
+		. "$CTX_LIB"
+		_inferred_space="$(infer_context 2>/dev/null || true)"
+		case "$_inferred_space" in ""|unknown|ambiguous) ;; *) SPACE="$_inferred_space" ;; esac
+	fi
+fi
+if [ -n "$SPACE" ]; then CI_BASE="$LOCAL_DIR/spaces/$SPACE"; else CI_BASE="$LOCAL_DIR"; fi
+CI_DIRS=("$CI_BASE/devices" "$CI_BASE/integrations")
+PROJECTS_DIR="$CI_BASE/projects"
+
+# Read a frontmatter YAML-list field (inline `[a, b]` or block `- a`) as space-
+# separated slugs. Mirrors _list() in scripts/addons.sh.
+_relfield() {  # <file> <key>
+	awk -v key="$2" '
+		/^---[[:space:]]*$/ { fm++; next }
+		fm==1 && $0 ~ "^"key":[[:space:]]*\\[" {
+			line=$0; sub("^"key":[[:space:]]*\\[","",line); sub("\\].*$","",line);
+			gsub(/[[:space:]]/,"",line); gsub(/,/," ",line); print line; exit
+		}
+		fm==1 && $0 ~ "^"key":[[:space:]]*$" { inblk=1; next }
+		fm==1 && inblk && /^[[:space:]]*-[[:space:]]/ {
+			sub(/^[[:space:]]*-[[:space:]]*/,""); sub(/[[:space:]]*#.*$/,""); out=(out==""?$0:out" "$0); next
+		}
+		fm==1 && inblk && /^[^[:space:]-]/ { inblk=0 }
+		END { if (out != "") print out }
+	' "$1"
+}
+
+# Read the surrogate CI id (`ci:` field) from a note's frontmatter. Empty if none.
+_ci_field() {  # <file>
+	awk '
+		/^---[[:space:]]*$/ { fm++; next }
+		fm==1 && /^ci:[[:space:]]/ { sub(/^ci:[[:space:]]*/,""); gsub(/[[:space:]]/,""); print; exit }
+	' "$1"
+}
+
+# Mint a stable, non-path-derived CI id: "ci-" + 8 random hex. Generated once; never
+# recomputed (so it survives renames that recompute the path-derived vault `id`).
+# `tr -cd '0-9a-f'` keeps only hex — robust against any od spacing/formatting.
+_mint_ci_id() {
+	printf 'ci-%s\n' "$(od -An -tx1 -N4 /dev/urandom | tr -cd '0-9a-f')"
+}
+
+# Ensure a CI note carries a ci: id. Print the existing one, or mint + insert it right
+# after the opening frontmatter fence. Atomic (adjacent temp + mv). Prints the id. The
+# awk exits non-zero when the note has NO frontmatter fence, so a malformed note errors
+# (temp cleaned up) instead of silently reporting a mint that was never written.
+_ensure_ci() {  # <file>
+	local f="$1" cur cid tmp
+	cur="$(_ci_field "$f")"
+	if [ -n "$cur" ]; then printf '%s\n' "$cur"; return 0; fi
+	cid="$(_mint_ci_id)"
+	tmp="$(mktemp "${f}.XXXXXX")"
+	if awk -v id="$cid" '
+		!ins && /^---[[:space:]]*$/ { print; print "ci: " id; ins=1; next }
+		{ print }
+		END { exit (!ins) }
+	' "$f" > "$tmp"; then
+		mv "$tmp" "$f"
+		printf '%s\n' "$cid"
+	else
+		rm -f "$tmp"
+		echo "_ensure_ci: no frontmatter fence in $f" >&2
+		return 1
+	fi
+}
+
+# Resolve a CI slug to its note file. Order: devices, integrations, then an opted-in
+# project (local/.../projects/<slug>/index.md that carries a ci: field — a project
+# without one is not a CI, so it does not resolve). Empty exit 1 if none.
+_ci_file() {  # <slug>
+	local d pidx
+	for d in "${CI_DIRS[@]}"; do
+		[ -f "$d/$1.md" ] && { printf '%s\n' "$d/$1.md"; return 0; }
+	done
+	pidx="$PROJECTS_DIR/$1/index.md"
+	[ -f "$pidx" ] && [ -n "$(_ci_field "$pidx")" ] && { printf '%s\n' "$pidx"; return 0; }
+	return 1
+}
+
+# Every CI slug: all devices + all integrations + projects that carry a ci: field,
+# one per line, sorted-unique.
+_ci_list() {
+	{
+		local d f
+		for d in "${CI_DIRS[@]}"; do
+			[ -d "$d" ] || continue
+			for f in "$d"/*.md; do
+				[ -f "$f" ] || continue
+				case "$(basename "$f")" in index.md|README.md) continue ;; esac
+				basename "$f" .md
+			done
+		done
+		if [ -d "$PROJECTS_DIR" ]; then
+			for f in "$PROJECTS_DIR"/*/index.md; do
+				[ -f "$f" ] || continue
+				[ -n "$(_ci_field "$f")" ] || continue
+				basename "$(dirname "$f")"
+			done
+		fi
+	} | sort -u
+}
+
+# CIs whose <field> list includes <target>. The space-padded case match anchors on
+# whole slugs (` gitea ` never matches `gitea-host`). <target> is a CI slug — a note
+# filename, kebab-case, no glob metacharacters — so it is safe as a case pattern.
+_ci_with() {  # <field> <target>
+	local slug f
+	while IFS= read -r slug; do
+		f="$(_ci_file "$slug")" || continue
+		case " $(_relfield "$f" "$1") " in *" $2 "*) printf '%s\n' "$slug" ;; esac
+	done < <(_ci_list)
+}
+
+_show() {  # <ci>
+	local f field vals; f="$(_ci_file "$1")" || { echo "unknown CI: $1" >&2; return 1; }
+	echo "$1  ($(printf '%s' "$f" | sed 's#.*/vault/##'))"
+	for field in hosted_on depends_on provides; do
+		vals="$(_relfield "$f" "$field")"
+		[ -n "$vals" ] && echo "  $field: $vals" || true
+	done
+}
+
+# Regenerate the generated relations block from frontmatter, idempotently. The whole
+# block — heading included — lives strictly BETWEEN the two markers, so stripping is
+# marker-bounded and never touches hand-written note content.
+_sync_one() {  # <file>
+	local f="$1" field vals slug body tmp
+	body=""
+	for field in hosted_on depends_on provides; do
+		vals="$(_relfield "$f" "$field")"
+		[ -n "$vals" ] || continue
+		for slug in $vals; do body="${body}- ${field}:: [[${slug}]]"$'\n'; done
+	done
+	# Temp file ADJACENT to $f (same filesystem) so the final mv is atomic — the
+	# original note is never touched until the rename. A single awk both strips any
+	# existing generated block (strictly between the two markers, inclusive) AND
+	# trims trailing blank lines; content outside the markers is preserved verbatim.
+	tmp="$(mktemp "${f}.XXXXXX")"
+	awk '
+		/<!-- cmdb:relations -->/ { drop=1; next }
+		drop && /<!-- \/cmdb:relations -->/ { drop=0; next }
+		drop { next }
+		{ buf[++n]=$0; if (NF) last=n }
+		END { for (i=1;i<=last;i++) print buf[i] }
+	' "$f" > "$tmp"
+	# Append a fresh block only when there are relations to show.
+	if [ -n "$body" ]; then
+		{ printf '\n<!-- cmdb:relations -->\n## Relations\n\n'; printf '%s' "$body"; printf '<!-- /cmdb:relations -->\n'; } >> "$tmp"
+	fi
+	mv "$tmp" "$f"
+}
+
+_sync_all() {
+	local slug f
+	while IFS= read -r slug; do
+		f="$(_ci_file "$slug")" || continue
+		_sync_one "$f"
+	done < <(_ci_list)
+}
+
+# register <slug>   — ensure that CI has a ci: id (mint if absent); print it.
+# register --backfill — ensure every device + integration in context carries a ci: id.
+_register() {  # <slug> | --backfill
+	local d f
+	if [ "${1:-}" = "--backfill" ]; then
+		for d in "${CI_DIRS[@]}"; do
+			[ -d "$d" ] || continue
+			for f in "$d"/*.md; do
+				[ -f "$f" ] || continue
+				case "$(basename "$f")" in index.md|README.md) continue ;; esac
+				_ensure_ci "$f" >/dev/null || echo "cmdb: skipped (no frontmatter): $(basename "$f")" >&2
+			done
+		done
+		echo "cmdb: backfill complete"
+		return 0
+	fi
+	# _ci_file gates projects on ci: presence (T1), but register is the OPT-IN action —
+	# it must find a not-yet-registered project (no ci: yet) to mint its first id. So
+	# fall back to the raw project index path when _ci_file misses.
+	f="$(_ci_file "$1")" || f="$PROJECTS_DIR/$1/index.md"
+	[ -f "$f" ] || { echo "unknown CI: $1" >&2; return 1; }
+	_ensure_ci "$f"
+}
+
+# resolve a slug -> its file path; or a ci-<hex> id -> the owning slug.
+_resolve() {  # <slug|ci-id>
+	local slug f
+	case "$1" in
+		ci-*)
+			while IFS= read -r slug; do
+				f="$(_ci_file "$slug")" || continue
+				[ "$(_ci_field "$f")" = "$1" ] && { printf '%s\n' "$slug"; return 0; }
+			done < <(_ci_list)
+			echo "unknown ci-id: $1" >&2; return 1
+			;;
+		*)
+			_ci_file "$1" || { echo "unknown CI: $1" >&2; return 1; }
+			;;
+	esac
+}
+
+# Rewrite a whole-slug reference <old> -> <new> inside the three relation fields of a
+# single note — both inline (`depends_on: [a, b]`) AND block (`depends_on:` then
+# `  - a`) YAML, mirroring _relfield's frontmatter+block awareness. `_wholeword` only
+# substitutes when <old> appears as a complete slug token — bounded by any char
+# outside the slug charset [A-Za-z0-9_.-] — so `gitea` never matches inside
+# `gitea-host` (the `-` is part of the token, so `gitea-host` is one token ≠ `gitea`).
+# Atomic (adjacent temp + mv).
+_rewrite_ref() {  # <file> <old> <new>
+	local f="$1" old="$2" new="$3" tmp
+	tmp="$(mktemp "${f}.XXXXXX")"
+	if awk -v old="$old" -v new="$new" '
+		function _wholeword(line, o, n,   res, c, tok, i, L) {
+			res = ""; tok = ""; L = length(line)
+			for (i = 1; i <= L; i++) {
+				c = substr(line, i, 1)
+				if (c ~ /[A-Za-z0-9_.-]/) { tok = tok c }
+				else { if (tok == o) tok = n; res = res tok c; tok = "" }
+			}
+			if (tok == o) tok = n
+			return res tok
+		}
+		/^---[[:space:]]*$/ { fm++; print; next }
+		fm==1 && /^(hosted_on|depends_on|provides):/ {
+			print _wholeword($0, old, new)
+			inblk = ($0 ~ /^(hosted_on|depends_on|provides):[[:space:]]*$/) ? 1 : 0
+			next
+		}
+		fm==1 && inblk && /^[[:space:]]*-[[:space:]]/ { print _wholeword($0, old, new); next }
+		fm==1 && inblk && /^[^[:space:]-]/ { inblk = 0 }
+		{ print }
+	' "$f" > "$tmp"; then
+		mv "$tmp" "$f"
+	else
+		rm -f "$tmp"; echo "_rewrite_ref: awk failed on $f" >&2; return 1
+	fi
+}
+
+# rename <old-slug> <new-slug>: move the CI note (flat file or project folder) and
+# rewrite every referrer. The immutable ci: id is untouched.
+_rename() {  # <old> <new>
+	local old="$1" new="$2" f src target slug
+	f="$(_ci_file "$old")" || { echo "unknown CI: $old" >&2; return 1; }
+	if _ci_file "$new" >/dev/null 2>&1; then echo "target slug exists: $new" >&2; return 1; fi
+	case "$f" in
+		*/projects/*/index.md) src="$(dirname "$f")"; target="$(dirname "$src")/$new" ;;
+		*)                     src="$f";              target="$(dirname "$f")/$new.md" ;;
+	esac
+	# Filesystem-level guard: _ci_file misses a NON-CI collision (a project folder or
+	# .md at $new with no ci: field), and `mv dir existing-dir/` would nest instead of
+	# refuse. Never overwrite/nest onto an existing path.
+	[ -e "$target" ] && { echo "cmdb: target path already exists: $target" >&2; return 1; }
+	mv "$src" "$target"
+	while IFS= read -r slug; do
+		f="$(_ci_file "$slug")" || continue
+		_rewrite_ref "$f" "$old" "$new"
+	done < <(_ci_list)
+	echo "cmdb: renamed $old -> $new"
+}
+
+cmd="${1:-help}"; shift || true
+case "$cmd" in
+	list)             _ci_list ;;
+	rel)              f="$(_ci_file "$1")" || { echo "unknown CI: $1" >&2; exit 1; }; _relfield "$f" "$2" ;;
+	resolve)          _resolve "$1" ;;
+	runs-on)          _ci_with hosted_on "$1" ;;
+	what-depends-on)  _ci_with depends_on "$1" ;;
+	provides)         _ci_with provides "$1" ;;
+	show)             _show "$1" ;;
+	register)         _register "$@" ;;
+	rename)           _rename "$1" "$2" ;;
+	sync)             _sync_all; echo "cmdb: relations synced" ;;
+	*) echo "usage: brain-cmdb [--space <slug>] list | show <ci> | runs-on <host> | what-depends-on <ci> | provides <ci> | resolve <ci> | rel <ci> <field> | register <ci>|--backfill | rename <old> <new> | sync" >&2; exit 2 ;;
+esac
