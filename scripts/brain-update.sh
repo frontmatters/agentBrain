@@ -202,6 +202,13 @@ if ! wait "$_fpid"; then
   die "fetch from '$remote' failed (offline?) — nothing changed"
 fi
 
+# Resolve the channel AGAIN, now that the fetch brought new tags: the first
+# resolution above ran on the tags that were already here, so a release cut
+# since the last update was only seen by the update after this one. On the
+# first update after 1.10.11 a machine on stable reported "up to date" at
+# 1.10.10 with v1.10.11 freshly fetched (2026-09-07).
+_chan2="$(bash "$CHANNEL_SH" resolve 2>/dev/null || true)"
+[ -n "$_chan2" ] && chan="$_chan2"
 # Resolve the target commit for the channel.
 if [ "$chan_is_branch" -eq 1 ]; then
   target_ref="$remote/$chan"
@@ -238,6 +245,12 @@ fi
 # branch-mode, or a tag in tag-mode), do not detach/force unless --switch.
 ff_possible=0
 if [ "$chan_is_branch" -eq 1 ] && [ "$cur_branch" = "$chan" ]; then
+  g merge-base --is-ancestor HEAD "$target" 2>/dev/null && ff_possible=1
+elif [ "$chan_is_branch" -eq 0 ] && [ "$cur_branch" != "HEAD" ]; then
+  # Tag mode on a branch (the installer leaves a checkout on main): when the
+  # release descends from HEAD, move the branch to it. Until 2026-09-07 tag mode
+  # never fast-forwarded, so every stable update asked for --switch and left the
+  # user detached.
   g merge-base --is-ancestor HEAD "$target" 2>/dev/null && ff_possible=1
 fi
 

@@ -14,8 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.10.12] - 2026-09-07
+
 ### Fixed
 
+- `brain update` on the stable channel (tag mode) fast-forwards the current branch to the release when it descends from HEAD; before, tag mode never fast-forwarded and every update asked for `--switch`. A release cut since the last update is also taken by this run: the channel is resolved again after the fetch.
 - Seven places used bash 4 constructs (`declare -A`, `mapfile`, `${x,,}`) that macOS `/bin/bash` 3.2 cannot run: the event-bus install, `addons.sh config`, `report-stale` (red on every fresh Mac), the Pi wrapper, the wiki-link crawler and the space-docs validator. All run on bash 3.2 now; `dev-registry.scan.sh` states its bash 4 requirement and re-execs on Homebrew bash.
 
 ### Added

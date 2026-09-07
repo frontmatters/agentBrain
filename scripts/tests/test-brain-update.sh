@@ -130,6 +130,22 @@ date +%s > "$AGENTBRAIN_DIR/vault/update/.last-session-check"   # just checked
 rl="$(AGENTBRAIN_DIR="$AGENTBRAIN_DIR" AGENTBRAIN_DEV_DIR="$W2" BRAIN_UPDATE_DOCTOR=true BRAIN_UPDATE_INTERVAL_H=12 bash "$BIN" --session --repo "$W2" 2>&1)"
 if [ -z "$rl" ]; then ok "session rate-limit -> suppressed within the interval"; else bad "session rate-limit"; echo "'$rl'"; fi
 
+# --- A release cut since the last update is seen by THIS update, not the next ---
+# The channel was resolved from the local tags before the fetch; a fresh stable
+# tag arrived with the fetch and the run still said "up to date" at the old one
+# (a second machine, 2026-09-07). tag mode, channel stable, one run, new tag lands.
+python3 -c "import json;p='$AGENTBRAIN_DIR/vault/update/config.json';d=json.load(open(p));d['channel']='stable';d['mode']='tag';json.dump(d,open(p,'w'))"
+W3="$TMP/work3"; git clone --quiet -b next "$ORIGIN" "$W3"
+git -C "$W3" config user.email t@t.t; git -C "$W3" config user.name t
+gq "$W3" tag v1.2.0; gq "$W3" push origin v1.2.0
+gq "$W3" fetch --tags origin
+echo "1.3.0" > "$SECOND/VERSION"; gq "$SECOND" add .; gq "$SECOND" commit -m v130; gq "$SECOND" tag v1.3.0; gq "$SECOND" push; gq "$SECOND" push origin v1.3.0
+rc=0; out="$(AGENTBRAIN_DIR="$AGENTBRAIN_DIR" AGENTBRAIN_DEV_DIR="$W3" bash "$BIN" --repo "$W3" --doctor-cmd true 2>&1)" || rc=$?
+ver="$(cat "$W3/VERSION")"
+if [ "$rc" -eq 0 ] && [ "$ver" = "1.3.0" ]; then
+  ok "a stable tag fetched by this run is taken by this run (VERSION 1.3.0)"
+else bad "resolve after fetch"; echo "rc=$rc ver=$ver"; echo "$out" | tail -3; fi
+
 echo ""
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
