@@ -103,6 +103,7 @@ framework_checks=(
 	"bash scripts/checks/check-preference-scopes.sh"
 	"bash scripts/checks/check-node-bootstrap.sh"
 	"bash scripts/checks/check-bash32.sh" # no bash 4 constructs: macOS /bin/bash is 3.2
+	"bash scripts/checks/check-addon-imports.sh" # addon imports stay inside the addon or go through @agentbrain/lib
 	"bash scripts/checks/check-lifecycle-scripts.sh"
 	"bash scripts/checks/check-session-update-quiet.sh"
 	"bash scripts/checks/check-client-pointers.sh"
@@ -176,6 +177,8 @@ local_checks=(
 	"bash scripts/tests/test-bin-symlink.sh" # brain works through the ~/bin symlink
 	"bash scripts/tests/test-setup-alias-guard.sh" # ~/agentBrain must be a checkout before setup writes pointers through it
 	"bash scripts/tests/test-doctor-reason-block.sh" # a failing check without keywords still gets a reason, on BSD and GNU grep
+	"bash scripts/tests/test-pull-vault.sh" # session start pulls the vault (ff-only), quiet, never blocking
+	"bash scripts/tests/test-pre-push-worktree.sh" # pre-push validates the pushed commit in its own worktree
 	"bash scripts/tests/test-lineage-switch.sh"    # LAN and online sources are interchangeable; the source wins on tags
 	"bash scripts/tests/test-env-hygiene.sh"       # a fixture test ignores the caller's VAULT / AGENTBRAIN_DIR
 	"bash scripts/tests/test-setup-vault-leftover.sh" # a real local/ beside the vault link is set aside, never merged or deleted

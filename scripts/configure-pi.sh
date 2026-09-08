@@ -346,15 +346,36 @@ PY
 
 validate_extensions() {
 	command -v pi >/dev/null 2>&1 || return
-	local failed=0
-	for ext in "$PI_CONFIG_DIR"/extensions/*.ts; do
-		[[ -e "$ext" ]] || continue
-		pi --offline --no-extensions -e "$ext" --list-models nonexistent >/dev/null 2>&1 || {
-			warn "Extension validation failed: $(basename "$ext")"
-			failed=1
-		}
-	done
-	[[ $failed -eq 0 ]] && ok "Extensions load cleanly"
+
+	# `--list-models` exits BEFORE extensions are evaluated, so the previous
+	# invocation reported "loads cleanly" for an extension importing a module
+	# that does not exist (verified with a deliberately broken extension). That
+	# false green is how a broken goal.ts reached two machines while this line
+	# kept printing a tick.
+	#
+	# `--print` does load them. It fails fast on a broken extension and keeps
+	# running on a healthy one, so the check is bounded and judged on the
+	# message, not the exit code: hitting the timeout means loading succeeded.
+	# One run loads every extension from settings; only when that reports a
+	# failure is it worth paying a timeout per extension to name the culprit.
+	local probe
+	# `|| true`: pi exits non-zero here (no provider in offline mode), and under
+	# set -e that failing pipeline would abort configure-pi silently, mid-run.
+	probe="$(perl -e 'alarm 25; exec @ARGV' -- pi --offline --print noop 2>&1 | head -40 || true)"
+	if ! printf '%s' "$probe" | grep -q "Failed to load extension"; then
+		ok "Extensions load cleanly"
+		return
+	fi
+
+	# The probe names the culprit itself. Looping per extension does not help
+	# and actively misleads: `pi -e <ext>` still loads everything from settings,
+	# so every run trips over the same broken extension and each iteration
+	# blamed whichever file it happened to be passing.
+	printf '%s\n' "$probe" \
+		| grep -o 'Failed to load extension "[^"]*"' \
+		| sed 's/.*"\(.*\)"/\1/' | sort -u \
+		| while read -r bad; do warn "Extension failed to load: $(basename "$bad")"; done
+	printf '%s\n' "$probe" | grep -m1 "Cannot find module" | sed 's/^/         /'
 }
 
 # ── Pi credentials ────────────────────────────────────────────────────────────

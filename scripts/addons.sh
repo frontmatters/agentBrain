@@ -373,7 +373,18 @@ download_addon() {
 	mkdir -p "$STATE/$id"
 	cp -R "$tmp/$id/." "$STATE/$id/"
 	rm -rf "$tmp"
+	_write_addon_tsconfig "$STATE/$id"
 	echo "Unpacked $id $ver into $STATE/$id"
+}
+
+# A registry addon lives in vault/addons/<id>/, outside the framework tree, so
+# "@agentbrain/lib/*" (shared code in system/lib, see system/addons/tsconfig.json
+# for the bundled ones) must be resolved with an absolute path. Bun and tsc read
+# this file; rendered on every install and update, never committed to the vault.
+_write_addon_tsconfig() {
+	local dir="$1" lib
+	lib="$(cd -P "$(dirname "$REGISTRY")/lib" 2>/dev/null && pwd -P)" || return 0
+	printf '{\n  "compilerOptions": {\n    "baseUrl": ".",\n    "paths": { "@agentbrain/lib/*": ["%s/*"] }\n  }\n}\n' "$lib" > "$dir/tsconfig.json"
 }
 
 # Resolve an id across registries and download it. Rules (see spec §5):

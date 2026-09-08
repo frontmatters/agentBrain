@@ -24,7 +24,7 @@ import {
 	safeParseGoalVerdict,
 	type GoalState,
 	type SmartRefinement,
-} from "../../addons/goal/lib/core";
+} from "./goal-lib/core";
 
 // A goal belongs to a context: a space (e.g. acme) or a project. The log is
 // partitioned by it so agentBrain can read one project's goals in isolation.

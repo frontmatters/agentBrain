@@ -14,6 +14,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The pre-push hook validates the pushed commit in a detached worktree (vault link and `brain.json` put in place) instead of the working tree. A commit or edit made while the doctor ran, from this or another session, twice made the doctor blame the running check and refuse the push.
+
+## [v1.10.13] - 2026-09-08
+
+### Added
+
+- `check-addon-imports` refuses an addon import that leaves its addon (`../../../lib`, another addon); shared code goes through `@agentbrain/lib/*`.
+- `scripts/sync/pull-vault.sh`: the session-start hooks (Claude, Pi) pull the vault fast-forward-only, so a second machine starts on current notes. Quiet unless notes came in or the vault diverged (then it says so and changes nothing); a bounded fetch, never blocking a session. The other half of `sync-vault.sh`.
+
+### Fixed
+
+- chatgpt-import wrote its bundles to `<checkout>/local/imports/`, the identity spelling used as a disk path, so a real `local/` regrew beside the vault link and the bundle landed outside the vault. The disk layer is folded now, and `check-vault-spelling` also refuses the `Path("local")` form.
+- extract-learnings (an essential addon) imported its model call from youtube-digest, which is not in the release payload: on every fresh install the precompact hook silently loaded nothing and no learning was ever extracted. The model cascade is shared code in `system/lib/model-call.ts` now; addons reach `system/lib` as `@agentbrain/lib/*` (a tsconfig alias, rendered with an absolute path for registry addons in `vault/addons/`). `brain-update` and `channel` fall back to the installer's `~/Developer/agentBrain`, not the maintainer's `-dev` checkout.
+- The goal Pi extension imported its core from outside `extensions/` (`../../addons/goal/lib/core`); loaded through the per-file link in `~/.pi/agent/extensions` that path pointed into `~/.pi` and Pi refused to start on a fresh machine. The lib is reached through `extensions/goal-lib` now, like every other extension lib, and the type-check refuses imports outside `extensions/`.
+
 ## [v1.10.12] - 2026-09-07
 
 ### Fixed

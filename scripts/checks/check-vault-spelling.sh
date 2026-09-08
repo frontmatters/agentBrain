@@ -30,7 +30,7 @@ RE_VAR='(\$\{?[A-Za-z_]+\}?|\.|~|[A-Za-z0-9_-]+)/local/[A-Za-z0-9_.$*{-]'
 RE_COMMENT='^[[:space:]]*#'
 RE_IDENTITY='uuid5-gen\.sh|validate-note-id|validate-staged-note-ids|brainPath\('
 is_path_use() {
-RE_JOIN='"local", "'                 # join(root, "local", ...): the same path in another spelling
+RE_JOIN='"local", "|Path\("local"\)|Path\('"'"'local'"'"'\)'                 # join(root, "local", ...): the same path in another spelling
 	local l="$1"
 	l="${l%% #*}"                      # a trailing comment is prose, not a path
 	[[ "$l" =~ $RE_COMMENT ]] && return 1
@@ -73,7 +73,7 @@ case "$MODE" in
 	#     uninstall) and the id derivation (uuid5-gen, validate-note-id);
 	#   - the MCP and the tests, where local/ is the identity every note id,
 	#     search key and access record is spelled in, by design.
-	n="$(find scripts system -path '*/node_modules' -prune -o -type f \( -name '*.sh' -o -name '*.py' -o -name '*.ts' -o -name '*.js' -o -name '*.mjs' -o \( -path '*/bin/*' ! -name '*.*' \) \) -print0 2>/dev/null | xargs -0 grep -nE '\blocal/|"local", |/local(["'"'"'` )]|$)' 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(#|//)' | grep -vE 'uuid5-gen\.sh|validate-note-id|validate-staged-note-ids|node_modules/|/usr/local/|\.local/' | grep -vE '^[^:]+:[0-9]+:[[:space:]]*\*' | grep -vE '/tests/|brainPath\(' | grep -vE '^[^:]+:[0-9]+:.*(vault|localDisk|ident_with_ext|legacy flat|TRASH_BATCH/local|\$batch/local|ORIGINAL_PATHS|agentBrain/local/\{|"local/" \+ rel|personalize them in|rel === "local")' | grep -vE '\.test\.ts:' | grep -vE '^(scripts/setup/setup-vault\.sh|scripts/setup/drop-local-alias\.sh|scripts/setup/setup-structure\.sh|scripts/migrate-v2\.sh|scripts/uninstall\.sh|scripts/checks/check-vault-spelling\.sh|system/addons/agentbrain-mcp/src/|[^:]*/tests?/|[^:]*/test\.sh)' | wc -l | tr -d ' ')"
+	n="$(find scripts system -path '*/node_modules' -prune -o -type f \( -name '*.sh' -o -name '*.py' -o -name '*.ts' -o -name '*.js' -o -name '*.mjs' -o \( -path '*/bin/*' ! -name '*.*' \) \) -print0 2>/dev/null | xargs -0 grep -nE '\blocal/|"local", |Path\("local"\)|/local(["'"'"'` )]|$)' 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(#|//)' | grep -vE 'uuid5-gen\.sh|validate-note-id|validate-staged-note-ids|node_modules/|/usr/local/|\.local/' | grep -vE '^[^:]+:[0-9]+:[[:space:]]*\*' | grep -vE '/tests/|brainPath\(' | grep -vE '^[^:]+:[0-9]+:.*(vault|localDisk|ident_with_ext|legacy flat|TRASH_BATCH/local|\$batch/local|ORIGINAL_PATHS|agentBrain/local/\{|"local/" \+ rel|personalize them in|rel === "local")' | grep -vE '\.test\.ts:' | grep -vE '^(scripts/setup/setup-vault\.sh|scripts/setup/drop-local-alias\.sh|scripts/setup/setup-structure\.sh|scripts/migrate-v2\.sh|scripts/uninstall\.sh|scripts/checks/check-vault-spelling\.sh|system/addons/agentbrain-mcp/src/|[^:]*/tests?/|[^:]*/test\.sh)' | wc -l | tr -d ' ')"
 	echo "check-vault-spelling: $n literal local/ path(s) remain in code (migration to \$VAULT_DIR; the ratchet refuses new ones)"
 	exit 0
 	;;

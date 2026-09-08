@@ -1,5 +1,6 @@
 import * as fsp from "node:fs/promises";
 import * as path from "node:path";
+import { execFile } from "node:child_process";
 import { brainDir, brainPath } from "../brain-paths";
 import { CORE_FILES } from "./constants";
 import { exists, listMarkdownFiles } from "./files";
@@ -12,9 +13,26 @@ export type BrainEventContext = {
 	ui: { setStatus: (id: string, text: string) => void };
 };
 
+// The other half of sync-vault.sh: a fast-forward-only pull of the vault at
+// session start, so a second machine starts on current notes. The script is
+// quiet unless notes came in or the vault diverged, and never blocks (bounded
+// fetch, exit 0); its one line, when there is one, becomes a status line.
+function pullVault(ctx: BrainEventContext): void {
+	const script = path.join(brainDir(), "scripts", "sync", "pull-vault.sh");
+	try {
+		execFile("bash", [script], { timeout: 20_000 }, (_err, stdout) => {
+			const line = String(stdout ?? "").trim();
+			if (line) ctx.ui.setStatus("agentBrain-vault", line);
+		});
+	} catch {
+		// never let the pull touch the session
+	}
+}
+
 export async function handleSessionStart(
 	ctx: BrainEventContext,
 ): Promise<void> {
+	pullVault(ctx);
 	const project = await detectProjectDir(ctx.cwd);
 	if (project) {
 		ctx.ui.setStatus("agentBrain", `brain: project: ${path.basename(project)}`);

@@ -36,3 +36,15 @@ fi
 npm exec --yes --package typescript -- tsc -p tests/tsconfig.json --noEmit
 
 echo "Pi extension type-check passed."
+
+# Imports stay inside extensions/. configure-pi links every entry of that
+# directory into ~/.pi/agent/extensions, one link per entry, and Pi resolves a
+# relative import from the link's path: "../../addons/goal/lib/core" then points
+# into ~/.pi and the extension fails to load (a second machine, 2026-09-07).
+# A lib that lives elsewhere is reached through a link inside extensions/.
+_outside="$(grep -nE 'from "\.\./' "$ROOT_DIR"/system/pi-config/extensions/*.ts 2>/dev/null || true)"
+if [ -n "$_outside" ]; then
+	echo "FAIL extension imports outside extensions/ (link the lib in, like goal-lib):" >&2
+	printf '%s\n' "$_outside" | sed 's/^/  /' >&2
+	exit 1
+fi

@@ -44,7 +44,7 @@ _default_repo() {
     printf '%s\n' "$alias_path"
     return
   fi
-  printf '%s\n' "$HOME/Developer/agentBrain-dev"
+  printf '%s\n' "$HOME/Developer/agentBrain"   # the installer's default; -dev is the maintainer's checkout
 }
 REPO="${AGENTBRAIN_DEV_DIR:-$(_default_repo)}"
 CHECK_ONLY=0

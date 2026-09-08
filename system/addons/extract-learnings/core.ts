@@ -4,7 +4,7 @@ import { readFile, writeFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { join, dirname, resolve } from "path";
 import { createHash } from "crypto";
-import { callModel } from "../youtube-digest/src/summarizer";
+import { callModel } from "@agentbrain/lib/model-call";
 
 const SCRIPT_DIR = dirname(Bun.main);                    // the add-on dir (core.ts is run directly)
 const BRAIN = resolve(SCRIPT_DIR, "..", "..", "..");      // brain root: addons/<id> -> addons -> system -> root
@@ -51,7 +51,7 @@ export async function extractFromTranscript(jsonlPath: string): Promise<number> 
   if (text.split(/\s+/).length < 50) return 0;            // too short to be worth it
   // Bound the model call so a slow/hanging provider (e.g. an offline Pi fallback) never stalls.
   const out = await Promise.race([
-    callModel(buildPrompt(text), await loadSettings(), { assumeYes: true }),
+    callModel(buildPrompt(text), await loadSettings(), { assumeYes: true, slug: "extract-learnings" }),
     new Promise<null>((r) => setTimeout(() => r(null), MODEL_TIMEOUT_MS)),
   ]);
   if (!out) return 0;

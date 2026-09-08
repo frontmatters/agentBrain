@@ -14,6 +14,14 @@ and this addon adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-09-07
+
+### Fixed
+
+- The core imported `callModel` from youtube-digest, which is not in the release payload,
+  so on every fresh install the precompact hook loaded nothing and no learning was ever
+  extracted. It imports the shared `@agentbrain/lib/model-call` now.
+
 ## [0.1.2] - 2026-09-06
 
 ### Fixed

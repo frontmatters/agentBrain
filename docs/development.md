@@ -24,6 +24,12 @@ canonical description.
 
 ## Quality gates
 
+The pre-push hook validates the commit being pushed, not the working tree: it
+checks that sha out in a detached worktree (with the vault link and brain.json
+put in place), runs `doctor.sh --fast` there, and removes the worktree. A
+commit or edit made while the doctor runs, from this session or another, can
+no longer fail the push or slip past it; what is green is what lands.
+
 | Gate                        | When it runs                                                             |
 | --------------------------- | ------------------------------------------------------------------------ |
 | `.githooks/pre-commit`      | Path-aware fast checks on staged files: privacy scan, NDA gate, shellcheck plus an SC2317 unreachable-code pass, em-dash and invisible-character checks on added lines, addon/frontmatter checks. Warns when a symlink shim's target is dirty and unstaged (`check-shim-staging.sh`) |

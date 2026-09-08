@@ -30,7 +30,7 @@ _default_repo() {
 	if [ -e "$BRAIN/.git" ]; then
 		(cd "$BRAIN" && pwd -P)
 	else
-		printf '%s\n' "$HOME/Developer/agentBrain-dev"
+		printf '%s\n' "$HOME/Developer/agentBrain"   # the installer's default; -dev is the maintainer's checkout
 	fi
 }
 REPO="${AGENTBRAIN_DEV_DIR:-$(_default_repo)}"

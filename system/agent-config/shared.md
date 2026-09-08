@@ -179,4 +179,4 @@ switches or skill/MCP toggles, dynamic content at the bottom. Full guideline:
 ## Validation
 
 - Public changes: run `scripts/privacy-scan.sh`.
-- Private local changes: run `scripts/checks/check-vault-private.sh` or `scripts/sync/sync-vault.sh`.
+- Private local changes: run `scripts/checks/check-vault-private.sh` or `scripts/sync/sync-vault.sh`. The session-start hooks run `scripts/sync/pull-vault.sh` (fast-forward only) so a second machine starts on current notes; a diverged vault is reported, never merged for you.

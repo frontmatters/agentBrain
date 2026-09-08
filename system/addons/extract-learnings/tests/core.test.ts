@@ -9,7 +9,7 @@ import { join } from "path";
 // --- Mock the summarizer so no network call is ever made. ---
 // `__MOCK` lets each test decide what callModel returns (or whether it "hangs").
 const ctrl: { mode: "lines" | "empty" | "null" | "hang"; payload?: string } = { mode: "null" };
-mock.module("../../youtube-digest/src/summarizer", () => ({
+mock.module("@agentbrain/lib/model-call", () => ({
   callModel: async (_prompt: string) => {
     switch (ctrl.mode) {
       case "lines": return ctrl.payload ?? "LEARNING: always pin npm versions\nLEARNING: log skipped deps";

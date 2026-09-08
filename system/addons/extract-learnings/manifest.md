@@ -1,7 +1,7 @@
 ---
 id: extract-learnings
 name: Extract Learnings (behavior)
-version: 0.1.2
+version: 0.1.3
 author: frontmatters
 install: bash system/addons/extract-learnings/install.sh
 command: bun
