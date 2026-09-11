@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# project-init — apply the owner's project-type decisions to a repository.
+#
+# The mechanism is public; the types are not. Which brands exist, which email
+# signs which kind of work, which of them are meant to be published: that is the
+# owner's data and it lives in the vault. This script ships with no brands in it
+# and works on a machine that has defined none.
+#
+# It reads a `project-types:` block from the first vault note that carries one,
+# picks a type (given, detected, or the declared default), and applies it:
+# repository-local git identity, a LICENSE holder check, and the R&D scaffold.
+#
+#   project-init                       apply the detected or default type
+#   project-init --type <id>           apply a named type
+#   project-init --list                show the types this machine has
+#   project-init --dir <path>          operate on another repo
+#   project-init --no-rnd              skip the R&D scaffold
+#   project-init --dry-run             report the plan, write nothing
+#
+# git identity is set with `git config` inside the repository, never --global.
+set -uo pipefail
+
+HERE="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
+BRAIN="$(cd "$HERE/../../../.." && pwd)"
+
+DIR="."; TYPE=""; LIST=0; DO_RND=1; DRY=0
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--dir) DIR="${2:-}"; shift 2 ;;
+		--dir=*) DIR="${1#--dir=}"; shift ;;
+		--type) TYPE="${2:-}"; shift 2 ;;
+		--type=*) TYPE="${1#--type=}"; shift ;;
+		--list) LIST=1; shift ;;
+		--no-rnd) DO_RND=0; shift ;;
+		--dry-run) DRY=1; shift ;;
+		-h|--help) sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+		*) printf 'project-init: unknown argument: %s\n' "$1" >&2; exit 2 ;;
+	esac
+done
+
+[ -d "$DIR" ] || { printf 'project-init: not a directory: %s\n' "$DIR" >&2; exit 1; }
+DIR="$(cd "$DIR" && pwd)"
+
+# Where the types may live. First note that actually carries a project-types
+# block wins. The seeded starter lands at the second path; an owner who keeps
+# the decision with the rest of their preferences uses the first.
+# vault/preferences is scoped; check-preference-scopes fails on a loose .md
+# directly in it, so a types note lives in a scope or at the vault root.
+CANDIDATES="
+$BRAIN/vault/preferences/personal/author-identity-by-project-type.md
+$BRAIN/vault/preferences/organization/author-identity-by-project-type.md
+$BRAIN/vault/project-types.md
+"
+[ -n "${PROJECT_TYPES_FILE:-}" ] && CANDIDATES="$PROJECT_TYPES_FILE"
+
+TYPES_FILE=""
+for c in $CANDIDATES; do
+	[ -f "$c" ] && grep -q '^project-types:' "$c" && { TYPES_FILE="$c"; break; }
+done
+
+# Parses only the shape this schema uses: one nested block of scalar fields plus
+# one inline list. Deliberately not a YAML library: PyYAML is not in the standard
+# library, and a scaffold must not fail on a machine that lacks a package.
+read_types() {
+	python3 - "$1" <<'PY'
+import sys, re
+lines = open(sys.argv[1], encoding="utf-8").read().split("\n")
+try:
+    end = lines.index("---", 1)
+except ValueError:
+    sys.exit(0)
+fm, cur, out, default = lines[1:end], None, {}, ""
+for ln in fm:
+    if ln.startswith("project-types-default:"):
+        default = ln.split(":", 1)[1].strip().strip('"').strip("'")
+    m = re.match(r"^  ([A-Za-z0-9._-]+):\s*$", ln)
+    if m:
+        cur = m.group(1); out[cur] = {}; continue
+    m = re.match(r"^    ([a-z-]+):\s*(.*)$", ln)
+    if m and cur:
+        k, v = m.group(1), m.group(2).strip()
+        if v.startswith("[") and v.endswith("]"):
+            v = ",".join(x.strip().strip('"').strip("'") for x in v[1:-1].split(",") if x.strip())
+        out[cur][k] = v.strip('"').strip("'")
+    if ln and not ln.startswith(" "):
+        cur = None
+# Unit separator, not tab: bash `read` treats tab as whitespace and collapses
+# runs of it, so a type with an empty field (a brand whose address is not
+# decided yet) shifted every later column one to the left.
+US = "\x1f"
+print("DEFAULT" + US + default)
+for name, f in out.items():
+    print(US.join([name, f.get("label", name), f.get("git-name", ""),
+                   f.get("git-email", ""), f.get("license-holder", ""),
+                   f.get("visibility", ""), f.get("detect", "")]))
+PY
+}
+
+if [ -z "$TYPES_FILE" ]; then
+	# Zero configuration is a supported state, not an error. A machine that has
+	# defined no types gets the scaffold and keeps whatever identity the repo has.
+	printf 'project-init: no project types defined on this machine.\n'
+	printf '  Using the repository git identity as-is.\n'
+	printf '  To define types, add a project-types: block to a vault note.\n'
+	if [ "$LIST" -eq 1 ]; then exit 0; fi
+	if [ "$DO_RND" -eq 1 ] && [ "$DRY" -eq 0 ]; then
+		bash "$BRAIN/system/skills/rnd-init/bin/rnd-init" --dir "$DIR" | sed 's/^/  /'
+	fi
+	exit 0
+fi
+
+TABLE="$(read_types "$TYPES_FILE")"
+DEFAULT="$(printf '%s\n' "$TABLE" | awk -F'\037' '$1=="DEFAULT"{print $2}')"
+ROWS="$(printf '%s\n' "$TABLE" | grep -v '^DEFAULT')"
+
+if [ "$LIST" -eq 1 ]; then
+	printf 'project types from %s\n' "${TYPES_FILE#"$BRAIN"/}"
+	printf '%s\n' "$ROWS" | while IFS=$'\037' read -r id label _n email _l vis _d; do
+		[ -n "$id" ] || continue
+		printf '  %-14s %-18s %-28s %s%s\n' "$id" "$label" "${email:-<no email>}" "$vis" \
+			"$([ "$id" = "$DEFAULT" ] && printf '  (default)')"
+	done
+	exit 0
+fi
+
+# Detection follows the markers the owner recorded, not a guess of our own.
+if [ -z "$TYPE" ]; then
+	while IFS=$'\037' read -r id _lb _n _e _l _v detect; do
+		[ -n "$id" ] && [ -n "$detect" ] || continue
+		IFS=',' read -ra marks <<< "$detect"
+		for m in "${marks[@]}"; do
+			[ -n "$m" ] || continue
+			# A marker may be a glob (*.xcodeproj); -e cannot see one, so let
+			# the shell expand it and test whether anything came back.
+			case "$m" in
+				*[*?]*) for g in "$DIR"/$m; do [ -e "$g" ] && { TYPE="$id"; break 3; }; done ;;
+				*) [ -e "$DIR/$m" ] && { TYPE="$id"; break 2; } ;;
+			esac
+		done
+	done <<< "$ROWS"
+fi
+[ -n "$TYPE" ] || TYPE="$DEFAULT"
+
+ROW="$(printf '%s\n' "$ROWS" | awk -F'\037' -v t="$TYPE" '$1==t')"
+if [ -z "$ROW" ]; then
+	printf 'project-init: unknown type: %s\n' "$TYPE" >&2
+	printf '  known: %s\n' "$(printf '%s\n' "$ROWS" | cut -d$'\037' -f1 | tr '\n' ' ')" >&2
+	exit 1
+fi
+IFS=$'\037' read -r _id LABEL GIT_NAME GIT_EMAIL LICENSE_HOLDER VISIBILITY _d <<< "$ROW"
+
+# A starter type has no label yet. Fall back to the id rather than printing a
+# blank where a name should be.
+[ -n "$LABEL" ] || LABEL="$TYPE"
+printf 'project-init: %s (%s)\n' "$LABEL" "$TYPE"
+[ "$DRY" -eq 1 ] && printf '  dry run: nothing below is written\n'
+
+# ── git identity, repository-local ───────────────────────────────────────────
+if [ ! -d "$DIR/.git" ]; then
+	printf '  skipped git identity: not a git repository\n'
+elif [ -z "$GIT_EMAIL" ]; then
+	# An incomplete type is reported, never half-applied: a name without an
+	# address produces commits that cannot be attributed back.
+	printf '  skipped git identity: type %s has no git-email yet (see %s)\n' \
+		"$TYPE" "${TYPES_FILE#"$BRAIN"/}"
+else
+	cur_n="$(git -C "$DIR" config --local user.name 2>/dev/null || true)"
+	cur_e="$(git -C "$DIR" config --local user.email 2>/dev/null || true)"
+	if [ "$cur_n" = "$GIT_NAME" ] && [ "$cur_e" = "$GIT_EMAIL" ]; then
+		printf '  git identity already %s <%s>\n' "$GIT_NAME" "$GIT_EMAIL"
+	elif [ "$DRY" -eq 1 ]; then
+		printf '  would set git identity to %s <%s>\n' "$GIT_NAME" "$GIT_EMAIL"
+	else
+		git -C "$DIR" config --local user.name "$GIT_NAME"
+		git -C "$DIR" config --local user.email "$GIT_EMAIL"
+		printf '  git identity set to %s <%s> (repository only)\n' "$GIT_NAME" "$GIT_EMAIL"
+	fi
+fi
+
+# ── LICENSE holder ───────────────────────────────────────────────────────────
+# Reported, never rewritten. A licence is a legal statement; a scaffold that
+# edits one silently is worse than one that says nothing.
+if [ -z "$LICENSE_HOLDER" ]; then
+	:
+elif [ ! -f "$DIR/LICENSE" ]; then
+	printf '  no LICENSE yet; the holder for this type is %s\n' "$LICENSE_HOLDER"
+elif grep -qF "$LICENSE_HOLDER" "$DIR/LICENSE"; then
+	printf '  LICENSE already names %s\n' "$LICENSE_HOLDER"
+else
+	printf '  LICENSE does not name %s; left untouched, change it by hand\n' "$LICENSE_HOLDER"
+fi
+
+# ── R&D scaffold ─────────────────────────────────────────────────────────────
+if [ "$DO_RND" -eq 1 ]; then
+	if [ "$DRY" -eq 1 ]; then
+		printf '  would scaffold R&D/\n'
+	else
+		bash "$BRAIN/system/skills/rnd-init/bin/rnd-init" --dir "$DIR" | sed 's/^/  /'
+	fi
+fi
+
+[ "$VISIBILITY" = "public" ] && \
+	printf '  this type is published: sanitize before the first public push\n'
+exit 0

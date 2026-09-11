@@ -15,10 +15,18 @@ cd "$ROOT_DIR"
 
 REGISTRY="${ADDONS_CHECK_REGISTRY:-system/addons}"
 ONLY="${1:-}"   # optional: validate a single add-on by id
-CLIENTS="claude gemini opencode pi cursor copilot codex windsurf cline hermes"
+# Same list as the matrix columns and the same one the declared-client guard
+# validates against. It was a third hand-kept copy; keeping three in step by
+# hand is how abh ended up declared by 34 manifests with no column anywhere.
+CLIENTS="$(grep -vE '^[[:space:]]*(#|$)' "$ROOT_DIR/scripts/lib/clients.txt" 2>/dev/null | tr '\n' ' ')"
 REQUIRED="id name privacy install_method author"
 VALID_PRIVACY="local local-only sends-docs sends-all"
 VALID_SUPPORT="full rules none unknown"
+# Every client a manifest declares must have a column, or the matrix silently
+# omits it and reads as "no add-on supports this". The list is declared rather
+# than derived from the manifests, because a release ships a slim core and a
+# derived list differs between a full checkout and a fresh install.
+KNOWN_CLIENTS="$(grep -vE '^[[:space:]]*(#|$)' "$ROOT_DIR/scripts/lib/clients.txt" 2>/dev/null | tr '\n' ' ')"
 VALID_METHOD="self ai-driven config-entry"
 VALID_OS="macos linux windows any"
 VALID_DEPRECATED_REASON="renamed replaced merged discontinued"
@@ -185,6 +193,18 @@ for m in "$REGISTRY"/*/manifest.md; do
 		[ "$lvl" = "unknown" ] && continue
 		in_set "$lvl" $VALID_SUPPORT || { echo "FAIL $m: client '$c' has invalid support '$lvl'" >&2; errors=$((errors+1)); }
 	done
+	# Every client the manifest DECLARES must have a column. The loop above walks
+	# a fixed list, so it can only ever see clients that already have one; a key
+	# nobody listed slips past it and then vanishes from the matrix, which reads
+	# as "no add-on supports this".
+	while IFS= read -r c; do
+		[ -n "$c" ] || continue
+		in_set "$c" $KNOWN_CLIENTS || {
+			echo "FAIL $m: client '$c' has no column; add it to scripts/lib/clients.txt and run 'bash scripts/addons.sh clients --write'" >&2
+			errors=$((errors+1))
+		}
+	done < <(awk '/^---[[:space:]]*$/{fm++;next} fm==1&&/^support:[[:space:]]*$/{s=1;next} fm==1&&s&&/^[^[:space:]]/{s=0} fm==1&&s&&/^[[:space:]]+[a-z][a-z0-9-]*:/{sub(/^[[:space:]]+/,"");sub(/:.*$/,"");print}' "$m")
+
 	# Optional `deprecated:` block. If present: `reason` is required + enum;
 	# `replaced_by` is required UNLESS reason=discontinued (the no-successor case).
 	if grep -qE "^deprecated:[[:space:]]*$" "$m"; then

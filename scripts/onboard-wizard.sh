@@ -24,6 +24,12 @@ if [ "${AB_WIZARD_DEFAULTS:-}" != "1" ] && [ ! -t 0 ] && ! ( : < /dev/tty ) 2>/d
 	echo "onboard-wizard: no TTY — run interactively or set AB_WIZARD_DEFAULTS=1" >&2
 	exit 2
 fi
+# Hand the detected editor to the wizard: one implementation, in lib/editors.sh.
+# shellcheck source=lib/editors.sh
+. "$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)/lib/editors.sh"
+AB_DETECTED_EDITOR="$(editor_detect_preferred 2>/dev/null || true)"
+export AB_DETECTED_EDITOR
+
 python3 - "$VAULT" <<'PY'
 import json, os, re, subprocess, sys
 VAULT = sys.argv[1]
@@ -276,15 +282,15 @@ def detect_locale_language():
             "es": "Español", "zh": "中文", "ja": "日本語"}.get(pref)
 
 def detect_editor():
-    import shutil
-    for cmd, val in (("cursor", "Cursor"), ("code", "VS Code"), ("zed", "Zed"),
-                     ("nvim", "Neovim / Vim")):
-        if shutil.which(cmd):
-            return val
-    for app, val in (("Cursor.app", "Cursor"), ("Visual Studio Code.app", "VS Code"),
-                     ("Zed.app", "Zed")):
-        if os.path.exists(f"/Applications/{app}"):
-            return val
+    # Detection lives in scripts/lib/editors.sh and is handed in as
+    # AB_DETECTED_EDITOR. This used to repeat the PATH and app-bundle probes
+    # here, and the two drifted: the copy here missed the macOS case where an
+    # editor ships its CLI inside the bundle without linking it into PATH.
+    # $EDITOR stays here because it is this process's environment, not a
+    # property of the machine.
+    handed = os.environ.get("AB_DETECTED_EDITOR", "").strip()
+    if handed:
+        return handed
     e = os.environ.get("EDITOR", "")
     if "vim" in e:
         return "Neovim / Vim"
@@ -499,40 +505,74 @@ sup = C.get("locales", {}).get("supported", ["en", "nl"])
 loc = {"English": "en", "Nederlands": "nl"}.get(answers.get("language", "English"), "en")
 answers["_locale"] = loc
 
+# The wizard owns a handful of answer bullets per file. It does NOT own the
+# file. Preference notes get enriched by hand and by agents over time: headings,
+# tables, code blocks, prose, [[links]]. An earlier version rebuilt the body
+# from its own bullets alone, which dropped every one of those. Measured on a
+# real identity.md: 0 lines survived, 43 were destroyed, and a bullet whose
+# sentence continued on the next line was left truncated mid-word.
+#
+# So: read the file, replace the lines this wizard owns in place, append the
+# ones that are not there yet inside a marked block, and leave every other byte
+# exactly as it was.
+ANSWER_BEGIN = "<!-- onboard:answers -->"
+ANSWER_END = "<!-- /onboard:answers -->"
+
+
+def _pref_key(line):
+    """The key of an answer bullet ("- Conversation language: X" -> that key).
+
+    Returns "" for anything that is not a "- Key: value" bullet, so prose,
+    headings and table rows never match and are never rewritten.
+    """
+    s = line.strip()
+    if not s.startswith("- ") or ":" not in s:
+        return ""
+    return s[2:].split(":", 1)[0].strip().lower()
+
+
 def write_pref(fname, title, body_lines):
     path = f"{PREFS}/{fname}"
-    fm = ""
-    old_bullets = []
-    if os.path.exists(path):
-        txt = open(path).read()
-        m = re.match(r"(?s)^(---\n.*?\n---\n)", txt)
-        fm = m.group(1) if m else ""
-        # Preserve free-text answers a previous run/agent already wrote
-        # (matched on the "- Key:" prefix; skip fill-in-later placeholders).
-        for l in txt.splitlines():
-            ls = l.strip()
-            if ls.startswith("- ") and "(fill in later" not in ls:
-                key = ls[2:].split(":")[0].strip().lower()
-                if key:
-                    old_bullets.append((key, ls))
-    # A real answer from an earlier run/agent always wins over a placeholder:
-    # if the wizard writes "(fill in later)" but the file has a real value,
-    # keep the real value.
-    oldmap = dict(old_bullets)
-    merged = []
+    owned = {}
     for bl in body_lines:
-        key = bl.strip()[2:].split(":")[0].strip().lower() if ":" in bl else ""
-        old = oldmap.get(key)
-        if old is not None and "(fill in later" in bl and "(fill in later" not in old:
-            merged.append(old)
-            oldmap.pop(key, None)
+        k = _pref_key(bl)
+        if k:
+            owned[k] = bl
+
+    # No file yet: the template IS the whole content, nothing can be lost.
+    if not os.path.exists(path):
+        open(path, "w").write(f"# {title}\n\n" + "\n".join(body_lines) + "\n")
+        print(f"  {GRN}✓{RST} {fname}")
+        return
+
+    lines = open(path).read().splitlines()
+    out, seen, fence = [], set(), False
+    for l in lines:
+        # A bullet inside a fenced code block is an example, not an answer.
+        if l.lstrip().startswith("```"):
+            fence = not fence
+            out.append(l)
+            continue
+        k = "" if fence else _pref_key(l)
+        new = owned.get(k) if k else None
+        if new is None or k in seen:
+            out.append(l)
+            continue
+        seen.add(k)
+        # A real value already in the file beats a placeholder from this run.
+        if "(fill in later" in new and "(fill in later" not in l:
+            out.append(l)
         else:
-            merged.append(bl)
-            oldmap.pop(key, None)
-    for key, line in oldmap.items():
-        merged.append(line)
-    body = f"# {title}\n\n" + "\n".join(merged) + "\n"
-    open(path, "w").write(fm + "\n" + body if fm else body)
+            out.append(new)
+
+    missing = [owned[k] for k in owned if k not in seen]
+    if missing:
+        if ANSWER_END in out:
+            out[out.index(ANSWER_END):out.index(ANSWER_END)] = missing
+        else:
+            out += ["", ANSWER_BEGIN] + missing + [ANSWER_END]
+
+    open(path, "w").write("\n".join(out).rstrip("\n") + "\n")
     print(f"  {GRN}✓{RST} {fname}")
 
 print(f"\n{DIM}Writing preferences…{RST}")

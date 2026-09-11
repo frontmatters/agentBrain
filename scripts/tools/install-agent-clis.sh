@@ -49,6 +49,107 @@ npm_global_writable() {
 # are installed by the user (platform-specific), not via this menu. So every command here works
 # on macOS, Linux and WSL. agentBrain is agent-agnostic; Pi is listed first + flagged
 # recommended only because it has the deepest integration today (informational, not a default).
+# ── Editor resolution for extension rows ─────────────────────────────────────
+# Sets EDITOR_CLI and EDITOR_LABEL, or returns non-zero to skip the row.
+#
+# One installed editor: use it, no question. Several: ask, because "VS Code
+# extension" is ambiguous on a machine that also runs Cursor and VSCodium.
+# None: offer to install one, with enough explanation to choose.
+EDITOR_CLI=""
+EDITOR_LABEL=""
+_EDITOR_CHOICE=""   # remembered for the rest of the run
+
+resolve_editor_for() { # <row label> <extension id>
+	local row="$1" ext="$2" line id label cli mk
+
+	# A choice made earlier in this run stands for every later row.
+	if [ -n "$_EDITOR_CHOICE" ]; then
+		line="$_EDITOR_CHOICE"
+	else
+		local -a found=()
+		while IFS= read -r line; do [ -n "$line" ] && found+=("$line"); done < <(editor_flavors)
+
+		if [ "${#found[@]}" -eq 0 ]; then
+			offer_editor_install "$row" || return 1
+			while IFS= read -r line; do [ -n "$line" ] && found+=("$line"); done < <(editor_flavors)
+			[ "${#found[@]}" -gt 0 ] || return 1
+		fi
+
+		if [ "${#found[@]}" -eq 1 ]; then
+			line="${found[0]}"
+		else
+			local -a labels=()
+			for line in "${found[@]}"; do
+				IFS='|' read -r id label cli mk <<<"$line"
+				case "$cli" in
+					/Applications/*) labels+=("$label (app bundle, CLI not on PATH)") ;;
+					*) labels+=("$label") ;;
+				esac
+			done
+			labels+=("skip this row")
+			echo
+			echo "Several editors are installed. Which one should get the extension?"
+			if ! ab_prompt_select --default 1 "$row" "${labels[@]}"; then return 1; fi
+			[ "$REPLY" -gt "${#found[@]}" ] && return 1
+			line="${found[$((REPLY - 1))]}"
+		fi
+		_EDITOR_CHOICE="$line"
+	fi
+
+	IFS='|' read -r id label cli mk <<<"$line"
+
+	# Open VSX carries a smaller catalogue than the Microsoft marketplace, and
+	# GitHub Copilot is one of the extensions that is not on it. Saying so here
+	# beats letting the install fail with a registry 404.
+	if [ "$mk" = openvsx ] && [ "$ext" = "GitHub.copilot" ]; then
+		echo -e "  ${YELLOW}!${NC} $label installs from Open VSX, which does not carry GitHub Copilot. Skipping this row."
+		return 1
+	fi
+
+	EDITOR_CLI="$cli"
+	EDITOR_LABEL="$label"
+	return 0
+}
+
+# No editor at all: offer to install one. agentBrain does not install editors
+# behind your back, so this is a question with a default of "neither".
+offer_editor_install() { # <row label>
+	echo
+	echo "No VS Code family editor found, so \"$1\" has nothing to install into."
+	echo
+	echo "  Visual Studio Code  Microsoft's build. Uses the Microsoft marketplace,"
+	echo "                      which carries every extension including GitHub Copilot."
+	echo "                      Ships with telemetry (can be turned off in settings)."
+	echo
+	echo "  VSCodium            The same source, MIT licensed, built without Microsoft"
+	echo "                      branding or telemetry. Uses Open VSX, a smaller"
+	echo "                      marketplace that does NOT carry GitHub Copilot."
+	echo
+	local pick_vscode pick_codium
+	pick_vscode="$(capability_install_cmd vscode)"
+	pick_codium="$(capability_install_cmd vscodium)"
+	local -a opts=()
+	[ -n "$pick_vscode" ] && opts+=("Visual Studio Code -- $pick_vscode")
+	[ -n "$pick_codium" ] && opts+=("VSCodium -- $pick_codium")
+	if [ "${#opts[@]}" -eq 0 ]; then
+		echo "  No install recipe for this platform. Install one yourself, then re-run setup."
+		return 1
+	fi
+	opts+=("neither -- skip editor extensions")
+	if ! ab_prompt_select --default "${#opts[@]}" "Install an editor?" "${opts[@]}"; then return 1; fi
+	[ "$REPLY" -gt "$((${#opts[@]} - 1))" ] && return 1
+
+	local cap; case "$REPLY" in 1) cap=vscode ;; 2) cap=vscodium ;; *) return 1 ;; esac
+	[ -n "$pick_vscode" ] || cap=vscodium   # only VSCodium had a recipe
+	local cmd; cmd="$(capability_install_cmd "$cap")"
+	echo -e "  ${CYAN}Installing${NC} $cap -- $cmd"
+	if ! eval "$cmd"; then
+		echo -e "  ${RED}✗${NC} install failed; run it yourself and re-run setup."
+		return 1
+	fi
+	return 0
+}
+
 AGENTS=(
 	# agentBrain Harness belongs to agentBrain and is offered first.
 	"abh|agentBrain Harness|npm install -g @agentbrain-harness/abh|abh"
@@ -57,8 +158,11 @@ AGENTS=(
 	"copilot|GitHub Copilot CLI|npm install -g @github/copilot|copilot"
 	"gemini-cli|Gemini CLI|npm install -g @google/gemini-cli|gemini"
 	"opencode|OpenCode|npm install -g opencode-ai|opencode"
-	"vscode-copilot|VS Code Copilot extension|code --install-extension GitHub.copilot|"
-	"cline|Cline (VS Code extension)|code --install-extension saoudrizwan.claude-dev|"
+	# Extension rows carry the extension id. Which editor installs it is decided
+	# at run time: this machine may have several, or carry the CLI only inside an
+	# app bundle. See the editor resolution below.
+	"vscode-copilot|GitHub Copilot extension|ext:GitHub.copilot|"
+	"cline|Cline extension|ext:saoudrizwan.claude-dev|"
 )
 N=${#AGENTS[@]}
 
@@ -71,6 +175,13 @@ fi
 # The shared prompt helper decodes terminal bytes into semantic keys (UP/DOWN/etc.).
 # shellcheck disable=SC1091
 . "$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.." && pwd)/installer/prompt-helper.sh"
+# Editor detection and the install recipes for the extension rows.
+# shellcheck source=../lib/editors.sh
+. "$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.." && pwd)/lib/editors.sh"
+# shellcheck source=../lib/platform.sh
+. "$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.." && pwd)/lib/platform.sh"
+# shellcheck source=../lib/capability-install.sh
+. "$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.." && pwd)/lib/capability-install.sh"
 
 # Prefer user-scoped nvm Node/npm over any system Node, so the `npm install -g` commands below
 # target a user-writable global prefix (~/.nvm/...) instead of a root-only one (system Node's
@@ -203,6 +314,10 @@ fi
 echo ""
 ok=0
 fail=0
+# A skipped row is not a failure: the user chose to skip, or nothing was
+# installable on this platform. Counting it as a failure made a deliberate
+# choice look like a broken run.
+skipped=0
 for i in "${todo[@]}"; do
 	IFS='|' read -r id name cmd detect <<<"${AGENTS[$i]}"
 	if [ "${INSTALLED[i]}" -eq 1 ] && [ "$id" = "abh" ]; then
@@ -223,15 +338,23 @@ for i in "${todo[@]}"; do
 	# failure. Catch it first and point at the real fix — nvm-managed Node, never sudo.
 	is_npm_install=0
 	[ "${INSTALLED[i]}" -eq 0 ] && case "$run" in npm\ *) is_npm_install=1 ;; esac
-	# Fresh-machine guard (VS Code extension rows): no `code` CLI means no VS
-	# Code — and editors are deliberately NOT installed by agentBrain. Skip
-	# with the honest route instead of a bash "command not found".
-	case "$run" in code\ *)
-		if ! command -v code >/dev/null 2>&1; then
-			echo -e "  ${RED}✗${NC} ${name} skipped — VS Code ('code' CLI) not installed. Install VS Code yourself, then re-run setup."
-			fail=$((fail + 1))
+	# Extension rows: resolve which editor installs this, now. Three states, not
+	# two. The old guard tested `command -v code` only, which called an installed
+	# VS Code "not installed" whenever its CLI had not been linked into PATH (the
+	# default on macOS until the user runs the palette command), and could not
+	# tell VS Code from Cursor, which ships a `code` binary of its own.
+	case "$run" in ext:*)
+		ext_id="${run#ext:}"
+		if ! resolve_editor_for "$name" "$ext_id"; then
+			# Declined or nothing installable: not the user's mistake, so this is
+			# a skip and not a failure.
+			skipped=$((skipped + 1))
 			continue
-		fi ;;
+		fi
+		run="$EDITOR_CLI --install-extension $ext_id"
+		[ "${INSTALLED[i]}" -eq 1 ] && run="$EDITOR_CLI --uninstall-extension $ext_id"
+		echo -e "  ${CYAN}via${NC} $EDITOR_LABEL"
+		;;
 	esac
 	# Fresh-machine guard: no npm at all (a Linux install never ran the macOS
 	# bootstrap). Offer nvm-managed Node LTS ONCE — same mechanism and pinned
@@ -297,4 +420,6 @@ for i in "${todo[@]}"; do
 done
 
 echo ""
-echo "Done: ${ok} ok, ${fail} failed. (Re-run setup so agentBrain reflects the change.)"
+_summary="Done: ${ok} ok, ${fail} failed"
+[ "$skipped" -gt 0 ] && _summary="$_summary, ${skipped} skipped"
+echo "${_summary}. (Re-run setup so agentBrain reflects the change.)"

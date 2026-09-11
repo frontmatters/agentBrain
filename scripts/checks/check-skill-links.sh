@@ -14,7 +14,7 @@
 # are never flagged (setup-skills.sh leaves them untouched too).
 #
 # Local-only check (agent dirs are machine state, absent in CI).
-# Exit codes: 0 ok, 1 drift found. Repair: bash scripts/setup/setup-skills.sh
+# Exit codes: 0 ok, 1 drift found. Repair: ${fixcmd}
 #
 # Bash 3.2 compatible.
 
@@ -44,11 +44,11 @@ is_brain_skill_link() {
 }
 
 check_agent() {
-	local skills_dir="$1" label="$2"
+	local skills_dir="$1" label="$2" fixcmd="$3"
 	echo "check-skill-links: ${label} (${skills_dir})"
 
 	if [ ! -d "$skills_dir" ]; then
-		bad "skills dir missing — run: bash scripts/setup/setup-skills.sh"
+		bad "skills dir missing — run: ${fixcmd}"
 		return
 	fi
 
@@ -63,7 +63,7 @@ check_agent() {
 			if [ -e "$target" ] || [ -L "$target" ]; then
 				ok
 			else
-				bad "$name not installed for ${label} — run: bash scripts/setup/setup-skills.sh"
+				bad "$name not installed for ${label} — run: ${fixcmd}"
 			fi
 		done
 	done
@@ -78,7 +78,7 @@ check_agent() {
 			if [ -e "$target" ] || [ -L "$target" ]; then
 				ok
 			else
-				bad "addon skill $name not installed for ${label} — run: bash scripts/setup/setup-skills.sh"
+				bad "addon skill $name not installed for ${label} — run: ${fixcmd}"
 			fi
 		done
 	fi
@@ -89,7 +89,7 @@ check_agent() {
 		is_brain_skill_link "$link" || continue
 		name="$(basename "$link")"
 		if [ ! -f "$VAULT/system/skills/$name/SKILL.md" ] && [ ! -f "$VAULT/vault/skills/$name/SKILL.md" ]; then
-			bad "orphaned brain symlink: $name (source gone) — run: bash scripts/setup/setup-skills.sh"
+			bad "orphaned brain symlink: $name (source gone) — run: ${fixcmd}"
 		elif [ ! -e "$link" ]; then
 			bad "broken symlink: $name -> $(readlink "$link")"
 		else
@@ -105,7 +105,7 @@ check_agent() {
 		case "$(readlink "$skill")" in *"/system/addons/"*) : ;; *) continue ;; esac
 		name="$(basename "$entry")"
 		if [ ! -f "$VAULT/system/addons/$name/SKILL.md" ] || ! addon_enabled "$name"; then
-			bad "stale addon skill link: $name (disabled or removed) — run: bash scripts/setup/setup-skills.sh"
+			bad "stale addon skill link: $name (disabled or removed) — run: ${fixcmd}"
 		elif [ ! -e "$skill" ]; then
 			bad "broken addon skill link: $name -> $(readlink "$skill")"
 		else
@@ -117,15 +117,21 @@ check_agent() {
 # Detection table ("<detect-dir>|<detect-cmd>|<skills-dir>|<label>"). A config
 # directory alone is not proof of an installed agent; it may be stale or created
 # by an editor. Require the CLI plus a successful version probe for every client.
+#
+# The last field is the command that actually repairs this agent, and it is not
+# the same for every agent. setup-skills.sh contains no reference to pi at all:
+# Pi's skills are linked by configure-pi.sh. Telling a user with an unconfigured
+# Pi to run setup-skills.sh sends them to a script that cannot fix it, and the
+# check keeps failing after they comply.
 AGENTS=(
-	"${AGENT_HOME}/.claude|claude|${AGENT_HOME}/.claude/skills|Claude Code"
-	"${AGENT_HOME}/.copilot|copilot|${AGENT_HOME}/.copilot/skills|Copilot CLI"
-	"${AGENT_HOME}/.pi/agent|pi|${AGENT_HOME}/.pi/agent/skills|Pi"
+	"${AGENT_HOME}/.claude|claude|${AGENT_HOME}/.claude/skills|Claude Code|bash scripts/setup/setup-skills.sh"
+	"${AGENT_HOME}/.copilot|copilot|${AGENT_HOME}/.copilot/skills|Copilot CLI|bash scripts/setup/setup-skills.sh"
+	"${AGENT_HOME}/.pi/agent|pi|${AGENT_HOME}/.pi/agent/skills|Pi|bash scripts/configure-pi.sh"
 )
 
 detected=0
 for _entry in "${AGENTS[@]}"; do
-	IFS='|' read -r _det_dir _det_cmd _skills_dir _label <<< "$_entry"
+	IFS='|' read -r _det_dir _det_cmd _skills_dir _label _fixcmd <<< "$_entry"
 	_detected=false
 	if [ -n "$_det_cmd" ] && command -v "$_det_cmd" &>/dev/null && "$_det_cmd" --version </dev/null >/dev/null 2>&1; then
 		# Pi is wired by configure-pi.sh, not setup-skills.sh. A host-global pi
@@ -134,7 +140,7 @@ for _entry in "${AGENTS[@]}"; do
 	fi
 	if "$_detected"; then
 		detected=$((detected + 1))
-		check_agent "$_skills_dir" "$_label"
+		check_agent "$_skills_dir" "$_label" "$_fixcmd"
 	fi
 done
 

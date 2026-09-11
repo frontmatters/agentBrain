@@ -13,6 +13,7 @@ support:
   claude: full
   copilot: unknown
   codex: unknown
+  abh: unknown
 outputs:
   - ~/.agentBrain/goal-logs/ (outside the vault; GOAL_LOG_DIR overrides)
 ---

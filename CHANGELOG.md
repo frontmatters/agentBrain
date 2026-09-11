@@ -14,8 +14,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.11.0] - 2026-09-11
+
+### Added
+
+- `/rnd-init` scaffolds the `R&D/` convention in a repository: one kept-forever place for validation artefacts, the right ignore lines, and a README that carries the convention with the folder.
+- `/project-init` applies the owner's project-type decisions to a repository (repository-local git identity, LICENSE holder check, R&D scaffold). The types live in the owner's vault, so it ships with no brands in it and works on a machine that has defined none.
+- `scripts/lib/exemptions.tsv`: every exemption a check makes, with a reason and an end date. `check-exemptions` refuses a reason too short to help anyone and fails once a dated row is past its date.
+- `check-skill-tests` discovers and runs every `test.sh` a skill ships with, instead of the doctor listing them by hand. Two skill tests had never run.
+- `addons.sh promote <id>` moves a private vault addon into the bundled layer: privacy scan first, ids regenerated for their new paths, enabled marker left behind as state. The flow had been referenced in a comment since `new` was written and never existed.
+- `/bloop` runs a repository backlog as a validated delivery loop: pick the highest-priority open item, implement, validate against its acceptance criteria, record evidence, ship, continue.
+- `abh` (the agentBrain harness) is a client in every add-on `support:` block, declared `unknown` until each one is actually tested.
+- `scripts/setup/setup.sh` offers developer tools by intent (mail, container, python, local-ai) when it is run on its own. The installer already made that offer in its own flow; the manual path did not, so a devtool was only findable there by someone who knew the script name. Installer 0.2.7 exports `AGENTBRAIN_INSTALLER=1` so the offer is made once, by whichever path is driving.
+
 ### Changed
 
+- Addon skills are linked from every addon source root (`system/addons` and `vault/addons`), matching what the packager has always accepted. A private addon could ship a `SKILL.md` no agent ever saw.
 - The pre-push hook validates the pushed commit in a detached worktree (vault link and `brain.json` put in place) instead of the working tree. A commit or edit made while the doctor ran, from this or another session, twice made the doctor blame the running check and refuse the push.
 
 ## [v1.10.13] - 2026-09-08

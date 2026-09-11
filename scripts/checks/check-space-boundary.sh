@@ -54,13 +54,29 @@ scan_public() {
 }
 
 # Drop public files where a confidential literal legitimately appears.
+# Files allowed to carry the literals this check hunts for. The list is not
+# here: an exemption with no reason attached is a rule that quietly stopped
+# applying, and this one had gone stale twice. It named a path the guard had
+# moved away from, and it was missing a sibling test written after the list, so
+# the doctor failed on a leak that was not one.
+#
+# scripts/lib/exemptions.tsv carries the path, the reason and the end date. A
+# missing register exempts nothing, which is the safe direction for a guard.
+_EXEMPT_REG="$ROOT_DIR/scripts/lib/exemptions.tsv"
+
 allow() {
-	grep -v '^$' |
-		grep -v '^scripts/check-space-boundary\.sh:' |
-		grep -v '^scripts/tests/test-space-boundary\.sh:' |
-		grep -v '^scripts/privacy-scan\.sh:' |
-		grep -vE '_work/' || true
+	local filtered
+	filtered="$(grep -v '^$' || true)"
+	if [ -f "$_EXEMPT_REG" ]; then
+		while IFS=$'\t' read -r _check pattern _expires _reason; do
+			[ "${_check:-}" = "space-boundary" ] || continue
+			[ -n "${pattern:-}" ] || continue
+			filtered="$(printf '%s\n' "$filtered" | grep -v "^${pattern}:" || true)"
+		done < "$_EXEMPT_REG"
+	fi
+	printf '%s\n' "$filtered" | grep -vE '_work/' || true
 }
+
 
 # ── (0) A space is confidential, full stop ───────────────────────────────────
 # rules.md: a space exists for owner-confidential knowledge; anything reusable

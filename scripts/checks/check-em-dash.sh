@@ -38,15 +38,31 @@ done
 # The program goes in -c, not on stdin: a heredoc would BE the program, and the
 # data piped in would then have nowhere to arrive. Lines are blanked rather than
 # deleted so grep -n keeps reporting the real line numbers.
+# Patterns this check is allowed to treat as not-prose, with their reasons, in
+# one register shared with every other check that exempts something.
+_REG="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.." && pwd)/lib/exemptions.tsv"
+EMDASH_EXEMPT=""
+if [ -f "$_REG" ]; then
+	EMDASH_EXEMPT="$(awk -F'\t' '$1=="em-dash"{print $2}' "$_REG")"
+fi
+export EMDASH_EXEMPT
+
 strip_code() {
 	python3 -c '
-import re, sys
+import os, re, sys
 t = sys.stdin.read()
 def blank(m): return "\n" * m.group(0).count("\n")
 t = re.sub(r"```.*?```", blank, t, flags=re.S)
 t = re.sub(r"`[^`\n]*`", "", t)
 t = re.sub(r"^(?: {4}|\t).*$", "", t, flags=re.M)
 t = re.sub(r"^\s*#.*$", "", t, flags=re.M)
+# Registered exemptions. These are not hard-coded here on purpose: an exemption
+# with no reason attached is a rule that quietly stopped applying, and this
+# check carried one in its header for months that the code never implemented.
+# scripts/lib/exemptions.tsv holds the pattern, the reason and the end date.
+for pat in os.environ.get("EMDASH_EXEMPT", "").split("\n"):
+    if pat.strip():
+        t = re.sub(pat, lambda m: "", t, flags=re.M)
 sys.stdout.write(t)
 '
 }

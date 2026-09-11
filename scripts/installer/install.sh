@@ -1116,6 +1116,14 @@ if [ "${AGENTBRAIN_ASSUME_YES:-}" != "1" ] && has_tty; then
   fi
 fi
 case "${gm:-1}" in 2*) export AGENTBRAIN_EXPLAIN=0;; *) export AGENTBRAIN_EXPLAIN=1;; esac
+
+# Tell the sub-installers that an installer is driving. setup.sh offers the
+# devtools step when someone runs it on its own; under the installer that offer
+# belongs here (line ~1213), after the brain is in place, and asking twice is
+# worse than not asking. It also keeps the headless path honest: setup.sh runs
+# there with AGENTBRAIN_ASSUME_YES=1, which would otherwise install devtools
+# unattended, exactly what the non-interactive branch below refuses to do.
+export AGENTBRAIN_INSTALLER=1
 printf '\n'
 expl(){ [ "${AGENTBRAIN_EXPLAIN}" = 1 ] && ln_ "  ${D}\xe2\x84\xb9 $*${N}" || true; }
 

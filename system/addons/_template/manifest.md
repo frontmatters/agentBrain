@@ -44,6 +44,7 @@ support:
   claude: unknown
   copilot: unknown
   codex: unknown
+  abh: unknown
 outputs:
   - vault/your-addon-id/*.json
 ---

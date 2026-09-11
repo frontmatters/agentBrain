@@ -39,6 +39,15 @@ if [ -d "$STARTERS_DIR" ]; then
 		if [[ "$base" == *-* ]]; then
 			subdir="${base%%-*}"
 			fname="${base#*-}"
+			# Two levels when the second segment names a real directory under the
+			# first. vault/preferences is scoped (organization, team, personal)
+			# and check-preference-scopes fails on any loose .md directly in it,
+			# so a starter that belongs in a scope could not be seeded at all
+			# with a single split.
+			if [[ "$fname" == *-* ]] && [ -d "${VAULT}/vault/${subdir}/${fname%%-*}" ]; then
+				subdir="${subdir}/${fname%%-*}"
+				fname="${fname#*-}"
+			fi
 			dest="${VAULT}/vault/${subdir}/${fname}"
 		else
 			dest="${VAULT}/vault/${base}"

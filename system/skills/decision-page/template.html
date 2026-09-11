@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Decisions: TOPIC</title>
+<style>
+  :root { --ink: #222; --muted: #6b6b6b; --line: #ddd; --bg: #f7f7f5; --card: #fff; --accent: #6b4fa0; --accent-soft: #efeaf8; --ok: #2f7d4f; --warn: #b3541e; }
+  body { font: 15px/1.5 system-ui, sans-serif; margin: 0; padding: 32px 40px 80px; background: var(--bg); color: var(--ink); max-width: 1180px; }
+  h1 { font-size: 26px; margin: 0 0 6px; } .lede { color: var(--muted); margin: 0 0 28px; max-width: 72ch; }
+  h2 { font-size: 20px; margin: 44px 0 4px; } h3 { font-size: 15px; margin: 0 0 8px; }
+  .why { color: var(--muted); margin: 0 0 16px; max-width: 80ch; }
+  .options { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .option { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+  .option.advice { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .option .tag { display: inline-block; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .option.advice .tag { color: var(--accent); }
+  /* Mock idiom: a small wireframe vocabulary that is enough for flows and screens. */
+  .mock { border: 1px solid var(--line); border-radius: 8px; background: #fbfbfa; padding: 12px; margin: 10px 0 12px; font-size: 13px; }
+  .mock .head { font-weight: 600; margin-bottom: 8px; } .mock .stepper { display: flex; gap: 10px; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .mock .stepper b { color: var(--accent); } .mock .row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-top: 1px solid var(--line); }
+  .mock .row:first-of-type { border-top: 0; } .mock .card { width: 26px; height: 36px; background: #fff; border: 1px solid #ccc; border-radius: 2px; flex: none; }
+  .mock .name { flex: 1; } .mock .status { font-size: 11px; color: var(--muted); } .mock .btn { border: 1px solid var(--accent); color: var(--accent); border-radius: 999px; padding: 2px 10px; font-size: 12px; }
+  .mock .btn.solid { background: var(--accent); color: #fff; } .mock .btn.off { opacity: .45; } .mock .check { width: 14px; height: 14px; border: 1px solid #999; border-radius: 3px; flex: none; }
+  .mock .check.on { background: var(--accent); border-color: var(--accent); } .mock .nav { display: grid; gap: 6px; font-size: 12px; padding: 8px; background: #f1eef7; border-radius: 6px; width: 150px; }
+  .mock .nav span { padding: 3px 6px; } .mock .nav .x { color: #b33; text-decoration: line-through; } .mock .two { display: flex; gap: 12px; }
+  .mock .aside { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #bbb; color: var(--muted); }
+  .plus, .min { margin: 6px 0; padding-left: 18px; font-size: 13px; } .plus li::marker { color: var(--ok); } .min li::marker { color: var(--warn); }
+  .evidence { font-size: 12px; color: var(--muted); margin-top: 8px; } .evidence a { color: var(--accent); }
+  .evidence img { display: block; width: 100%; border: 1px solid var(--line); border-radius: 6px; margin-top: 6px; }
+  .compare { margin: 16px 0 0; border-collapse: collapse; font-size: 13px; width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .compare th, .compare td { text-align: left; padding: 7px 10px; border-top: 1px solid var(--line); vertical-align: top; } .compare th { background: #f1f1ee; border-top: 0; font-weight: 600; } .compare td:first-child { font-weight: 600; white-space: nowrap; }
+  .compare tr.advice td { background: var(--accent-soft); } .rejected { font-size: 13px; color: var(--muted); margin: 12px 0 0; max-width: 90ch; } .rejected b { color: var(--ink); }
+  .choice { margin: 14px 0 0; padding: 12px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+  .choice label { display: flex; gap: 6px; align-items: center; cursor: pointer; } .choice input[type=text] { flex: 1 1 260px; font: inherit; padding: 6px 8px; border: 1px solid #bbb; border-radius: 6px; }
+  .toolbar { position: sticky; top: 0; z-index: 3; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin: 0 0 20px; display: flex; gap: 10px; align-items: center; font-size: 13px; }
+  .toolbar button { font: inherit; padding: 6px 12px; border: 1px solid #bbb; border-radius: 6px; background: #fff; cursor: pointer; } .toolbar .count { margin-left: auto; color: var(--muted); }
+  .timeline { display: flex; gap: 8px; align-items: center; font-size: 12px; margin: 10px 0; } .timeline span { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; } .timeline i { color: var(--muted); font-style: normal; }
+</style>
+
+<h1>Decisions: TOPIC</h1>
+<p class="lede">From the walkthrough of DATE. Per decision: A is how it works now, B my advice (outlined), C and D the other directions I weighed; below them a table that sets them side by side and what I rejected, with the reason. Choose under each decision and copy everything as markdown into the chat. Evidence: the screenshots in <code>EVIDENCE_DIR</code>.</p>
+<p class="lede"><b>Terms</b> (from GLOSSARY_OR_SPEC): ROLE_A, ROLE_B; OBJECT_A, OBJECT_B.</p>
+
+<div class="toolbar"><span>Your choices stay in this browser.</span><button id="copy">Copy decisions as markdown</button><button id="clear">Clear</button><span class="count" id="count"></span></div>
+
+<h2>1. DECISION_TITLE</h2>
+<p class="why">Why this is a decision: the current behaviour, what it breaks or duplicates, in two sentences.</p>
+<div class="options">
+  <div class="option"><span class="tag">Now (A)</span><h3>What happens today</h3>
+    <div class="mock"><div class="stepper">✓ Step 1 · <b>2 Step 2</b> · 3 Step 3</div><div class="head">Screen title</div>
+      <div class="row"><span class="card"></span><span class="name">Object one</span><span class="btn solid">Primary action</span></div>
+      <div class="aside">Elsewhere, under "Other screen":<div class="row"><span class="name">Object two</span><span class="status">waiting</span><span class="btn">Secondary action</span></div></div></div>
+    <ul class="min"><li>What is wrong with it, in one line.</li></ul>
+    <div class="evidence">Walkthrough step 15: <a href="EVIDENCE_DIR/15-step.png" target="_blank">screenshot</a></div></div>
+  <div class="option advice"><span class="tag">Proposal (B), advice</span><h3>What you advise</h3>
+    <div class="mock"><div class="stepper">✓ Step 1 · <b>2 Step 2</b> · 3 Step 3</div><div class="head">Screen title · 3 objects</div>
+      <div class="row"><span class="check on"></span><span class="card"></span><span class="name">Object one</span><span class="status">done</span><span class="btn">View</span></div>
+      <div class="row"><span class="check"></span><span class="card"></span><span class="name">Object two</span><span class="status">to do</span><span class="btn">View</span></div>
+      <div class="row" style="justify-content:flex-end"><span class="btn solid off">Primary action (1 left)</span></div></div>
+    <ul class="plus"><li>Why it is better.</li></ul>
+    <ul class="min"><li>What it costs or risks.</li></ul></div>
+  <div class="option"><span class="tag">Option C</span><h3>Another direction</h3>
+    <div class="mock"><div class="head">Sketch</div><div class="row"><span class="name">…</span></div></div>
+    <ul class="plus"><li>…</li></ul><ul class="min"><li>…</li></ul></div>
+  <div class="option"><span class="tag">Option D</span><h3>The simplest direction</h3>
+    <div class="mock"><div class="head">Sketch</div><div class="row"><span class="name">…</span></div></div>
+    <ul class="plus"><li>…</li></ul><ul class="min"><li>…</li></ul></div>
+</div>
+<table class="compare"><tr><th></th><th>actions for the user</th><th>where a later feature lands</th><th>build</th></tr>
+<tr><td>A now</td><td>…</td><td>…</td><td>0</td></tr>
+<tr class="advice"><td>B advice</td><td>…</td><td>…</td><td>medium</td></tr>
+<tr><td>C</td><td>…</td><td>…</td><td>large</td></tr>
+<tr><td>D</td><td>…</td><td>…</td><td>small</td></tr></table>
+<p class="rejected"><b>Also considered, rejected:</b> the option and the reason in one sentence.</p>
+<div class="choice" data-decision="1. DECISION_TITLE"><label><input type="radio" name="d1" value="A: keep as is"> A: keep as is</label><label><input type="radio" name="d1" value="B: the proposal"> B: the proposal</label><label><input type="radio" name="d1" value="C: another direction"> C</label><label><input type="radio" name="d1" value="D: the simplest direction"> D</label><input type="text" placeholder="remark (optional)"></div>
+
+<h2>Without a decision, already to do</h2>
+<p class="why">Defects, not choices: list them so the owner sees what happens regardless.</p>
+
+<script>
+(() => {
+  const KEY = 'decision-page:' + location.pathname;
+  const read = () => { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { return {}; } };
+  const save = (d) => { try { localStorage.setItem(KEY, JSON.stringify(d)); } catch {} count(); };
+  const blocks = [...document.querySelectorAll('.choice')];
+  const count = () => { const d = read(); const n = blocks.filter((b) => d[b.dataset.decision]?.choice).length; document.getElementById('count').textContent = n + ' of ' + blocks.length + ' chosen'; };
+  const d0 = read();
+  for (const b of blocks) {
+    const name = b.dataset.decision; const stored = d0[name] || {};
+    for (const r of b.querySelectorAll('input[type=radio]')) { if (r.value === stored.choice) r.checked = true; r.addEventListener('change', () => { const d = read(); d[name] = { ...(d[name] || {}), choice: r.value }; save(d); }); }
+    const t = b.querySelector('input[type=text]'); t.value = stored.remark || ''; t.addEventListener('input', () => { const d = read(); d[name] = { ...(d[name] || {}), remark: t.value }; save(d); });
+  }
+  const NL = String.fromCharCode(10);
+  const markdown = () => { const d = read(); const lines = ['# Decisions (' + new Date().toISOString().slice(0, 10) + ')', '', '| decision | choice | remark |', '|---|---|---|']; for (const b of blocks) { const x = d[b.dataset.decision] || {}; lines.push('| ' + b.dataset.decision + ' | ' + (x.choice || 'not chosen yet') + ' | ' + (x.remark || '').split('|').join('¦') + ' |'); } return lines.join(NL) + NL; };
+  document.getElementById('copy').onclick = async () => { const md = markdown(); try { await navigator.clipboard.writeText(md); alert('Copied: paste it into the chat.'); } catch { prompt('Copy by hand:', md); } };
+  document.getElementById('clear').onclick = () => { if (confirm('Clear the choices?')) { save({}); for (const r of document.querySelectorAll('input[type=radio]')) r.checked = false; for (const t of document.querySelectorAll('.choice input[type=text]')) t.value = ''; } };
+  count();
+})();
+</script>
+</html>

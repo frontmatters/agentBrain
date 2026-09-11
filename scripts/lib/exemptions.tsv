@@ -1,0 +1,29 @@
+# exemptions.tsv — every exemption a check makes, with a reason and an end date.
+#
+# A rule without exceptions is a rule people route around; an exception nobody
+# wrote down is a rule that quietly stopped applying. Three checks carried
+# hard-coded exemption lists before this file existed, none of them with a
+# reason, and two had silently gone stale: one named a file that had moved, and
+# one was missing a sibling test written after the list. Both failures looked
+# like the guard working.
+#
+# Columns, tab separated:
+#   check    which check reads the row (its own name, no path)
+#   pattern  what to exempt; each check interprets this in its own terms
+#            (check-em-dash: a regex of text that is not prose;
+#             check-space-boundary: a path prefix of a file allowed to carry
+#             the literals the guard hunts for)
+#   expires  YYYY-MM-DD, or "structural"
+#   reason   why. Required. Write it for the person who finds this in a year.
+#
+# "structural" is not a waiver. It marks a case where the rule was stated too
+# broadly and this row is part of its real definition, so there is nothing to
+# come back to. Anything that is a temporary allowance gets a date, and
+# check-exemptions reports it as OVERDUE once that date passes.
+#
+# check	pattern	expires	reason
+em-dash	(^|[\s(\[])--[a-z][a-z0-9-]*	structural	A long CLI flag is not prose. The ban is on punctuation a reader sees as a dash; --no-verify and --dry-run are code that happens to live in a sentence. The header of check-em-dash promised this exemption from the start and the code never had it, so commit messages naming a flag were refused for punctuation they did not contain.
+space-boundary	scripts/checks/check-space-boundary.sh	structural	The guard necessarily contains the literals it searches for, in its own patterns and comments. It cannot be made to not match itself.
+space-boundary	scripts/tests/test-space-boundary.sh	structural	Exercises the guard, so it contains the same literals on purpose.
+space-boundary	scripts/tests/test-rename-space.sh	structural	Scaffolds a real space in the real vault for the length of its run (see its header), so during that window the fixture owner is a genuine paspoort entry and the guard finds the literal again in the test that created it.
+space-boundary	scripts/privacy-scan.sh	structural	Carries owner literals in its own detection patterns, for the same reason as the guard itself.

@@ -17,6 +17,7 @@ support:
   gemini: full
   kiro: full
   hermes: rules
+  abh: unknown
 outputs:
   - vault/learnings/*.md
   - vault/projects/*/*.md

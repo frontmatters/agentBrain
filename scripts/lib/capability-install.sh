@@ -31,6 +31,14 @@ capability_install_cmd() {
 			if [ "$os" = darwin ]; then command -v brew >/dev/null 2>&1 && echo "brew install --cask obsidian"
 			elif command -v flatpak >/dev/null 2>&1; then echo "flatpak install -y flathub md.obsidian.Obsidian"
 			elif command -v snap >/dev/null 2>&1; then echo "sudo snap install obsidian --classic"; fi ;;
+		vscode)
+			if [ "$os" = darwin ]; then command -v brew >/dev/null 2>&1 && echo "brew install --cask visual-studio-code"
+			elif command -v snap >/dev/null 2>&1; then echo "sudo snap install code --classic"
+			elif command -v flatpak >/dev/null 2>&1; then echo "flatpak install -y flathub com.visualstudio.code"; fi ;;
+		vscodium)
+			if [ "$os" = darwin ]; then command -v brew >/dev/null 2>&1 && echo "brew install --cask vscodium"
+			elif command -v snap >/dev/null 2>&1; then echo "sudo snap install codium --classic"
+			elif command -v flatpak >/dev/null 2>&1; then echo "flatpak install -y flathub com.vscodium.codium"; fi ;;
 		ollama)
 			if [ "$os" = darwin ]; then command -v brew >/dev/null 2>&1 && echo "brew install ollama"
 			else echo "curl -fsSL https://ollama.com/install.sh | sh"; fi ;;

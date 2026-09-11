@@ -181,11 +181,27 @@ out="$(bash "$BRAIN_DIR/scripts/checks/check-frontmatter.sh" 2>&1)"
 echo "$out" | grep -q "passed" && ok "check-frontmatter passes" || ko "check-frontmatter failed"
 
 # --- T10: agent-agnostic symlinks ---
+# Only for agents that are actually wired on this machine. Asserting both
+# unconditionally made this a test of the machine rather than of the code: a
+# fresh install fails it before configure-pi.sh has run, and so does any
+# machine that deliberately runs one agent and not the other.
+#
+# Completeness is check-skill-links.sh's job: it walks every skill for every
+# DETECTED agent and skips the rest. This case stays because the park bundle
+# belongs together, not to re-check the wiring in general.
 echo ""
 echo "T10: agent-agnostic symlinks"
-for skill in park unpark list-parks list-projects list-learnings promote; do
-    [ -L "$HOME/.claude/skills/$skill" ] && ok "claude symlink: $skill" || ko "claude symlink missing: $skill"
-    [ -L "$HOME/.pi/agent/skills/$skill" ] && ok "pi symlink: $skill" || ko "pi symlink missing: $skill"
+for agent_dir in "$HOME/.claude/skills:Claude Code" "$HOME/.pi/agent/skills:Pi"; do
+    skills_dir="${agent_dir%%:*}"; agent_label="${agent_dir##*:}"
+    if [ ! -d "$skills_dir" ]; then
+        echo "  skip: $agent_label not wired on this machine"
+        continue
+    fi
+    for skill in park unpark list-parks list-projects list-learnings promote; do
+        [ -L "$skills_dir/$skill" ] \
+            && ok "$agent_label symlink: $skill" \
+            || ko "$agent_label symlink missing: $skill — run: bash scripts/setup/setup-skills.sh"
+    done
 done
 
 # --- summary ---

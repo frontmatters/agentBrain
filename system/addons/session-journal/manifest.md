@@ -12,6 +12,7 @@ support:
   pi: none
   claude: full
   copilot: unknown
+  abh: unknown
 outputs:
   - vault/sessions/session-journal.md
   - vault/sessions/archive/YYYY-MM/*.md

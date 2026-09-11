@@ -758,7 +758,11 @@ cmd_configure() {
 # file is rewritten in place; otherwise the rendered content is printed (used by
 # check-addons.sh as a drift check).
 CLIENTS_FILE="$REGISTRY/clients.md"
-CLIENTS_COLS="claude gemini opencode pi cursor copilot codex windsurf cline hermes"
+# The client columns, in order, from the one list check-addons validates
+# against. Declared rather than derived: a release ships a slim core, so columns
+# derived from whatever manifests are present differ between a full checkout and
+# a fresh install, and the shipped clients.md then reads as stale.
+CLIENTS_COLS="$(grep -vE '^\s*(#|$)' "$ROOT_DIR/scripts/lib/clients.txt" | tr '\n' ' ')"
 
 # Literal backticks in the printf format strings are intentional markdown.
 # shellcheck disable=SC2016
@@ -849,6 +853,63 @@ cmd_uninstall() {
 	fi
 
 	echo "Uninstalled $id"
+}
+
+# Promote a private addon from the vault into the bundled public layer.
+#
+# The comment below has described this flow since cmd_new was written, and it
+# did not exist. Doing it by hand fails on a detail that is easy to miss: a note
+# id is derived from its PATH, so moving an addon invalidates every id in it and
+# the frontmatter check refuses the result.
+#
+# Promotion is about publication, not reachability: a private addon's SKILL.md
+# is linked to agents from the vault too. What promotion adds is that the addon
+# ships in the framework, can be packaged and published to the registry, and is
+# reviewed as public content.
+#
+# The enabled marker is state, not payload, and stays in the vault.
+cmd_promote() {
+	local id="${1:?usage: promote <id>}" dry=0
+	[ "${2:-}" = "--dry-run" ] && dry=1
+	local src="$STATE/$id" dst="$ROOT_DIR/system/addons/$id"
+
+	[ -f "$src/manifest.md" ] || { echo "No private addon at $src (needs manifest.md)" >&2; return 1; }
+	[ -e "$dst" ] && { echo "system/addons/$id already exists; nothing to promote" >&2; return 1; }
+
+	# Promotion IS publication: these files leave the private layer and ship in
+	# every release. Refuse rather than warn.
+	if ! (cd "$ROOT_DIR" && bash scripts/privacy-scan.sh --dir "$src" >/dev/null 2>&1); then
+		echo "Privacy scan flagged $id; not promoting. Run: bash scripts/privacy-scan.sh" >&2
+		return 1
+	fi
+
+	local moved=0 f
+	for f in "$src"/*; do
+		[ -e "$f" ] || continue
+		[ "$(basename "$f")" = "enabled" ] && continue
+		moved=$((moved + 1))
+		[ "$dry" -eq 1 ] && { echo "  would move $(basename "$f")"; continue; }
+		mkdir -p "$dst"
+		mv "$f" "$dst/"
+	done
+	[ "$moved" -gt 0 ] || { echo "Nothing to move besides the enabled marker" >&2; return 1; }
+	if [ "$dry" -eq 1 ]; then echo "promote: dry run, nothing written."; return 0; fi
+
+	# Ids are path-derived, so every one of them is now wrong. Regenerate rather
+	# than asking anyone to retype a UUID by hand.
+	local rewritten=0 md rel newid
+	while IFS= read -r md; do
+		grep -qE '^id:' "$md" || continue
+		rel="${md#"$ROOT_DIR"/}"; rel="${rel%.md}"
+		newid="$(bash "$ROOT_DIR/scripts/uuid5-gen.sh" "$rel")" || continue
+		[ -n "$newid" ] || continue
+		perl -0pi -e "s/^id:.*\$/id: $newid/m" "$md"
+		rewritten=$((rewritten + 1))
+	done < <(find "$dst" -name '*.md' -type f)
+
+	echo "Promoted $id: $moved file(s) to system/addons/$id, $rewritten id(s) regenerated."
+	echo "  enabled marker left in $src (state, not payload)"
+	echo "  next: bash scripts/setup/setup-skills.sh && bash scripts/configure-pi.sh"
 }
 
 # Scaffold a brand-new addon into local/addons/<id>/ from the _template.
@@ -1045,6 +1106,7 @@ main() {
 		install)   cmd_install "$@" ;;
 		uninstall) cmd_uninstall "$@" ;;
 		new)       cmd_new "$@" ;;
+		promote)   cmd_promote "$@" ;;
 		registry)  cmd_registry "$@" ;;
 		search)    cmd_search "$@" ;;
 		configure) cmd_configure "$@" ;;

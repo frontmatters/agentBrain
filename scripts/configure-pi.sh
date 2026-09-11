@@ -178,7 +178,16 @@ check_pi_api() {
 		fi
 	done
 
-	[[ $failed -eq 0 ]] && ok "Pi API symbols: all present"
+	if [[ $failed -eq 0 ]]; then
+		ok "Pi API symbols: all present"
+	fi
+
+	# A changed symbol is a warning, not a reason to stop. This was the last
+	# statement in the function, so with a warning it returned 1 and `set -e`
+	# killed the whole run at the caller. Everything after this point -- the Pi
+	# config, the skills dir, the extension wiring -- is unrelated to it, so the
+	# machine was left unconfigured over a note about one symbol.
+	return 0
 }
 
 # ── tsconfig generation ───────────────────────────────────────────────────────
@@ -214,7 +223,7 @@ generate_extension_tsconfig() {
 # Link enabled add-ons' SKILL.md into Pi's skills dir, via the shared lib so Pi
 # stays in lockstep with Claude Code/Copilot (setup-skills.sh) — enabled => available.
 link_addon_skills() {
-	skilllib_sync_addon_skills "$PI_CONFIG_DIR/skills" "$PI_SRC/system/addons" "${ADDONS_STATE:-$PI_SRC/vault/addons}" "$PI_SRC"
+	skilllib_sync_addon_skills "$PI_CONFIG_DIR/skills" "$PI_SRC/system/addons:$PI_SRC/vault/addons" "${ADDONS_STATE:-$PI_SRC/vault/addons}" "$PI_SRC"
 }
 
 # ── Pi config install ─────────────────────────────────────────────────────────
@@ -340,6 +349,68 @@ PY
 		cp "$PI_CONFIG_SOURCE/cloak.json" "$PI_CONFIG_DIR/cloak.json"
 		ok "cloak.json copied (pi-cloak default)"
 	fi
+
+	merge_models_json
+}
+
+# models.json: carry the brain's model preferences into Pi's models.json.
+# Source of truth is the PRIVATE fragment vault/pi-config/models.json —
+# custom providers, remote hosts and keys are user/machine data, so they
+# never live in the public layer (see system/pi-config/README.md). The
+# vault is synced between machines via scripts/sync/sync-vault.sh;
+# local/pi-config is the pre-rename alias path, still accepted.
+# Merge is a provider-level upsert: providers already configured on this
+# machine keep their local definition, brain providers are added when
+# missing, nothing is ever deleted. Local Ollama models do not need a
+# fragment entry: the ollama-discovery extension registers them at startup.
+merge_models_json() {
+	local models_src=""
+	local candidate
+	for candidate in "$PI_SRC/vault/pi-config/models.json" "$PI_SRC/local/pi-config/models.json"; do
+		if [[ -f "$candidate" ]]; then models_src="$candidate"; break; fi
+	done
+	[[ -n "$models_src" ]] || return 0
+
+	if [[ ! -f "$PI_CONFIG_DIR/models.json" ]]; then
+		cp "$models_src" "$PI_CONFIG_DIR/models.json"
+		chmod 600 "$PI_CONFIG_DIR/models.json"
+		ok "models.json copied"
+		return 0
+	fi
+
+	local models_status
+	models_status="$(PI_CONFIG_DIR="$PI_CONFIG_DIR" MODELS_SRC="$models_src" python3 - <<'PY'
+import json, os, pathlib, sys
+
+src = pathlib.Path(os.environ["MODELS_SRC"])
+dst = pathlib.Path(os.environ["PI_CONFIG_DIR"]) / "models.json"
+try:
+    s = json.loads(src.read_text())
+    d = json.loads(dst.read_text())
+except Exception as exc:
+    print(f"invalid JSON: {exc}", file=sys.stderr)
+    sys.exit(1)
+sp = s.get("providers") or {}
+dp = d.setdefault("providers", {})
+if not isinstance(sp, dict) or not isinstance(dp, dict):
+    print("providers is not an object", file=sys.stderr)
+    sys.exit(1)
+added = [name for name in sp if name not in dp]
+for name in added:
+    dp[name] = sp[name]
+if not added:
+    print("unchanged")
+else:
+    dst.write_text(json.dumps(d, indent=2) + "\n")
+    print("merged:" + ",".join(added))
+PY
+)" || models_status="skipped"
+
+	case "$models_status" in
+		merged:*) ok "models.json merged (${models_status#merged:})" ;;
+		unchanged) ok "models.json up to date" ;;
+		*) warn "models.json merge skipped (invalid JSON?) — left untouched" ;;
+	esac
 }
 
 # ── Extension validation ──────────────────────────────────────────────────────
@@ -478,6 +549,36 @@ main() {
 
 # Run main only when executed directly; sourcing (e.g. from tests) loads the
 # helpers without performing an install.
+# An abort under `set -euo pipefail` leaves the machine half configured and says
+# nothing about where it stopped. setup.sh then prints one vague line and runs
+# the doctor, which reports the consequences far from the cause: a missing
+# ~/.pi/agent/skills is read as "skills dir missing" and as four failing park
+# symlinks, neither of which points at the step that actually died.
+#
+# So name the step and the line, and say what to re-run. Nothing is repaired
+# here: configure-pi.sh is idempotent, so the honest advice is to fix the cause
+# and run it again.
+# The ERR trap records where it actually broke; EXIT reports it. $LINENO read
+# inside the EXIT trap gives the trap's own line, which is worse than no line
+# at all. `set -E` makes ERR fire inside functions too, where most of the work
+# happens.
+_pi_fail_line=""
+
+_pi_failed() {
+	local code=$? line="${_pi_fail_line:-unknown}"
+	[ "$code" -eq 0 ] && return 0
+	echo "" >&2
+	echo "configure-pi.sh stopped at line $line (exit $code)." >&2
+	echo "  The machine is partly configured. Nothing after that line ran," >&2
+	echo "  so agent wiring may be missing and the doctor will report it." >&2
+	echo "  Re-run after fixing the cause: bash scripts/configure-pi.sh" >&2
+	echo "  It is idempotent; re-running never duplicates work." >&2
+}
+
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+	set -E
+	trap '_pi_fail_line=$LINENO' ERR
+	trap '_pi_failed' EXIT
 	main "$@"
+	trap - EXIT
 fi

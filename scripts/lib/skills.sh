@@ -10,7 +10,7 @@ skilllib_is_brain_link() {
 	local link="$1" target
 	[ -L "$link" ] || return 1
 	target="$(readlink "$link")"
-	[[ "$target" == *"/system/skills/"* || "$target" == *"/local/skills/"* || "$target" == *"/vault/skills/"* || "$target" == *"/system/addons/"* ]]
+	[[ "$target" == *"/system/skills/"* || "$target" == *"/local/skills/"* || "$target" == *"/vault/skills/"* || "$target" == *"/system/addons/"* || "$target" == *"/vault/addons/"* || "$target" == *"/local/addons/"* ]]
 }
 
 # skilllib_sync_addon_skills <dest_dir> <addons_root> <state_root> <brain_root>
@@ -23,38 +23,65 @@ skilllib_is_brain_link() {
 # the whole addon dir, so manifest/README/bin never leak in), and prunes any
 # addon-skill link whose addon is now disabled or gone. Never clobbers a user's
 # own (non-brain) skill of the same id. Idempotent.
+# Link the SKILL.md of every ENABLED addon into an agent's skills dir.
+#
+# addons_roots is a colon-separated list, the same shape addon-package.sh has
+# always used ("system/addons:vault/addons"). It used to be a single root, and
+# only ever got system/addons, so a private addon in the vault could ship a
+# SKILL.md that no agent ever saw. The packager accepted that addon as a source
+# and the linker did not: two layers disagreeing about what an addon is.
+#
+# It cannot be fixed by calling this twice. The prune loop below removes any
+# link whose addon is absent from the root it was given, so a second call would
+# delete everything the first one made.
 skilllib_sync_addon_skills() {
-	local dest_dir="$1" addons_root="$2" state_root="$3" brain_root="$4"
-	[ -d "$addons_root" ] || return 0
+	local dest_dir="$1" addons_roots="$2" state_root="$3" brain_root="$4"
 	mkdir -p "$dest_dir"
 
+	local roots=() r
+	IFS=':' read -r -a roots <<< "$addons_roots"
+
 	local src id target
-	for src in "$addons_root"/*/; do
-		[ -f "${src}SKILL.md" ] || continue
-		id="$(basename "$src")"
-		[ -f "$state_root/$id/enabled" ] || continue
-		target="$dest_dir/$id/SKILL.md"
-		# Present but not one of ours -> a user's own skill; hands off.
-		if [ -e "$target" ] && ! skilllib_is_brain_link "$target"; then
-			continue
-		fi
-		mkdir -p "$dest_dir/$id"
-		ln -sfn "${brain_root}/system/addons/${id}/SKILL.md" "$target"
+	for r in "${roots[@]}"; do
+		[ -n "$r" ] && [ -d "$r" ] || continue
+		for src in "$r"/*/; do
+			[ -f "${src}SKILL.md" ] || continue
+			id="$(basename "$src")"
+			[ -f "$state_root/$id/enabled" ] || continue
+			target="$dest_dir/$id/SKILL.md"
+			# Present but not one of ours -> a user's own skill; hands off.
+			if [ -e "$target" ] && ! skilllib_is_brain_link "$target"; then
+				continue
+			fi
+			mkdir -p "$dest_dir/$id"
+			# Link to the root it was actually found in. This used to be
+			# hard-coded to system/addons regardless of the root passed in, so
+			# any other root would have produced a dangling link.
+			ln -sfn "${src%/}/SKILL.md" "$target"
+		done
 	done
 
-	# Prune addon-skill links whose addon was disabled or removed.
-	local entry skill name
+	# Prune addon-skill links whose addon was disabled or removed from every root.
+	local entry skill name found
 	for entry in "$dest_dir"/*/; do
 		skill="${entry}SKILL.md"
 		[ -L "$skill" ] || continue
-		case "$(readlink "$skill")" in *"/system/addons/"*) : ;; *) continue ;; esac
+		case "$(readlink "$skill")" in
+			*"/system/addons/"* | *"/vault/addons/"* | *"/local/addons/"*) : ;;
+			*) continue ;;
+		esac
 		name="$(basename "$entry")"
-		if [ ! -f "$addons_root/$name/SKILL.md" ] || [ ! -f "$state_root/$name/enabled" ]; then
+		found=0
+		for r in "${roots[@]}"; do
+			[ -n "$r" ] && [ -f "$r/$name/SKILL.md" ] && { found=1; break; }
+		done
+		if [ "$found" -eq 0 ] || [ ! -f "$state_root/$name/enabled" ]; then
 			rm -f "$skill"
 			rmdir "$entry" 2>/dev/null || true
 		fi
 	done
 }
+
 
 # skilllib_link_standalone_skills <dest_dir> <src_root> <label> <brain_root>
 #   src_root   <brain>/system/skills or <brain>/local/skills

@@ -12,6 +12,7 @@ support:
   pi: full
   claude: full
   copilot: unknown
+  abh: unknown
 outputs:
   - vault/learnings/extracted/*.md
 ---

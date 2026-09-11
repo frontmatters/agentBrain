@@ -1,5 +1,6 @@
 agent-browser
 anthropic-skills
+bloop
 brain-explain
 brain-infographic
 chatgpt-import

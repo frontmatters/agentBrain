@@ -79,7 +79,7 @@ install_for_agent() {
 	link_skills_into "$dest_dir" "$VAULT/system/skills" "system/skills"
 	link_skills_into "$dest_dir" "$VAULT/vault/skills" "vault/skills"
 	prune_orphaned "$dest_dir"
-	skilllib_sync_addon_skills "$dest_dir" "$VAULT/system/addons" "$STATE" "$BRAIN"
+	skilllib_sync_addon_skills "$dest_dir" "$VAULT/system/addons:$VAULT/vault/addons" "$STATE" "$BRAIN"
 }
 
 # Lighter per-agent pass used by `addons.sh enable/disable`: only (re)syncs the
@@ -87,7 +87,7 @@ install_for_agent() {
 sync_addons_for_agent() {
 	local dest_dir="$1" agent_label="$2"
 	echo -e "${CYAN}${agent_label}${NC}"
-	skilllib_sync_addon_skills "$dest_dir" "$VAULT/system/addons" "$STATE" "$BRAIN"
+	skilllib_sync_addon_skills "$dest_dir" "$VAULT/system/addons:$VAULT/vault/addons" "$STATE" "$BRAIN"
 }
 
 # Mode: default re-syncs every skill; `sync-addons` only re-syncs addon skills

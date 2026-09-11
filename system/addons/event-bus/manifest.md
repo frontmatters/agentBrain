@@ -15,6 +15,7 @@ support:
   codex: full
   gemini: full
   aider: full
+  abh: unknown
 outputs:
   - vault/events/inbox/*.json
   - vault/events/archive/*.json

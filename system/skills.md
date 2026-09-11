@@ -35,6 +35,7 @@ context cheap; the detail lives once, in each skill's `SKILL.md`.
 | `/component-motion` | Scroll/stagger/magnetic/physics motion (GSAP, Lenis, AOS, anime.js, Motion, Lottie, Rive) on web components via clean seams, reduced-motion-safe | `system/skills/component-motion/SKILL.md` |
 | `/config` | Inspect/adjust config post-onboarding (focus-based: locale/addons/hooks/preferences/shell-rc) | `system/skills/config/SKILL.md` |
 | `/cro-optimize` | Conversion-rate optimization: benefit-led CTAs, social proof, trust microcopy, objection-handling FAQ, funnel/A-B-testing | `system/skills/cro-optimize/SKILL.md` |
+| `/decision-page` | Turn open product/design decisions into one local HTML page: now / advice / alternatives with mockups, pros-cons, comparison table, rejected options, evidence, persisted choices and markdown export | `system/skills/decision-page/SKILL.md` |
 | `/deep-dive` | Produce a deep, evidence-checked tutorial on a topic, rendered as themed HTML via brain-explain | `system/skills/deep-dive/SKILL.md` |
 | `/doctor` | Framework health audit (`scripts/checks/doctor.sh`) | `system/skills/doctor/SKILL.md` |
 | `/grill-me` | Knowledge-extraction interview into local preferences/notes | `system/skills/grill-me/SKILL.md` |
@@ -70,6 +71,8 @@ context cheap; the detail lives once, in each skill's `SKILL.md`.
 | `/understand-project` | Knowledge graph of an external project | `system/skills/understand-project/SKILL.md` |
 | `/unpark` | Resume a parked project (reads index + learnings, executes backlog) | `system/skills/unpark/SKILL.md` |
 | `/vault-review` | Broad periodic vault review (health, wiki-links, CLAUDE.md sync, daily-notes, staleness) — wider than /brain-review | `system/skills/vault-review/SKILL.md` |
+| `/project-init` | Apply the owner's project-type decisions to a repo: repository-local git identity, LICENSE holder check and the R&D scaffold; the types live in the vault, so it ships with no brands | `system/skills/project-init/SKILL.md` |
+| `/rnd-init` | Scaffold the `R&D/` convention in a repo: dashboards, decisions, captures, renders, logs, experiments, the right ignore lines and a README that carries the convention | `system/skills/rnd-init/SKILL.md` |
 | `/wash-vault` | Detect/fix id-mismatches, missing frontmatter, unsafe filenames (dry-run default) | `system/skills/wash-vault/SKILL.md` |
 | `/web-3d` | 3D/WebGL/WebXR on the web (Three.js, R3F, Babylon, PlayCanvas, PixiJS, Spline, A-Frame, lightweight effects); engine-selection + performance/a11y guardrails | `system/skills/web-3d/SKILL.md` |
 | `/weekly-review` | Weekly markdown summary of vault activity (learnings/projects/backlog/sessions) | `system/skills/weekly-review/SKILL.md` |

@@ -3,6 +3,10 @@
 # platform.sh — single source of truth voor platform-detectie. Sourcebaar.
 # Geen side-effects bij source; alleen functie-definities.
 
+# Resolved while sourcing: inside a function BASH_SOURCE no longer points here,
+# so a lazy `source` of a sibling lib would look in the caller's directory.
+_PLATFORM_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 platform_os() {
 	case "$(uname -s)" in
 		Darwin) echo darwin ;;
@@ -82,6 +86,15 @@ platform_has() {
 		# per-capability concern the add-on's own preflight owns (e.g. graphify's
 		# install.sh checks the daemon); probing it here would make offer_install
 		# wrongly offer to install an already-present ollama whose daemon is merely idle.
+		# Editors: PATH is not enough. On macOS the CLI ships inside the app
+		# bundle and reaches PATH only after the user runs the palette command,
+		# so a PATH-only probe reports "absent" for an installed editor and
+		# offer_install would offer to install it again. lib/editors.sh knows
+		# both locations; source it lazily so platform.sh stays dependency-free.
+		vscode|vscodium|cursor|windsurf|vscode-insiders)
+			# shellcheck source=./editors.sh
+			. "$_PLATFORM_LIB_DIR/editors.sh"
+			editor_cli "$1" >/dev/null 2>&1 ;;
 		ollama)      command -v ollama >/dev/null 2>&1 ;;
 		jq)          command -v jq >/dev/null 2>&1 ;;
 		mailpit)     command -v mailpit >/dev/null 2>&1 ;;

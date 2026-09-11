@@ -109,6 +109,7 @@ framework_checks=(
 	"bash scripts/checks/check-client-pointers.sh"
 	"bash scripts/tests/test-addons.sh"
 	"bash scripts/tests/test-channel-resolve.sh"
+	"bash scripts/tests/test-editors.sh"
 	"bash scripts/checks/check-links.sh"
 	"bash scripts/checks/check-symlinks.sh"
 	"bash scripts/checks/check-events.sh"
@@ -189,6 +190,12 @@ local_checks=(
 	"bash scripts/tests/test-check-cmdb-coverage.sh"                    # CMDB coverage check
 	"bash scripts/tests/test-check-onboarding.sh"                       # check-onboarding unit tests
 	"bash scripts/tests/test-configure-pi-skills.sh"                    # Pi skill linking and pruning
+	"bash scripts/tests/test-addon-skill-roots.sh"                       # addon skills link from every addon source root
+	"bash scripts/checks/check-skill-tests.sh"                           # every test a skill ships with, discovered not listed
+	"bash scripts/checks/check-exemptions.sh"                            # every exemption has a reason and an end date
+	"bash scripts/tests/test-models-merge.sh"                            # models.json upsert never removes a provider
+	"bash scripts/tests/test-skill-link-remedies.sh"                     # a failing check names a command that can fix it
+	"bash scripts/tests/test-onboard-preserves.sh"                       # the wizard owns answer bullets, not the files
 	"bash scripts/tests/test-decisions.sh"                              # check-decisions behaviour
 	"bash scripts/tests/test-installer-prompts.sh"                      # installer prompt helper contract
 	"bash scripts/tests/test-park-system.sh"                            # park and unpark round trip

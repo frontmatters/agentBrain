@@ -490,6 +490,35 @@ if [ "$(uname)" = "Darwin" ] && [ "${AGENTBRAIN_HOME}" = "$HOME" ]; then
 	fi
 fi
 
+# ── Optional: developer tools, by intent ─────────────────────────────────────
+# Core is what agentBrain needs to run and installs unconditionally. Devtools
+# are what a PROJECT needs, so asking "which tools?" is the wrong question: the
+# design rule is intent first, capability second. setup-devtools.sh asks what
+# you are going to do and installs the capability set for it.
+#
+# It had no caller. The script, the intents and the install routes all existed,
+# and nothing in the installer reached them, so a devtool was only findable by
+# someone who already knew the script's name. This is the step that was missing
+# between "the pattern exists" and "a user gets offered it".
+#
+# Placed after every installation and before the personalize wizard, which is
+# deliberately the closing step: technical output must not interrupt the human
+# questions.
+# Skipped under the installer: it makes this offer itself, later in its own
+# flow. setup-devtools.sh was reachable from the installer all along; what had
+# no caller was this path, someone running setup.sh directly.
+if [ "${AGENTBRAIN_INSTALLER:-0}" != "1" ] && [ -x "${SETUP_DIR}/setup-devtools.sh" ]; then
+	echo ""
+	echo -e "${BLUE}Developer tools${NC} — optional, per project need."
+	echo "  Intents: mail (local mail catcher), container, python, local-ai."
+	if confirm "Pick developer tools now?" "Install later: bash scripts/setup/setup-devtools.sh" N; then
+		bash "${SETUP_DIR}/setup-devtools.sh" || \
+			echo -e "${YELLOW}!${NC} Devtools step had issues. Run later: bash scripts/setup/setup-devtools.sh"
+	else
+		echo "  Skipped. Later: bash scripts/setup/setup-devtools.sh <intent>"
+	fi
+fi
+
 log "Personalize (optional)"
 # Core onboarding WITHOUT an AI model: the fixed-choice intake as terminal menus
 # (scripts/onboard-wizard.sh). Deliberately the CLOSING step — after Pi config

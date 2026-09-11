@@ -37,8 +37,21 @@ mkdir -p "$FIXTURE/system" "$FIXTURE/scripts/lib" "$FIXTURE/vault/learnings" \
 cp "$REAL_ROOT/scripts/uuid5-gen.sh" "$FIXTURE/scripts/uuid5-gen.sh"
 chmod +x "$FIXTURE/scripts/uuid5-gen.sh"
 cp "$REAL_ROOT/scripts/lib/exempt-schema-paths.txt" "$FIXTURE/scripts/lib/"
-# brain.json carries the UUID5 namespace; ids must match production exactly.
-cp "$REAL_ROOT/brain.json" "$FIXTURE/brain.json"
+# brain.json carries the UUID5 namespace. Use the real one when it is there, so
+# the ids this test computes match production exactly.
+#
+# It is machine data, generated at install and never tracked, so a release
+# payload has none and the unconditional copy failed there: six assertions down,
+# in a test that ran nowhere until the skill-test discovery check existed. The
+# invariant being measured is that wash-vault and uuid5-gen.sh agree on an id,
+# not which namespace they agree under, so a fixed fixture namespace tests the
+# same thing wherever the payload came from.
+if [ -f "$REAL_ROOT/brain.json" ]; then
+	cp "$REAL_ROOT/brain.json" "$FIXTURE/brain.json"
+else
+	printf '{\n  "namespace": "00000000-0000-4000-8000-000000000000",\n  "version": "1.0"\n}\n' \
+		> "$FIXTURE/brain.json"
+fi
 
 export BRAIN_DIR="$FIXTURE"
 

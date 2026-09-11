@@ -31,10 +31,17 @@ if [ "$MODE" = "--git-identity" ]; then
 fi
 
 # Public/generic rules only. Do not hardcode personal project names here.
+# That rule was broken once, and the cost is worth spelling out: an employer
+# name sat here among the generic financial and mail-domain rules. The
+# script ships in every release and is readable on the public repo, so the
+# guard published exactly the association it was added to hide. A reader needs
+# no context to draw the conclusion from that company.
+# Identifying terms (employers, customers, usernames, hostnames, project names)
+# belong in the local denylist below, which is gitignored and never published.
 # /Users/ requires a letter after the slash: a real macOS home path starts with
 # a username, while API URL segments like api.github.com/users/$var (the scan
 # is case-insensitive) interpolate a variable there and must not trip the scan.
-PATTERN='(/Users/[A-Za-z]|/home/[^[:space:]]+|192\.168\.|10\.[0-9]+\.|172\.(1[6-9]|2[0-9]|3[01])\.|[A-Za-z0-9_-]\.local(:[0-9]+)?|@gmail|@icloud|@outlook|(^|[^A-Za-z])ING([^A-Za-z]|$)|IBAN|bankrekening|rekeningnummer|gh[pousr]_[A-Za-z0-9_]{10,}|github_pat_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]{10,}|sk-ant|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|-----BEGIN .*PRIVATE KEY-----|eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]{10,}|secret-value-here|real-token-here|your-password)'
+PATTERN='(/Users/[A-Za-z]|/home/[^[:space:]]+|192\.168\.|10\.[0-9]+\.|172\.(1[6-9]|2[0-9]|3[01])\.|[A-Za-z0-9_-]\.local(:[0-9]+)?|@gmail|@icloud|@outlook|IBAN|gh[pousr]_[A-Za-z0-9_]{10,}|github_pat_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]{10,}|sk-ant|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|-----BEGIN .*PRIVATE KEY-----|eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]{10,}|secret-value-here|real-token-here|your-password)'
 LOCAL_DENYLIST="${AGENTBRAIN_PRIVACY_DENYLIST:-vault/security/privacy-denylist.txt}"
 
 case "$MODE" in
@@ -62,6 +69,7 @@ esac
 
 # Optional local denylist: put private project/customer/user names in
 # local/security/privacy-denylist.txt (gitignored), one grep -E pattern per line.
+deny_hits=""
 if [[ -f "$LOCAL_DENYLIST" ]]; then
 	while IFS= read -r deny_pattern; do
 		[[ -n "$deny_pattern" && ! "$deny_pattern" =~ ^[[:space:]]*# ]] || continue
@@ -77,7 +85,11 @@ if [[ -f "$LOCAL_DENYLIST" ]]; then
 			;;
 		esac
 		if [[ -n "$extra_hits" ]]; then
-			hits="${hits}${hits:+$'\n'}${extra_hits}"
+			# Kept separate from $hits on purpose. The generic pattern must not
+			# match its own definition line, but a DENYLIST term appearing there
+			# is the leak itself: that is how an employer name shipped publicly
+			# for three weeks. Denylist hits skip the self-exemption below.
+			deny_hits="${deny_hits}${deny_hits:+$'\n'}${extra_hits}"
 		fi
 	done <"$LOCAL_DENYLIST"
 fi
@@ -87,7 +99,12 @@ hits=$(printf '%s\n' "$hits" |
 	grep -v '^$' |
 	grep -vE '(^|/)LICENSE:' |
 	grep -v '^\.gitignore:' |
-	grep -v '^scripts/privacy-scan\.sh:' |
+	# Exempt the pattern DEFINITION only, not the whole file. Skipping the file
+	# wholesale made privacy-scan.sh the one place in the repo where an
+	# identifying term could sit unreported, and that is exactly where one sat:
+	# an employer name lived in the public pattern for three weeks, shipped in
+	# every release, while this line kept the scan green.
+	grep -vE '^scripts/privacy-scan\.sh:[0-9]+:(PATTERN=|NOREPLY_PATTERN=)' |
 	grep -v '^scripts/checks/check-vault-private\.sh:' |
 	grep -v '^scripts/checks/check-agentbrain-shared\.sh:' |
 	grep -v '^scripts/tests/shared-vault/test-check-shared\.sh:' |
@@ -101,6 +118,12 @@ hits=$(printf '%s\n' "$hits" |
 	grep -v 'system/Security-Guidance\.md' |
 	grep -v '/bun\.lock:' ||
 	true)
+
+# Denylist hits join AFTER the exemptions: a private term is never a false
+# positive, wherever it sits.
+if [[ -n "$deny_hits" ]]; then
+	hits="${hits}${hits:+$'\n'}${deny_hits}"
+fi
 
 if [[ -n "$hits" ]]; then
 	echo "Privacy scan failed. Move personal/project/security context to vault/ or redact it:" >&2
