@@ -16,6 +16,13 @@
 
 set -euo pipefail
 
+# Load user-scoped tool locations before probing for a tool, or a restricted
+# PATH reports "not installed" for something that is. See scripts/lib/_toolpaths.sh.
+_ab_tp="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/lib/_toolpaths.sh"
+# shellcheck disable=SC1090,SC1091
+[ -f "$_ab_tp" ] && . "$_ab_tp"
+
+
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
@@ -78,20 +85,22 @@ resolve_editor_for() { # <row label> <extension id>
 		if [ "${#found[@]}" -eq 1 ]; then
 			line="${found[0]}"
 		else
-			local -a labels=()
+			local -a pairs=()
 			for line in "${found[@]}"; do
 				IFS='|' read -r id label cli mk <<<"$line"
 				case "$cli" in
-					/Applications/*) labels+=("$label (app bundle, CLI not on PATH)") ;;
-					*) labels+=("$label") ;;
+					/Applications/*) pairs+=("$id" "$label (app bundle, CLI not on PATH)") ;;
+					*) pairs+=("$id" "$label") ;;
 				esac
 			done
-			labels+=("skip this row")
+			pairs+=("__skip" "skip this row")
 			echo
 			echo "Several editors are installed. Which one should get the extension?"
-			if ! ab_prompt_select --default 1 "$row" "${labels[@]}"; then return 1; fi
-			[ "$REPLY" -gt "${#found[@]}" ] && return 1
-			line="${found[$((REPLY - 1))]}"
+			ab_prompt_choose "$row" "${pairs[@]}" || return 1
+			[ "$REPLY_ID" = "__skip" ] && return 1
+			for line in "${found[@]}"; do
+				case "$line" in "$REPLY_ID"'|'*) break ;; esac
+			done
 		fi
 		_EDITOR_CHOICE="$line"
 	fi
@@ -128,19 +137,24 @@ offer_editor_install() { # <row label>
 	local pick_vscode pick_codium
 	pick_vscode="$(capability_install_cmd vscode)"
 	pick_codium="$(capability_install_cmd vscodium)"
-	local -a opts=()
-	[ -n "$pick_vscode" ] && opts+=("Visual Studio Code -- $pick_vscode")
-	[ -n "$pick_codium" ] && opts+=("VSCodium -- $pick_codium")
-	if [ "${#opts[@]}" -eq 0 ]; then
+	# Options and their capability ids are built together. The previous version
+	# mapped a REPLY index back to an id by hand, and ab_prompt_select returns a
+	# ZERO-based index while its --default is one-based: picking the first option
+	# yielded 0, matched neither arm of the case, and returned "declined". So
+	# choosing Visual Studio Code silently skipped the row, choosing VSCodium
+	# installed VS Code, and choosing "neither" installed VSCodium.
+	local -a pairs=()
+	[ -n "$pick_vscode" ] && pairs+=(vscode "Visual Studio Code -- $pick_vscode")
+	[ -n "$pick_codium" ] && pairs+=(vscodium "VSCodium -- $pick_codium")
+	if [ "${#pairs[@]}" -eq 0 ]; then
 		echo "  No install recipe for this platform. Install one yourself, then re-run setup."
 		return 1
 	fi
-	opts+=("neither -- skip editor extensions")
-	if ! ab_prompt_select --default "${#opts[@]}" "Install an editor?" "${opts[@]}"; then return 1; fi
-	[ "$REPLY" -gt "$((${#opts[@]} - 1))" ] && return 1
+	pairs+=(__none "neither -- skip editor extensions")
 
-	local cap; case "$REPLY" in 1) cap=vscode ;; 2) cap=vscodium ;; *) return 1 ;; esac
-	[ -n "$pick_vscode" ] || cap=vscodium   # only VSCodium had a recipe
+	ab_prompt_choose --default __none "Install an editor?" "${pairs[@]}" || return 1
+	local cap="$REPLY_ID"
+	[ "$cap" = "__none" ] && return 1
 	local cmd; cmd="$(capability_install_cmd "$cap")"
 	echo -e "  ${CYAN}Installing${NC} $cap -- $cmd"
 	if ! eval "$cmd"; then

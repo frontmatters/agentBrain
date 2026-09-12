@@ -1,5 +1,41 @@
+# essential-addons.txt — which add-ons ship inside a release.
+#
+# A release carries a slim core; everything else reaches a machine through the
+# registry. This file was the slim core with no criterion written down, so no
+# row could be shown to be wrong and the list could only grow.
+#
+# A row belongs here when ONE of these is true, and not otherwise:
+#
+#   1. Core functionality depends on it. queue.sh drives event-bus through
+#      brain-emit and brain-poll; without the payload, part of agentBrain is
+#      broken rather than merely unavailable.
+#   2. It is on by default (manifest: default_enabled). A machine cannot switch
+#      on an add-on whose payload never arrived, so check-addons enforces that
+#      pairing in both directions.
+#   3. The owner wants it on every machine, even though it is not on by default.
+#      Shipping and enabling answer different questions: "can this machine reach
+#      it offline" and "does it act on my behalf unasked". An add-on needing a
+#      runtime cannot be on by default (it would half-install where the runtime
+#      is missing), which says nothing about whether it should travel.
+#
+# Everything else is available with `brain addons` and downloads on request.
+#
+# A row on ground 3 carries a reason here, so the next reader can weigh it:
+#   goal               36 KB. Owner uses it across projects; needs bun, which
+#                      the installer puts down as a prerequisite anyway.
+#   extract-learnings  40 KB. Was in this list before the criterion existed, so
+#                      it stays until the owner says otherwise. It is
+#                      privacy: sends-docs, which bars it from default_enabled
+#                      but not from travelling: shipping it does nothing until
+#                      someone switches it on.
+
 agentbrain-mcp
 event-bus
 session-journal
-extract-learnings
+incognito
+git-email-guard
+claude-memory-redirect
+brain-explain
+hallmark
 goal
+extract-learnings

@@ -1215,6 +1215,15 @@ else
   [ "$rc" -eq 0 ] || exit "$rc"
 fi
 
+# The add-ons a fresh install is meant to have, pre-ticked. Placed before the
+# devtools question because these are local and free of side effects, while
+# devtools fetch software: the cheap, safe offer goes first.
+if [ -x "$DEST/scripts/setup/setup-default-addons.sh" ]; then
+  ln_ ""
+  (cd "$DEST" && bash scripts/setup/setup-default-addons.sh </dev/tty) || \
+    ln_ "  ${D}Default add-ons step had issues. Later: brain addons${N}"
+fi
+
 # Optional devtools (cascaded-config capabilities: mail, container, python).
 # The interactive path asks; non-interactive runs decline politely — the
 # subscript is re-runnable any time: scripts/setup/setup-devtools.sh <intent>.

@@ -20,3 +20,19 @@ fi
 case ":$PATH:" in *":$HOME/.bun/bin:"*) ;; *) [ -d "$HOME/.bun/bin" ] && PATH="$HOME/.bun/bin:$PATH" ;; esac
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) [ -d "$HOME/.local/bin" ] && PATH="$HOME/.local/bin:$PATH" ;; esac
 export PATH
+
+# have_tool <name> — is this tool usable, once the paths above are loaded?
+#
+# The header states the contract: probe a tool only after sourcing this file.
+# Nothing enforced it. shorthand's installer probed `bun` without it while
+# check-shorthand probed with it, so the two disagreed about whether bun exists:
+# the install skipped its own setup step, and the check called the result drift
+# on every fresh machine.
+#
+# A function is the enforceable form of that contract. You cannot call have_tool
+# without having sourced this file, so the paths are loaded by construction, and
+# check-toolpaths can then require that every probe of a user-scoped tool goes
+# through it.
+have_tool() {
+	command -v "${1:?usage: have_tool <name>}" >/dev/null 2>&1
+}

@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.12.0] - 2026-09-12
+
+### Added
+
+- `default_enabled: true` in an add-on manifest switches it on in a fresh install, pre-ticked so unticking is the action. Six carry it: session-journal, incognito, git-email-guard, claude-memory-redirect, brain-explain and hallmark, all of them local with no runtime beyond bash. Until now a fresh install enabled nothing at all.
+- check-addons refuses `default_enabled` on an add-on that fetches software, sends content out, needs a runtime, or is not in the slim core. Bundling and enabling stay separate fields: event-bus ships and installs software, extract-learnings ships and sends documents out, and neither belongs switched on.
+- The slim core grows to hold them, because on by default means present.
+
 ## [v1.11.0] - 2026-09-11
 
 ### Added

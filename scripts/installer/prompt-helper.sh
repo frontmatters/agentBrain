@@ -179,6 +179,46 @@ ab_prompt_select() {
 
 # Multi-choice checkbox menu. Result: REPLY contains space-separated zero-based indices.
 # Options: [--default "1 3"] [--required] — 1-based preselected rows.
+# ab_prompt_choose — a menu that returns MEANING, not a position.
+#
+#   ab_prompt_choose [--default <id>] "<title>" <id> "<label>" [<id> "<label>"]...
+#   REPLY_ID holds the chosen id. Returns 1 when the user cancels.
+#
+# Every bug this prevents has the same shape: a menu hands back a position and
+# the caller maps position to meaning by hand. ab_prompt_select returns a
+# ZERO-based index while its --default is one-based, and three call sites read
+# it one-based. Choosing the first editor picked the last one; choosing
+# "neither" installed VSCodium; choosing "keep" disabled login autostart. Each
+# was a different file and a different author-moment, which is what makes it a
+# class rather than three mistakes.
+#
+# The id never moves when an option is added, reordered or hidden on a platform,
+# so a caller written against ids cannot go stale either.
+ab_prompt_choose() {
+	local dflt_id=""
+	while :; do
+		case "${1:-}" in
+			--default) dflt_id="$2"; shift 2 ;;
+			*) break ;;
+		esac
+	done
+	local title="$1"; shift
+	local -a _ids=() _labels=()
+	while [ "$#" -ge 2 ]; do _ids+=("$1"); _labels+=("$2"); shift 2; done
+	REPLY_ID=""
+	[ "${#_ids[@]}" -gt 0 ] || return 2
+
+	local _i _n=1 _dflt=1
+	for _i in "${_ids[@]}"; do
+		[ "$_i" = "$dflt_id" ] && _dflt="$_n"
+		_n=$((_n + 1))
+	done
+
+	ab_prompt_select --default "$_dflt" "$title" "${_labels[@]}" || return 1
+	# shellcheck disable=SC2034  # the caller reads it, like REPLY above
+	REPLY_ID="${_ids[$REPLY]}"
+}
+
 ab_prompt_multi() {
 	local dflt="" required=0
 	while :; do

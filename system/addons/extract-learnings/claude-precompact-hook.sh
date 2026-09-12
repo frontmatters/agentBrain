@@ -5,6 +5,13 @@
 # Contract: a missing dependency must be LOUD (a line to stderr), but the hook must
 # still exit 0 so it never stalls or aborts compaction.
 set -euo pipefail
+
+# Load user-scoped tool locations before probing for a tool, or a restricted
+# PATH reports "not installed" for something that is. See scripts/lib/_toolpaths.sh.
+_ab_tp="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/scripts/lib/_toolpaths.sh"
+# shellcheck disable=SC1090,SC1091
+[ -f "$_ab_tp" ] && . "$_ab_tp"
+
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # Incognito: read-only session → don't extract/persist learnings on compaction.
 [ -f "$HERE/../incognito/is-incognito.sh" ] && bash "$HERE/../incognito/is-incognito.sh" && exit 0

@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# git-email-guard pre-commit hook
+# Blocks commits whose author email is not in the per-repo whitelist.
+#
+# Whitelist source (first match wins):
+#   1. .gitemail-allowed in repo root (one email per line, # comments OK)
+#   2. $GIT_EMAIL_ALLOWED env var (colon-separated)
+#   3. If neither exists: print warning, allow the commit
+#
+# Bypass once: GIT_EMAIL_GUARD=skip git commit -m ...
+# Disable permanently: rm .git/hooks/pre-commit (or run uninstall.sh)
+
+set -euo pipefail
+
+[[ "${GIT_EMAIL_GUARD:-}" == "skip" ]] && exit 0
+
+repo_root="$(git rev-parse --show-toplevel)"
+current_email="$(git config user.email || true)"
+
+if [[ -z "$current_email" ]]; then
+  echo "git-email-guard: user.email is empty — set it before committing." >&2
+  echo "  git config user.email 'you@example.com'" >&2
+  exit 1
+fi
+
+whitelist_file="$repo_root/.gitemail-allowed"
+declare -a allowed=()
+
+if [[ -f "$whitelist_file" ]]; then
+  while IFS= read -r line; do
+    line="${line%%#*}"        # strip inline comments
+    line="${line//[[:space:]]/}"
+    [[ -n "$line" ]] && allowed+=("$line")
+  done < "$whitelist_file"
+elif [[ -n "${GIT_EMAIL_ALLOWED:-}" ]]; then
+  IFS=':' read -r -a allowed <<< "$GIT_EMAIL_ALLOWED"
+else
+  echo "git-email-guard: no .gitemail-allowed in repo root and \$GIT_EMAIL_ALLOWED unset — allowing." >&2
+  exit 0
+fi
+
+for ok in "${allowed[@]}"; do
+  if [[ "$current_email" == "$ok" ]]; then
+    exit 0
+  fi
+done
+
+echo "" >&2
+echo "git-email-guard: BLOCKED — '$current_email' is not whitelisted for this repo." >&2
+echo "" >&2
+echo "  Allowed:" >&2
+for ok in "${allowed[@]}"; do echo "    - $ok" >&2; done
+echo "" >&2
+echo "  Fix:" >&2
+echo "    git config user.email '<one of the above>'" >&2
+echo "" >&2
+echo "  Or bypass once: GIT_EMAIL_GUARD=skip git commit ..." >&2
+echo "" >&2
+exit 1

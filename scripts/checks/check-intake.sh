@@ -92,16 +92,30 @@ report_and_exit() { # <count-of-blocking>
 	exit 0
 }
 
+# Paths this check is allowed to skip, with their reasons and end dates, in the
+# register every other check reads. Vendored bundles are the structural case: an
+# invisible character there is the library's, and the rule is about characters
+# smuggled into text a human wrote.
+_REG="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.." && pwd)/lib/exemptions.tsv"
+INTAKE_EXEMPT=""
+[ -f "$_REG" ] && INTAKE_EXEMPT="$(awk -F'\t' '$1=="intake"{print $2}' "$_REG")"
+export INTAKE_EXEMPT
+
 if [ "$MODE" = "staged" ]; then
 	git diff --cached -U0 --no-color 2>/dev/null |
 		python3 -c "
 $SCAN
 import sys
+import os, re as _re
+_ex = [p for p in os.environ.get('INTAKE_EXEMPT','').split('\n') if p.strip()]
+def _exempt(p):
+    return any(_re.search(pat, p) for pat in _ex)
 added, path = [], '?'
 for raw in sys.stdin.read().splitlines():
     if raw.startswith('+++ b/'): path = raw[6:]
     elif raw.startswith('+') and not raw.startswith('+++'):
-        added.append((path, raw[1:]))
+        if not _exempt(path):
+            added.append((path, raw[1:]))
 out = []
 for p, line in added:
     scan(line, p, out)

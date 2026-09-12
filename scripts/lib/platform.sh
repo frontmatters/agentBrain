@@ -7,6 +7,14 @@
 # so a lazy `source` of a sibling lib would look in the caller's directory.
 _PLATFORM_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Detection is only honest once the user-scoped tool locations are loaded. bun,
+# node and uv live in nvm, ~/.bun and ~/.local/bin, which a restricted PATH does
+# not carry, so platform_has said "not installed" for tools that were installed
+# and offer_install then offered to install them again. _toolpaths.sh is
+# idempotent and safe under set -u.
+# shellcheck disable=SC1091
+[ -f "$_PLATFORM_LIB_DIR/_toolpaths.sh" ] && . "$_PLATFORM_LIB_DIR/_toolpaths.sh"
+
 platform_os() {
 	case "$(uname -s)" in
 		Darwin) echo darwin ;;

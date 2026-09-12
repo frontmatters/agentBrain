@@ -15,9 +15,14 @@ The `os` column is the platform axis (`os:` field); absent = `any` (cross-platfo
 | Add-on | os | claude | gemini | opencode | pi | cursor | copilot | codex | windsurf | cline | hermes | abh | aider | claude-desktop | kiro |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | agentbrain-mcp | any | full | full | unknown | full | full | unknown | unknown | full | unknown | rules | unknown | unknown | full | full |
+| brain-explain | any | full | unknown | unknown | full | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| claude-memory-redirect | any | full | unknown | unknown | none | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
 | event-bus | any | full | full | unknown | full | unknown | full | full | unknown | unknown | unknown | unknown | full | unknown | unknown |
 | extract-learnings | any | full | unknown | unknown | full | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| git-email-guard | any | full | unknown | unknown | full | unknown | full | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
 | goal | any | full | unknown | unknown | full | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| hallmark | any | full | unknown | unknown | full | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
+| incognito | any | full | unknown | unknown | none | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
 | session-journal | any | full | unknown | unknown | none | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown |
 
 Legend: `full` = skill + hooks · `rules` = mention in rules/shared config ·

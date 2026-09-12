@@ -193,6 +193,71 @@ for m in "$REGISTRY"/*/manifest.md; do
 		[ "$lvl" = "unknown" ] && continue
 		in_set "$lvl" $VALID_SUPPORT || { echo "FAIL $m: client '$c' has invalid support '$lvl'" >&2; errors=$((errors+1)); }
 	done
+	# default_enabled: the addon is switched on by a fresh install unless the
+	# user unticks it. That is a promise about what a new machine does without
+	# being asked, so three kinds of addon may never carry it:
+	#
+	#   - one whose install.sh fetches software. A fresh install must not pull
+	#     packages nobody asked for.
+	#   - one whose privacy is sends-docs or sends-all. Sending a user's notes
+	#     anywhere is a decision they make, not a default they discover.
+	#   - one with runtime_requires, which would switch on and then not work.
+	#
+	# Bundling and enabling are separate fields on purpose: event-bus ships in
+	# the slim core and installs software, extract-learnings ships and sends
+	# documents out. Both belong in a release; neither belongs switched on.
+	if grep -qE '^default_enabled:[[:space:]]*(true|yes)[[:space:]]*$' "$m"; then
+		_ad="$(dirname "$m")"
+		# Match a fetcher as a COMMAND, not as a word anywhere in the file. The
+		# first version listed six ways to fetch software and eleven common ones
+		# walked past it, `apt install` without the hyphen and `curl | sh`
+		# among them: a denylist is only as good as the author's imagination and
+		# weakens silently as package managers are invented. Matching the word
+		# anywhere went too far the other way and flagged an echo.
+		#
+		# A command starts a line or follows a pipe, && or ;. Narrow enough to
+		# ignore prose, wide enough that a new package manager still trips it.
+		if [ -f "$_ad/install.sh" ]; then
+			_fetch='brew|apt|apt-get|dnf|yum|pacman|zypper|apk|snap|flatpak|pip|pip3|pipx|cargo|gem|composer|choco|winget|npm|pnpm|yarn|deno|curl|wget'
+			# `go` and `bun` are too generic as bare commands (go build, bun run),
+			# so they are matched in the two-word form that actually fetches.
+			_fetch2='go[[:space:]]+(install|get)|bun[[:space:]]+(add|install)|uv[[:space:]]+(tool|pip)|deno[[:space:]]+install'
+			_hit="$(grep -nE "(^|[&|;])[[:space:]]*(sudo[[:space:]]+)?(($_fetch)([[:space:]]|\$)|($_fetch2))" "$_ad/install.sh" | grep -vE '^[0-9]+:[[:space:]]*#' | head -1 || true)"
+			if [ -n "$_hit" ]; then
+				echo "FAIL $m: default_enabled, but install.sh runs a fetcher: $_hit" >&2
+				echo "       A default-on addon installs on a fresh machine with nobody watching." >&2
+				errors=$((errors+1))
+			fi
+		fi
+		_priv="$(sed -n 's/^privacy:[[:space:]]*//p' "$m" | head -1 | tr -d '\r')"
+		case "$_priv" in
+			sends-docs|sends-all)
+				echo "FAIL $m: default_enabled with privacy '$_priv'; sending content out is a choice, not a default" >&2
+				errors=$((errors+1)) ;;
+		esac
+		if sed -n 's/^runtime_requires:[[:space:]]*//p' "$m" | head -1 | grep -q '[^[:space:]]'; then
+			echo "FAIL $m: default_enabled on an addon with runtime_requires" >&2
+			errors=$((errors+1))
+		fi
+		# `command:` is a runtime dependency too. An addon needing bun either
+		# fails to install where bun is absent, or installs and skips its own
+		# setup step and leaves a state its health check then calls drift. Only
+		# interpreters every system has may carry default_enabled.
+		_cmd="$(sed -n 's/^command:[[:space:]]*//p' "$m" | head -1 | awk '{print $1}')"
+		case "${_cmd:-}" in
+			''|bash|sh|python3) ;;
+			*)
+				echo "FAIL $m: default_enabled with command '$_cmd'; only bash, sh and python3 are present everywhere" >&2
+				errors=$((errors+1)) ;;
+		esac
+		# On by default means present: a release ships a slim core, and a fresh
+		# install cannot switch on an addon whose payload never arrived.
+		if ! grep -qx "$(basename "$_ad")" "$ROOT_DIR/scripts/lib/essential-addons.txt" 2>/dev/null; then
+			echo "FAIL $m: default_enabled but not in essential-addons.txt; it would not ship" >&2
+			errors=$((errors+1))
+		fi
+	fi
+
 	# Every client the manifest DECLARES must have a column. The loop above walks
 	# a fixed list, so it can only ever see clients that already have one; a key
 	# nobody listed slips past it and then vanishes from the matrix, which reads

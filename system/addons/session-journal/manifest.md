@@ -5,6 +5,8 @@ version: 0.1.1
 author: frontmatters
 install: bash system/addons/session-journal/install.sh
 command: bash
+# On by default in a fresh install; the user can untick it.
+default_enabled: true
 privacy: local-only
 install_method: self
 test: bash tests/test-journal.sh

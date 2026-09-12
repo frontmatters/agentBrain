@@ -7,6 +7,11 @@
 # `${x,,}`, `${x^^}`, `${x@Q}`, `|&` and `coproc` parse fine and fail at run
 # time. On 2026-09-07 an essential addon's install.sh, addons.sh, report-stale
 # and two skill scripts carried them; report-stale went red on every fresh Mac.
+# Known false positive: the `|&` arm cannot tell an operator from a character
+# class, so a regex containing [|&;] trips it. Order the class as [&|;] instead;
+# it matches the same characters and the literal "|&" never appears. Teaching
+# this check about bracket expressions costs more fragility than it removes.
+#
 # Comment lines do not count. A maintainer tool that needs bash 4 says so with
 # a BASH_VERSINFO guard and is listed in EXEMPT.
 set -uo pipefail

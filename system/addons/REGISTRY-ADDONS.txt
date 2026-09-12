@@ -1,17 +1,11 @@
 agent-browser
 anthropic-skills
 bloop
-brain-explain
 brain-infographic
 chatgpt-import
-claude-memory-redirect
-codemap
-git-email-guard
 graphify
-hallmark
 headroom-proxy
 impeccable
-incognito
 llm-config
 lottie-animator
 pubcheck

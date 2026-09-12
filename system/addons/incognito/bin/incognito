@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# incognito — toggle agentBrain incognito mode for the current machine/session.
+#
+#   incognito on       enable  (vault becomes read-only: reads OK, writes blocked)
+#   incognito off       disable (persisting knowledge allowed again)
+#   incognito status   show current state (default when no arg)
+#
+# Mechanism: a single flag file in the ACTIVE vault. Every write-side hook checks
+# it via is-incognito.sh and no-ops while it exists. Reads are never touched.
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Flag lives in the active vault (alias-aware so it flips with `brain use`).
+VAULT="${AGENTBRAIN_HOME:-$HOME}/agentBrain"
+FLAG="$VAULT/vault/sessions/.incognito"
+
+cmd="${1:-status}"
+case "$cmd" in
+	on|enable)
+		mkdir -p "$(dirname "$FLAG")"
+		printf 'incognito enabled\n' >"$FLAG"
+		cat <<'EOF'
+🔒 incognito ON — agentBrain is read-only this session.
+   reads  : brain_search / brain_read / brain_recent  → still work
+   writes : learnings, projects, troubleshoot, memories, journal  → blocked
+   off    : /incognito off
+EOF
+		;;
+	off|disable)
+		rm -f "$FLAG"
+		printf '🔓 incognito OFF — agentBrain writes are enabled again.\n'
+		;;
+	status|"")
+		if [ -f "$FLAG" ]; then
+			printf '🔒 incognito is ON (vault read-only). Disable: /incognito off\n'
+		else
+			printf '🔓 incognito is OFF (writes enabled). Enable: /incognito on\n'
+		fi
+		;;
+	*)
+		printf 'usage: incognito [on|off|status]\n' >&2
+		exit 2
+		;;
+esac

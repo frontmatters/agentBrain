@@ -359,9 +359,9 @@ if command -v abh >/dev/null 2>&1 && [ "${AGENTBRAIN_SKIP_ABH:-}" != 1 ]; then
 		_st="$(bash "${SETUP_DIR}/setup-abh-autostart.sh" status 2>/dev/null || true)"
 		case "$_st" in
 			*enabled*)
-				if ab_prompt_select --default 1 "Harness Web autostart is ON. What should we do?" \
-					"keep — start at login" "disable — no auto-start"; then
-					if [ "$REPLY" = 1 ]; then echo "  Kept."; else bash "${SETUP_DIR}/setup-abh-autostart.sh" disable; fi
+				if ab_prompt_choose --default keep "Harness Web autostart is ON. What should we do?" \
+					keep "keep — start at login" disable "disable — no auto-start"; then
+					if [ "$REPLY_ID" = keep ]; then echo "  Kept."; else bash "${SETUP_DIR}/setup-abh-autostart.sh" disable; fi
 				fi
 				;;
 			*)
@@ -490,6 +490,15 @@ if [ "$(uname)" = "Darwin" ] && [ "${AGENTBRAIN_HOME}" = "$HOME" ]; then
 	fi
 fi
 
+# ── Default add-ons ──────────────────────────────────────────────────────────
+# The add-ons a fresh install is meant to have, pre-ticked so unticking is the
+# action. Skipped under the installer, which makes the same offer in its own
+# flow; asking twice is worse than not asking.
+if [ "${AGENTBRAIN_INSTALLER:-0}" != "1" ] && [ -x "${SETUP_DIR}/setup-default-addons.sh" ]; then
+	bash "${SETUP_DIR}/setup-default-addons.sh" || \
+		echo -e "${YELLOW}!${NC} Default add-ons step had issues. Later: brain addons"
+fi
+
 # ── Optional: developer tools, by intent ─────────────────────────────────────
 # Core is what agentBrain needs to run and installs unconditionally. Devtools
 # are what a PROJECT needs, so asking "which tools?" is the wrong question: the
@@ -543,6 +552,7 @@ echo "  /onboard                  personalize preferences, addons and locale (ru
 echo "  brain status              what's connected (dev/live)"
 echo "  brain doctor              re-check health anytime"
 echo "  brain wire                re-link skills + Pi after an update or rename"
+echo "  brain addons              browse and enable add-ons"
 if command -v abh >/dev/null 2>&1; then
 	echo "  brain harness             start the agentBrain Harness web interface"
 	echo "  brain harness autostart  optional login/boot service (enable|status|disable)"
