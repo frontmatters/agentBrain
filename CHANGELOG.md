@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.13.1] - 2026-09-13
+
+### Fixed
+
+- The release sandbox no longer leaks through `$HOME`. The gate installs into a throwaway directory by exporting `AGENTBRAIN_HOME` and leaving `HOME` alone, so every script resolving agentBrain's own location has to read `${AGENTBRAIN_HOME:-$HOME}`. `test-park-system.sh` read `$HOME`, so the sandboxed doctor ran against the live checkout and wrote into the real vault. Sixteen call sites corrected across the selftests, smoke-test, check-anchors, check-skill-relations, check-cmdb-coverage and doctor itself; `check-sandbox-home` holds the line over 184 files.
+- `changes.sh` no longer fetches an unbounded SSH connection from inside a doctor run. Offline was instant because the connection was refused, while a host that accepts and then stalls held the run for as long as TCP allowed. The connect is capped, the sibling checkout path follows `AGENTBRAIN_HOME`, and `AGENTBRAIN_NO_FETCH=1` opts out.
+- The doctor runs each check once. `check-skill-tests` was listed twice, so every test a skill ships with ran twice in every doctor, and a release gate refused because the first invocation passed and the second did not. `test-doctor-no-duplicates` keeps the list honest.
+- An editor extension row is judged by what the editor carries, not by an exit code. Recent VS Code ships Copilot Chat as a built-in, and `code --install-extension` exits non-zero when any extension in a batch fails, including a bundled dependency it refuses to downgrade. GitHub Copilot installed correctly and the row still reported a failure with the working command as its manual fix.
+- `sync-space` no longer refuses a correct setup over a spelling. `setup-abh-autostart.sh` created the state directory as `.agentbrain`, which on a case-insensitive volume is a second name for `.agentBrain` rather than a second directory, and the safety guard compared the two as strings. The spelling is corrected, the guard compares device and inode, and `check-sandbox-home` catches a lower-case path segment.
+- `test-channel-picker` sources from a real file. Bash 3.2 reads a sourced file with seek and a pipe cannot seek, so `. <(...)` defined nothing and reported nothing on the shell a fresh Mac actually runs. `check-bash32` now knows the construct.
+- The release sandbox survives a failure, so a refusal can be read. Its `EXIT` trap deleted the evidence before the caller printed twenty lines of a log that no longer existed.
+
 ## [v1.13.0] - 2026-09-12
 
 ### Added

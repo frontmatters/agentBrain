@@ -5,6 +5,11 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)"
 SYNC="$ROOT_DIR/scripts/sync/sync-vault.sh"
+# A test states what it needs. sync-vault reports change status through
+# changes.sh, which fetches every repository it finds; that reached a LAN server
+# over SSH from inside the release sandbox and made the run depend on a machine
+# the test never mentions.
+export AGENTBRAIN_NO_FETCH=1
 FIXTURE="$(mktemp -d "${TMPDIR:-/tmp}/test-sync-local-cli-XXXXXX")"
 trap 'rm -rf "$FIXTURE"' EXIT
 

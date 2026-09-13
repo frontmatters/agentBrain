@@ -6,11 +6,11 @@
 detect_claude_code() {
 	# Claude Code stores its config in ~/.claude. Treat the dir as the marker — the
 	# CLI is not always on $PATH (it might run inside an IDE wrapper).
-	[[ -d "$HOME/.claude" ]] || command -v claude &>/dev/null
+	[[ -d "${AGENTBRAIN_HOME:-$HOME}/.claude" ]] || command -v claude &>/dev/null
 }
 
 run_claude_code() {
-	local SETTINGS="$HOME/.claude/settings.json"
+	local SETTINGS="${AGENTBRAIN_HOME:-$HOME}/.claude/settings.json"
 
 	# ── session-journal addon ──
 	hdr "$(t selftest.section.session_journal)"
@@ -40,7 +40,7 @@ run_claude_code() {
 	else
 		nok "$(t selftest.sj.autosave_not_registered)"
 	fi
-	if [[ -f "$HOME/.claude/commands/journal.md" ]]; then
+	if [[ -f "${AGENTBRAIN_HOME:-$HOME}/.claude/commands/journal.md" ]]; then
 		ok "$(t selftest.sj.slash_present)"
 	else
 		nok "$(t selftest.sj.slash_missing)"
@@ -82,13 +82,13 @@ print(json.load(open('$BRAIN_ROOT/vault/memories/claude-redirect-config.json')).
 	else
 		nok "$(t selftest.cmr.config_missing)"
 	fi
-	if grep -q "Memory — alleen via agentBrain\|Memory — agentBrain only" "$HOME/.claude/CLAUDE.md" 2>/dev/null; then
+	if grep -q "Memory — alleen via agentBrain\|Memory — agentBrain only" "${AGENTBRAIN_HOME:-$HOME}/.claude/CLAUDE.md" 2>/dev/null; then
 		ok "$(t selftest.cmr.claudemd_present)"
 	else
 		nok "$(t selftest.cmr.claudemd_missing)"
 	fi
 
-	local projects_root="$HOME/.claude/projects"
+	local projects_root="${AGENTBRAIN_HOME:-$HOME}/.claude/projects"
 	local pwd_encoded; pwd_encoded="$(printf '%s' "$PWD" | tr '/_ ' '---')"
 	local cur_proj="$projects_root/$pwd_encoded"
 

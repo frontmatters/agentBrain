@@ -111,7 +111,13 @@ fi
 # the personal vault. If git resolves a different toplevel, refuse to continue.
 SPACE_REAL="$(cd "$SPACE_DIR" && pwd -P)"
 TOP_REAL="$(cd "$(git -C "$SPACE_DIR" rev-parse --show-toplevel)" && pwd -P)"
-if [ "$SPACE_REAL" != "$TOP_REAL" ]; then
+# -ef compares device and inode, so it answers the question the guard is actually
+# asking: is this the same directory? Comparing the strings answered a different
+# one, and on a case-insensitive volume two spellings of one directory made the
+# guard refuse a correct setup on a MacBook Air (.agentbrain vs .agentBrain).
+# This is not a relaxation: a path that names a different directory still fails,
+# and the string comparison is kept as the fallback where -ef is unavailable.
+if ! [ "$SPACE_REAL" -ef "$TOP_REAL" ] 2>/dev/null && [ "$SPACE_REAL" != "$TOP_REAL" ]; then
 	warn "sync-space: REFUSING — git toplevel ($TOP_REAL) is not the space dir ($SPACE_REAL); will not touch the personal vault"
 	exit 1
 fi

@@ -20,7 +20,7 @@ set -uo pipefail
 
 resolve_brain_dir() {
     local candidate
-    for candidate in "${AGENTBRAIN_DIR:-}" "$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)" "${AGENTBRAIN_HOME:-$HOME}/agentBrain" "$HOME/agentBrain"; do
+    for candidate in "${AGENTBRAIN_DIR:-}" "$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)" "${AGENTBRAIN_HOME:-$HOME}/agentBrain"; do
         [ -n "$candidate" ] || continue
         if [ -d "$candidate" ]; then
             (cd "$candidate" && pwd -P) && return 0

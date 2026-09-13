@@ -4,7 +4,7 @@
 # from system/pi-config/ into ~/.pi/agent/, tsconfig present, brain pointer.
 
 detect_pi() {
-	command -v pi &>/dev/null || [[ -d "$HOME/.pi" ]]
+	command -v pi &>/dev/null || [[ -d "${AGENTBRAIN_HOME:-$HOME}/.pi" ]]
 }
 
 run_pi() {
@@ -18,7 +18,7 @@ run_pi() {
 	fi
 
 	# Pi config dir
-	local PI_HOME="$HOME/.pi"
+	local PI_HOME="${AGENTBRAIN_HOME:-$HOME}/.pi"
 	if [[ -d "$PI_HOME" ]]; then
 		ok "$(t selftest.pi.home_present) $PI_HOME"
 	else

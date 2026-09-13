@@ -3,13 +3,13 @@
 # Gemini CLI — pointer in ~/.gemini/GEMINI.md.
 
 detect_gemini_cli() {
-	command -v gemini &>/dev/null || [[ -d "$HOME/.gemini" ]]
+	command -v gemini &>/dev/null || [[ -d "${AGENTBRAIN_HOME:-$HOME}/.gemini" ]]
 }
 
 run_gemini_cli() {
 	hdr "Gemini CLI"
 
-	local POINTER="$HOME/.gemini/GEMINI.md"
+	local POINTER="${AGENTBRAIN_HOME:-$HOME}/.gemini/GEMINI.md"
 	if [[ -f "$POINTER" ]]; then
 		ok "$(t selftest.gemini.pointer_present) $POINTER"
 		if grep -q "agentBrain" "$POINTER" 2>/dev/null; then

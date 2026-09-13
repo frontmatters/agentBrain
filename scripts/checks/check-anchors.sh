@@ -53,7 +53,7 @@ if [ -L local ] && [ "$(readlink local)" = "vault" ]; then
 fi
 
 # ── 3. ~/agentBrain alias ──
-ALIAS="${AGENTBRAIN_ALIAS:-$HOME/agentBrain}"
+ALIAS="${AGENTBRAIN_ALIAS:-${AGENTBRAIN_HOME:-$HOME}/agentBrain}"
 if [ -L "$ALIAS" ] && [ ! -e "$ALIAS" ]; then
 	echo "FAIL $ALIAS is a dangling symlink -> $(readlink "$ALIAS") — agents are blind (run: bash scripts/brain.sh use dev|live)" >&2
 	errors=$((errors + 1))

@@ -7,7 +7,12 @@ set -euo pipefail
 ACTION="${1:-status}"
 LABEL="com.agentbrain.harness.web"
 HOME_DIR="${AGENTBRAIN_HOME:-$HOME}"
-STATE_DIR="${HOME_DIR}/.agentbrain"
+# .agentBrain, with the capital, is the one spelling the rest of the tree uses.
+# This file wrote it in lower case, and on a case-insensitive volume that is the
+# same directory under a second name. git then reports whichever name the
+# directory entry carries, and a guard comparing paths as strings called a
+# correct setup an attempt to touch the personal vault.
+STATE_DIR="${HOME_DIR}/.agentBrain"
 LOG_DIR="${STATE_DIR}/logs"
 PLIST="${HOME_DIR}/Library/LaunchAgents/${LABEL}.plist"
 UNIT_DIR="${HOME_DIR}/.config/systemd/user"

@@ -129,7 +129,7 @@ if [ "$PI_LENS_STRICT" = true ]; then
 fi
 
 pi_checks=()
-if command -v pi >/dev/null 2>&1 || [ -d "$HOME/.pi/agent" ]; then
+if command -v pi >/dev/null 2>&1 || [ -d "${AGENTBRAIN_HOME:-$HOME}/.pi/agent" ]; then
 	pi_checks=(
 		"$pi_lens_check"
 		"bash scripts/checks/check-pi-extension-types.sh"
@@ -158,7 +158,6 @@ local_checks=(
 	"bash scripts/checks/check-project-status-enum.sh"
 	"bash scripts/checks/check-decisions.sh"   # ADR discipline: valid Status + mandatory Alternatives
 	"bash scripts/checks/check-spec-version.sh"
-	"bash scripts/checks/check-skill-tests.sh"
 	"bash scripts/checks/check-skill-links.sh"
 	"bash scripts/checks/check-shorthand.sh"
 	"bash scripts/checks/check-brain-hide-forget.sh"
@@ -192,6 +191,7 @@ local_checks=(
 	"bash scripts/tests/test-configure-pi-skills.sh"                    # Pi skill linking and pruning
 	"bash scripts/tests/test-addon-skill-roots.sh"                       # addon skills link from every addon source root
 	"bash scripts/checks/check-skill-tests.sh"                           # every test a skill ships with, discovered not listed
+	"bash scripts/checks/check-sandbox-home.sh"                        # the release sandbox must stay a sandbox
 	"bash scripts/checks/check-toolpaths.sh"                             # probe a user-scoped tool only after loading its paths
 	"bash scripts/checks/check-exemptions.sh"                            # every exemption has a reason and an end date
 	"bash scripts/tests/test-models-merge.sh"                            # models.json upsert never removes a provider
@@ -200,6 +200,8 @@ local_checks=(
 	"bash scripts/tests/test-decisions.sh"                              # check-decisions behaviour
 	"bash scripts/tests/test-vault-var-names.sh"                        # one vault location, whichever name sets it
 	"bash scripts/tests/test-channel-picker.sh"                          # picking a channel selects that channel
+	"bash scripts/tests/test-doctor-no-duplicates.sh"                    # each check listed once
+	"bash scripts/tests/test-ext-verify.sh"                              # an extension row is judged by what the editor carries
 	"bash scripts/tests/test-prereq-decision.sh"                        # the prerequisite prompt returns the chosen action
 	"bash scripts/tests/test-prompt-choose.sh"                           # a menu returns meaning, not a position
 	"bash scripts/tests/test-installer-prompts.sh"                      # installer prompt helper contract

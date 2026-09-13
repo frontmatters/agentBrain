@@ -12,7 +12,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPOS=("$@")
 if [ ${#REPOS[@]} -eq 0 ]; then
 	REPOS=("$ROOT_DIR")
-	[ -d "$HOME/Developer/agentBrain-harness/agentbrain-src/.git" ] && REPOS+=("$HOME/Developer/agentBrain-harness/agentbrain-src")
+	_sib="${AGENTBRAIN_HARNESS_SRC:-${AGENTBRAIN_HOME:-$HOME}/Developer/agentBrain-harness/agentbrain-src}"
+	[ -d "$_sib/.git" ] && REPOS+=("$_sib")
 fi
 
 export GIT_TERMINAL_PROMPT=0
@@ -44,8 +45,16 @@ for repo in "${REPOS[@]}"; do
 		echo "   dirty: clean"
 	fi
 
-	# Ahead/behind vs main (or master). Fetch is best-effort: offline stays instant.
-	git -C "$repo" fetch --quiet --all >/dev/null 2>&1 || true
+	# Ahead/behind vs main (or master). Fetch is best-effort, but "best-effort"
+	# is not the same as "bounded": offline is instant because the connection is
+	# refused, while a host that accepts the connection and then stalls holds
+	# this for as long as TCP allows. This runs inside the doctor, so a stalled
+	# LAN server froze a release gate with nothing in the log to say why. The
+	# connect is capped and a caller that must not touch the network says so.
+	if [ "${AGENTBRAIN_NO_FETCH:-}" != 1 ]; then
+		GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o ConnectTimeout=5 -o BatchMode=yes}" \
+			git -C "$repo" fetch --quiet --all >/dev/null 2>&1 || true
+	fi
 	base=""
 	for ref in origin/main origin/master main master; do
 		if git -C "$repo" rev-parse --verify --quiet "$ref" >/dev/null 2>&1; then base="$ref"; break; fi

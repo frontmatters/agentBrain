@@ -122,6 +122,27 @@ resolve_editor_for() { # <row label> <extension id>
 
 # No editor at all: offer to install one. agentBrain does not install editors
 # behind your back, so this is a question with a default of "neither".
+# Does the editor actually carry this extension now? The CLI exits non-zero when
+# ANY extension in a batch fails, and one of the ways a batch fails is a bundled
+# dependency that is already NEWER than the one being pulled in:
+#
+#   Installing extension 'github.copilot'...
+#   Error while installing extension github.copilot-chat: Extension
+#   'github.copilot-chat' is a built-in extension with version '0.65.0' and
+#   cannot be downgraded to version '0.48.1'.
+#
+# github.copilot installed. The row still reported a failure and told the user to
+# run by hand the command that had just worked. An exit code describes the batch;
+# only the editor can say what the user will actually have.
+#
+# Ids are compared case-insensitively: the row says GitHub.copilot and the editor
+# answers github.copilot.
+_ext_present() { # <cli> <ext-id>
+	local want
+	want="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
+	"$1" --list-extensions 2>/dev/null | tr '[:upper:]' '[:lower:]' | grep -qx "$want"
+}
+
 # Is <pid> a descendant of <ancestor>? Walks the parent chain, so a Spotlight
 # lookup started by someone else on this machine is never touched.
 _descends_from() { # <pid> <ancestor>
@@ -414,6 +435,8 @@ for i in "${todo[@]}"; do
 	# failure. Catch it first and point at the real fix — nvm-managed Node, never sudo.
 	is_npm_install=0
 	[ "${INSTALLED[i]}" -eq 0 ] && case "$run" in npm\ *) is_npm_install=1 ;; esac
+	# Reset per row: a stale id would verify the previous row's extension.
+	EXT_VERIFY_ID=""; EXT_VERIFY_WANT=""
 	# Extension rows: resolve which editor installs this, now. Three states, not
 	# two. The old guard tested `command -v code` only, which called an installed
 	# VS Code "not installed" whenever its CLI had not been linked into PATH (the
@@ -428,7 +451,11 @@ for i in "${todo[@]}"; do
 			continue
 		fi
 		run="$EDITOR_CLI --install-extension $ext_id"
-		[ "${INSTALLED[i]}" -eq 1 ] && run="$EDITOR_CLI --uninstall-extension $ext_id"
+		EXT_VERIFY_ID="$ext_id"; EXT_VERIFY_WANT=present
+		if [ "${INSTALLED[i]}" -eq 1 ]; then
+			run="$EDITOR_CLI --uninstall-extension $ext_id"
+			EXT_VERIFY_WANT=absent
+		fi
 		echo -e "  ${CYAN}via${NC} $EDITOR_LABEL"
 		;;
 	esac
@@ -489,6 +516,15 @@ for i in "${todo[@]}"; do
 			echo -e "  ${GREEN}✓${NC} ${name}"
 			ok=$((ok + 1))
 		fi
+	elif [ -n "$EXT_VERIFY_ID" ] && {
+			{ [ "$EXT_VERIFY_WANT" = present ] &&   _ext_present "$EDITOR_CLI" "$EXT_VERIFY_ID"; } ||
+			{ [ "$EXT_VERIFY_WANT" = absent  ] && ! _ext_present "$EDITOR_CLI" "$EXT_VERIFY_ID"; }
+		}; then
+		# The batch reported a failure but the thing the row is about is in the
+		# state it asked for, so the failure was about something else it pulled
+		# in. Say which, rather than claiming a clean success.
+		echo -e "  ${GREEN}✓${NC} ${name} — ${EXT_VERIFY_ID} is ${EXT_VERIFY_WANT}; a bundled dependency was left alone (see the output above)."
+		ok=$((ok + 1))
 	else
 		echo -e "  ${RED}✗${NC} ${name} failed — run manually: ${run}"
 		fail=$((fail + 1))

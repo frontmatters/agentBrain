@@ -25,9 +25,9 @@ TOOLPATHS_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../lib" && pwd
 # shellcheck disable=SC1091
 . "$TOOLPATHS_DIR/_toolpaths.sh"
 
-DEV_DIR="${DEV_DIR:-$HOME/Developer/agentBrain-dev}"
-LIVE_DIR="${LIVE_DIR:-$HOME/Developer/agentBrain}"
-ALIAS="$HOME/agentBrain"
+DEV_DIR="${DEV_DIR:-${AGENTBRAIN_HOME:-$HOME}/Developer/agentBrain-dev}"
+LIVE_DIR="${LIVE_DIR:-${AGENTBRAIN_HOME:-$HOME}/Developer/agentBrain}"
+ALIAS="${AGENTBRAIN_HOME:-$HOME}/agentBrain"
 
 PASS=0
 FAIL=0

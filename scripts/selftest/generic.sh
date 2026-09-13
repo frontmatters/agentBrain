@@ -12,10 +12,10 @@ run_generic() {
 	else
 		nok "$(t selftest.brain_root.missing) $BRAIN_ROOT"
 	fi
-	if [[ -L "$HOME/agentBrain" ]]; then
-		local target; target="$(readlink "$HOME/agentBrain")"
+	if [[ -L "${AGENTBRAIN_HOME:-$HOME}/agentBrain" ]]; then
+		local target; target="$(readlink "${AGENTBRAIN_HOME:-$HOME}/agentBrain")"
 		ok "$(t selftest.brain_root.symlink_intact) $target"
-	elif [[ -d "$HOME/agentBrain" ]]; then
+	elif [[ -d "${AGENTBRAIN_HOME:-$HOME}/agentBrain" ]]; then
 		ok "$(t selftest.brain_root.is_dir)"
 	else
 		nok "$(t selftest.brain_root.absent)"

@@ -22,8 +22,15 @@
 
 set -uo pipefail
 
+# AGENTBRAIN_DIR first, then the alias under AGENTBRAIN_HOME. Reading $HOME
+# directly is what let this test escape every sandbox: the release gate points
+# AGENTBRAIN_HOME at a throwaway directory but leaves HOME alone, so a test that
+# reads $HOME resolves to the maintainer's real checkout. This one then writes
+# a project and a learning into the real vault and deletes them again, from
+# inside a run that is supposed to touch nothing.
 resolve_brain_dir() {
-    realpath "$HOME/agentBrain" 2>/dev/null || (cd "$HOME/agentBrain" && pwd -P)
+    local _alias="${AGENTBRAIN_DIR:-${AGENTBRAIN_HOME:-$HOME}/agentBrain}"
+    realpath "$_alias" 2>/dev/null || (cd "$_alias" && pwd -P)
 }
 BRAIN_DIR="$(resolve_brain_dir)"
 LOCAL_ROOT="$(realpath "$BRAIN_DIR/vault" 2>/dev/null || (cd "$BRAIN_DIR/vault" && pwd -P))"
@@ -191,7 +198,7 @@ echo "$out" | grep -q "passed" && ok "check-frontmatter passes" || ko "check-fro
 # belongs together, not to re-check the wiring in general.
 echo ""
 echo "T10: agent-agnostic symlinks"
-for agent_dir in "$HOME/.claude/skills:Claude Code" "$HOME/.pi/agent/skills:Pi"; do
+for agent_dir in "${AGENTBRAIN_HOME:-$HOME}/.claude/skills:Claude Code" "${AGENTBRAIN_HOME:-$HOME}/.pi/agent/skills:Pi"; do
     skills_dir="${agent_dir%%:*}"; agent_label="${agent_dir##*:}"
     if [ ! -d "$skills_dir" ]; then
         echo "  skip: $agent_label not wired on this machine"

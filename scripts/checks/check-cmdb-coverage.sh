@@ -66,7 +66,7 @@ fi
 #    checkouts aren't present). Personal-context only — it inspects the two default
 #    personal checkouts, which is meaningless during a --space audit, so skip it there.
 if [ -z "$SPACE" ]; then
-	for repo in "$HOME/Developer/agentBrain-dev" "$HOME/Developer/agentBrain"; do
+	for repo in "${AGENTBRAIN_HOME:-$HOME}/Developer/agentBrain-dev" "${AGENTBRAIN_HOME:-$HOME}/Developer/agentBrain"; do
 		[ -d "$repo/.git" ] || continue
 		url="$(git -C "$repo" remote get-url origin 2>/dev/null || true)"
 		host="$(printf '%s' "$url" | sed -E 's#^[a-z]+://##; s#/.*$##; s#:[0-9]+$##; s#.*@##')"
