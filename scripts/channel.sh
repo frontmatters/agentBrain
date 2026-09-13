@@ -163,16 +163,17 @@ PY
   else
     printf '   1) stable\n   2) prerelease\n   3) edge\n'
   fi
-  local pick_opts=() ch
+  # The channel id is both the option id and the argument to `main set`, so
+  # there is no mapping from a row to a meaning left to drift. The labels are
+  # built in a loop and relabelled per run ("stable — current"); the branch
+  # below used to assume the loop's order, which is the shape that skipped an
+  # editor install elsewhere in this tree.
+  local pick_pairs=() ch
   for ch in stable prerelease edge; do
-    if [ "$ch" = "$cur" ]; then pick_opts+=("$ch — current"); else pick_opts+=("$ch"); fi
+    if [ "$ch" = "$cur" ]; then pick_pairs+=("$ch" "$ch — current"); else pick_pairs+=("$ch" "$ch"); fi
   done
-  if ab_prompt_select --default 1 "Release channel (current: $cur)?" "${pick_opts[@]}"; then
-    case "$REPLY" in
-      0) main set stable ;;
-      1) main set prerelease ;;
-      2) main set edge ;;
-    esac
+  if ab_prompt_choose --default "$cur" "Release channel (current: $cur)?" "${pick_pairs[@]}"; then
+    main set "$REPLY_ID"
     printf '%s\n' "$(dim "next: brain update --check")"
     return 0
   fi

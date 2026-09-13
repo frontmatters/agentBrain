@@ -128,6 +128,8 @@ COMMANDS
   onboard [--defaults]
                     Model-free personalization wizard (onboard-wizard.sh)
   addons [...]      Add-ons layer (proxies addons.sh: status, install, ...)
+  vault             Where your knowledge lives, which checkouts share it, and
+                    anything sitting outside it that never syncs
   harness           Start the agentBrain Harness web UI; when already running,
                     opens the browser instead. (start is the explicit alias;
                     stop also stops the autostart login-service first, so it
@@ -163,15 +165,22 @@ EOF
 # Scripted use (no TTY) keeps the old contract: bare `brain` prints status.
 brain_menu() {
 	echo "brain v$BRAIN_VERSION"
-	if ! ab_prompt_select --default 1 "What next?" "status — what's connected" "update — pull the latest" "wire — re-link skills + Pi" "onboard — personalization questions" "doctor — health check (fast)"; then
+	# Ids, not row numbers: this menu maps a position onto a command, and adding
+	# an entry in the middle silently shifts every branch below it. Three such
+	# mappings were off by one elsewhere in this tree, one of which skipped an
+	# editor install the user had explicitly chosen.
+	if ! ab_prompt_choose --default status "What next?" \
+		status  "status — what's connected" \
+		vault   "vault — where your knowledge lives" \
+		update  "update — pull the latest" \
+		wire    "wire — re-link skills + Pi" \
+		onboard "onboard — personalization questions" \
+		doctor  "doctor — health check (fast)"; then
 		exit 0
 	fi
-	case "$REPLY" in
-		0) exec bash "$HERE/scripts/brain.sh" status ;;
-		1) exec bash "$HERE/scripts/brain.sh" update ;;
-		2) exec bash "$HERE/scripts/brain.sh" wire ;;
-		3) exec bash "$HERE/scripts/brain.sh" onboard ;;
-		4) exec bash "$HERE/scripts/brain.sh" doctor --fast ;;
+	case "$REPLY_ID" in
+		doctor) exec bash "$HERE/scripts/brain.sh" doctor --fast ;;
+		*)      exec bash "$HERE/scripts/brain.sh" "$REPLY_ID" ;;
 	esac
 }
 
@@ -279,6 +288,63 @@ addons)
 	shift
 	exec bash "$HERE/scripts/addons.sh" "$@"
 	;;
+vault)
+	shift
+	# Where the knowledge actually lives, and what is NOT in it.
+	#
+	# The path was settable (AGENTBRAIN_VAULT, --vault=PATH, setup-vault.sh) and
+	# reachable from no command, so nobody looked. Twelve learnings sat in a
+	# checkout's leftover local/ for weeks: setup-vault.sh had correctly refused
+	# to merge them (content on both sides) and said so once, during an install
+	# nobody was reading. A refusal that leaves knowledge behind has to keep
+	# saying so.
+	# shellcheck source=scripts/lib/vault.sh disable=SC1091
+	. "$HERE/scripts/lib/vault.sh"
+	_v="$(vault_dir)"
+	_real="$(cd -P "$_v" 2>/dev/null && pwd -P || printf '%s' "$_v")"
+
+	_src="the checkout (no override set)"
+	[ -n "${AGENTBRAIN_LOCAL_DIR:-}" ] && _src="AGENTBRAIN_LOCAL_DIR (legacy name)"
+	[ -n "${AGENTBRAIN_VAULT_DIR:-}" ] && _src="AGENTBRAIN_VAULT_DIR"
+	[ -n "${AGENTBRAIN_VAULT:-}" ]     && _src="AGENTBRAIN_VAULT"
+
+	echo "vault:  $_real"
+	echo "set by: $_src"
+	[ -d "$_real" ] && echo "notes:  $(find "$_real" -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')"
+
+	echo "shared by:"
+	for _c in "$BRAIN_DEV" "$BRAIN_NEXT" "$BRAIN_LIVE"; do
+		[ -n "$_c" ] && [ -d "$_c" ] || continue
+		_t="$(cd -P "$_c/vault" 2>/dev/null && pwd -P)"
+		if [ "$_t" = "$_real" ]; then printf '  %-12s linked\n' "$(basename "$_c")"
+		elif [ -e "$_c/vault" ]; then printf '  %-12s points elsewhere: %s\n' "$(basename "$_c")" "${_t:-broken link}"
+		else printf '  %-12s no vault link\n' "$(basename "$_c")"; fi
+	done
+
+	# The part that would have surfaced those twelve: real dirs beside the link,
+	# holding files the vault does not have.
+	_stranded=0
+	for _c in "$BRAIN_DEV" "$BRAIN_NEXT" "$BRAIN_LIVE"; do
+		[ -n "$_c" ] && [ -d "$_c" ] || continue
+		for _d in "$_c/local" "$_c/vault"; do
+			[ -d "$_d" ] && [ ! -L "$_d" ] || continue
+			_n=0
+			while IFS= read -r _f; do
+				_rel="${_f#"$_d"/}"
+				[ -f "$_real/$_rel" ] || _n=$((_n + 1))
+			done < <(find "$_d" -name '*.md' -type f 2>/dev/null)
+			[ "$_n" -gt 0 ] || continue
+			[ "$_stranded" -eq 0 ] && { echo ""; echo "NOT in the vault:"; _stranded=1; }
+			printf '  %s  %d note(s) the vault does not have\n' "${_d/#$HOME/~}" "$_n"
+		done
+	done
+	if [ "$_stranded" -eq 1 ]; then
+		echo "  These never sync to another machine. Move them in, or keep them"
+		echo "  deliberately: bash scripts/setup/setup-vault.sh explains what it will do."
+	fi
+	exit 0
+	;;
+
 harness)
 	shift
 	command -v abh >/dev/null 2>&1 || { echo "brain: agentBrain Harness is not installed — install @agentbrain-harness/abh first" >&2; exit 1; }

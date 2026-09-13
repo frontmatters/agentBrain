@@ -96,7 +96,10 @@ dir_has_content() {
 
 # ── Resolve the requested vault path ────────────────────────────────
 # Flag wins over env; expand a leading ~. Empty means "no explicit request".
-VAULT_PATH="${AGENTBRAIN_VAULT:-}"
+# The runtime spells this AGENTBRAIN_VAULT_DIR (and once AGENTBRAIN_LOCAL_DIR).
+# Accept those here too, so setting any one of the three moves both where the
+# vault is created and where every later script looks for it.
+VAULT_PATH="${AGENTBRAIN_VAULT:-${AGENTBRAIN_VAULT_DIR:-${AGENTBRAIN_LOCAL_DIR:-}}}"
 for _arg in "$@"; do
 	case "$_arg" in
 	--vault=*) VAULT_PATH="${_arg#--vault=}" ;;

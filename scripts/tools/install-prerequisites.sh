@@ -96,18 +96,24 @@ decide_tool() {
 		{ [ "${AGENTBRAIN_ASSUME_YES:-}" = 1 ] || [ ! -t 0 ]; } && { echo keep; return; }
 
 		# update re-runs the tool's installer — update and reinstall coincide here.
-		if ab_prompt_select "${label}: what should we do?" "keep — present and fine" "update/reinstall — fetch latest" "skip — continue without changes"; then
-			# REPLY is zero-based: 0=keep, 1=update/reinstall, 2=skip.
-			case "$REPLY" in 0) echo keep ;; 1) echo update ;; 2) echo skip ;; *) echo keep ;; esac
+		# The id IS the word this function echoes, so nothing maps a row onto a
+		# meaning. Two menus of different lengths live in this one function and
+		# confusing them is one edit away.
+		if ab_prompt_choose "${label}: what should we do?" \
+			keep   "keep — present and fine" \
+			update "update/reinstall — fetch latest" \
+			skip   "skip — continue without changes"; then
+			echo "$REPLY_ID"
 		else echo keep; fi
 	else
 		printf '  %b\xe2\x80\xa2%b %-10s %bnot found on this system%b\n' "${YELLOW}" "${NC}" "$label" "${DIM}" "${NC}" >&2
 		[ "${AGENTBRAIN_ASSUME_YES:-}" = 1 ] && { echo install; return; }
 		[ ! -t 0 ] && { echo skip; return; }
 
-		if ab_prompt_select "${label}: what should we do?" "install — install it now" "skip — continue without it"; then
-			# REPLY is zero-based: 0=install, 1=skip.
-			[ "$REPLY" = 0 ] && echo install || echo skip
+		if ab_prompt_choose "${label}: what should we do?" \
+			install "install — install it now" \
+			skip    "skip — continue without it"; then
+			echo "$REPLY_ID"
 		else echo install; fi
 	fi
 }

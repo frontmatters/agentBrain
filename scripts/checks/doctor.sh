@@ -198,6 +198,9 @@ local_checks=(
 	"bash scripts/tests/test-skill-link-remedies.sh"                     # a failing check names a command that can fix it
 	"bash scripts/tests/test-onboard-preserves.sh"                       # the wizard owns answer bullets, not the files
 	"bash scripts/tests/test-decisions.sh"                              # check-decisions behaviour
+	"bash scripts/tests/test-vault-var-names.sh"                        # one vault location, whichever name sets it
+	"bash scripts/tests/test-channel-picker.sh"                          # picking a channel selects that channel
+	"bash scripts/tests/test-prereq-decision.sh"                        # the prerequisite prompt returns the chosen action
 	"bash scripts/tests/test-prompt-choose.sh"                           # a menu returns meaning, not a position
 	"bash scripts/tests/test-installer-prompts.sh"                      # installer prompt helper contract
 	"bash scripts/tests/test-park-system.sh"                            # park and unpark round trip

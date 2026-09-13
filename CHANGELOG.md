@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.13.0] - 2026-09-12
+
+### Added
+
+- `brain vault` reports where the vault is, which of the three variable names decided that, how many notes it holds, which checkouts link to it, and any real directory sitting beside the link with notes the vault does not have. The path was settable three ways and reachable from no command, so nobody looked at it: twelve learnings sat in a leftover checkout directory for weeks.
+
+### Fixed
+
+- The installer and the runtime now accept all three spellings of the vault location (`AGENTBRAIN_VAULT`, `AGENTBRAIN_VAULT_DIR`, `AGENTBRAIN_LOCAL_DIR`), newest name first. Setting the documented name used to move where the vault was created and not where any later script looked, so the install obeyed and everything after it resolved somewhere else.
+- An optional editor install can no longer hold the whole install hostage. On a laptop whose Spotlight index was rebuilding, `brew install --cask` sat for seventeen minutes with nothing downloaded, waiting on an `mdfind` call Homebrew makes with no timeout. Setup now frees that one lookup after 45 seconds, and only if it is our own descendant, so a Spotlight lookup someone else started is never touched. A genuinely slow download is still left alone, and brew is detached at the full limit rather than cut off.
+- The two interactive menus whose option list can change now return an id instead of a row number, so relabelling or reordering the options cannot silently change what the choice means. The same shape elsewhere skipped an editor install a user had chosen.
+
 ## [v1.12.0] - 2026-09-12
 
 ### Added

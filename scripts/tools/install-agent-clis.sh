@@ -122,6 +122,18 @@ resolve_editor_for() { # <row label> <extension id>
 
 # No editor at all: offer to install one. agentBrain does not install editors
 # behind your back, so this is a question with a default of "neither".
+# Is <pid> a descendant of <ancestor>? Walks the parent chain, so a Spotlight
+# lookup started by someone else on this machine is never touched.
+_descends_from() { # <pid> <ancestor>
+	local p="$1" want="$2" hops=0
+	while [ -n "$p" ] && [ "$p" -gt 1 ] 2>/dev/null; do
+		[ "$p" = "$want" ] && return 0
+		hops=$((hops + 1)); [ "$hops" -gt 12 ] && return 1
+		p="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')"
+	done
+	return 1
+}
+
 offer_editor_install() { # <row label>
 	echo
 	echo "No VS Code family editor found, so \"$1\" has nothing to install into."
@@ -157,10 +169,60 @@ offer_editor_install() { # <row label>
 	[ "$cap" = "__none" ] && return 1
 	local cmd; cmd="$(capability_install_cmd "$cap")"
 	echo -e "  ${CYAN}Installing${NC} $cap -- $cmd"
-	if ! eval "$cmd"; then
-		echo -e "  ${RED}✗${NC} install failed; run it yourself and re-run setup."
+
+	# An optional step may not hold the install hostage.
+	#
+	# `brew install --cask` calls /usr/bin/mdfind to see whether the app already
+	# sits somewhere on disk. On a machine whose Spotlight index is rebuilding,
+	# that call simply does not return: measured at 17 minutes and counting on a
+	# laptop booted after three weeks off, with nothing downloaded yet.
+	# Homebrew's app_with_bundle_id has no timeout and no way to skip it.
+	#
+	# So: wait a few minutes, and if it is still going, let it finish on its own
+	# and carry on. Nothing is killed, because the alternative reading of a long
+	# silence is a legitimate slow download, and cutting that off is worse than
+	# waiting. The row is skipped and the user is told how to finish it.
+	#
+	# HOMEBREW_NO_AUTO_UPDATE is separate: brew refreshes its whole catalogue
+	# before installing, which is pure waiting for one already-resolved cask.
+	local _wait=0 _limit="${AGENTBRAIN_EDITOR_INSTALL_WAIT:-240}"
+	local _nudge="${AGENTBRAIN_EDITOR_INSTALL_NUDGE:-45}" _nudged=0
+	HOMEBREW_NO_AUTO_UPDATE=1 eval "$cmd" &
+	local _pid=$!
+	while kill -0 "$_pid" 2>/dev/null; do
+		[ "$_wait" -ge "$_limit" ] && break
+		# The stuck mdfind is our own descendant and nobody else's business, so
+		# end that one call rather than the install. brew then reads an empty
+		# result, which is the truthful answer here: the caller already
+		# established this editor is not on the machine. Verified by hand on a
+		# laptop stuck for 17 minutes; brew continued immediately.
+		if [ "$_nudged" -eq 0 ] && [ "$_wait" -ge "$_nudge" ]; then
+			local _md
+			for _md in $(pgrep -x mdfind 2>/dev/null); do
+				_descends_from "$_md" "$_pid" || continue
+				kill "$_md" 2>/dev/null && {
+					echo "  ${DIM:-}(freed a Spotlight lookup brew was waiting on)${NC:-}"
+					_nudged=1
+				}
+			done
+			[ "$_nudged" -eq 0 ] && _nudged=1   # nothing to nudge; do not keep looking
+		fi
+		sleep 2; _wait=$((_wait + 2))
+	done
+
+	if kill -0 "$_pid" 2>/dev/null; then
+		disown "$_pid" 2>/dev/null || true
+		echo -e "  ${YELLOW}!${NC} Still running after ${_limit}s; leaving it to finish in the background."
+		echo "     brew waits on Spotlight (mdfind) before installing a cask, which can"
+		echo "     take many minutes on a machine that was off for a while."
+		echo "     When it is done: bash scripts/setup/setup.sh   (re-run to pick up the editor)"
 		return 1
 	fi
+
+	wait "$_pid" || {
+		echo -e "  ${RED}✗${NC} install failed; run it yourself and re-run setup."
+		return 1
+	}
 	return 0
 }
 

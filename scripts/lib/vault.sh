@@ -9,7 +9,8 @@
 # definition, in five spellings, before this file existed. One definition,
 # sourced everywhere, is how a rename becomes one line instead of a thousand.
 #
-# Precedence: AGENTBRAIN_VAULT_DIR (new) > AGENTBRAIN_LOCAL_DIR (the name tests
+# Precedence: AGENTBRAIN_VAULT (what the installer documents) >
+# AGENTBRAIN_VAULT_DIR > AGENTBRAIN_LOCAL_DIR (the name tests
 # and callers used before) > <checkout>/vault > <checkout>/local (a checkout
 # that setup has not touched since the rename).
 #
@@ -21,7 +22,13 @@
 vault_dir() {
 	local root
 	root="${AGENTBRAIN_DIR:-$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)}"
-	if [ -n "${AGENTBRAIN_VAULT_DIR:-}" ]; then printf '%s' "$AGENTBRAIN_VAULT_DIR"
+	# AGENTBRAIN_VAULT is the name the installer documents and the one a user
+	# sets by hand (`--vault=PATH / AGENTBRAIN_VAULT=PATH`). It was read only by
+	# setup-vault.sh, so setting it moved where the vault was CREATED and not
+	# where the runtime LOOKED: one spelling for the install, another for every
+	# script afterwards. All three resolve here now, newest name first.
+	if [ -n "${AGENTBRAIN_VAULT:-}" ]; then printf '%s' "$AGENTBRAIN_VAULT"
+	elif [ -n "${AGENTBRAIN_VAULT_DIR:-}" ]; then printf '%s' "$AGENTBRAIN_VAULT_DIR"
 	elif [ -n "${AGENTBRAIN_LOCAL_DIR:-}" ]; then printf '%s' "$AGENTBRAIN_LOCAL_DIR"
 	elif [ -e "$root/vault" ]; then printf '%s' "$root/vault"
 	else printf '%s' "$root/local"   # an install from before the vault/ rename
