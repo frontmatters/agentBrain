@@ -8,17 +8,12 @@
 # This path is the CANONICAL definition. The agentbrain-mcp server mirrors it in
 # src/write.ts (INCOGNITO_FLAG) for its own write guard — keep both in sync.
 #
-# Resolution order (alias-aware first, own-tree fallback so it works even when
-# called via a path that isn't the alias):
-#   1. $AGENTBRAIN_HOME/agentBrain  (or $HOME/agentBrain) — the live alias
-#   2. this script's own brain root ($HERE/../../..)
-#
+# Resolution is shared with every other Bash consumer through vault.sh.
 # Robust by construction: never errors out, only ever reports 0/1.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null)" || exit 1
+BRAIN_ROOT="$(cd "$HERE/../../.." && pwd)"
+# shellcheck source=scripts/lib/vault.sh
+. "$BRAIN_ROOT/scripts/lib/vault.sh"
 
-for root in "${AGENTBRAIN_HOME:-$HOME}/agentBrain" "$HERE/../../.."; do
-	if [ -f "$root/vault/sessions/.incognito" ]; then
-		exit 0
-	fi
-done
+[ -f "$VAULT_DIR/sessions/.incognito" ] && exit 0
 exit 1

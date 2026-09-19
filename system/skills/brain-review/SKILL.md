@@ -5,8 +5,8 @@ argument-hint: Optional focus area (e.g. "Learnings" or "Projects")
 user-invocable: true
 resources:
   - system/rules.md
-  - learnings/patterns.md
-  - learnings/troubleshooting.md
+  - vault/learnings/patterns.md
+  - vault/learnings/troubleshooting.md
 ---
 
 # Brain Review
@@ -85,5 +85,5 @@ After automated checks, do a deeper manual review:
 ## References
 
 - Rules: `system/rules.md`
-- Patterns: `learnings/patterns.md`
-- Troubleshooting: `learnings/troubleshooting.md`
+- Patterns: `vault/learnings/patterns.md`
+- Troubleshooting: `vault/learnings/troubleshooting.md`

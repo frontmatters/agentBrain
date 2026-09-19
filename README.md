@@ -1,5 +1,4 @@
-# agentBrain v1.13.1
-> Version: v1.13.1 (2026-09-13)
+# agentBrain
 
 > **Portable, local-first memory for AI coding agents.** One plain-Markdown knowledge base that Claude Code, Copilot, Pi, Cursor & co. all read from — so your context survives across every session and project.
 

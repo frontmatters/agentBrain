@@ -5,8 +5,8 @@ argument-hint: Optional window, e.g. "7 days", "30 days", or a project name
 user-invocable: true
 resources:
   - system/rules.md
-  - learnings/patterns.md
-  - learnings/troubleshooting.md
+  - vault/learnings/patterns.md
+  - vault/learnings/troubleshooting.md
   - vault/projects/
   - vault/learnings/
   - vault/sessions/
@@ -26,7 +26,7 @@ Generate a private reflection report from recent Pi sessions and agentBrain note
 - Knowledge sources:
   - `vault/projects/*/index.md` and optional project files.
   - `vault/learnings/` plus public placeholder files for structure only.
-  - `learnings/patterns.md`, `learnings/troubleshooting.md` for policy/examples.
+  - `vault/learnings/patterns.md`, `vault/learnings/troubleshooting.md` for policy/examples.
 
 ## Steps
 

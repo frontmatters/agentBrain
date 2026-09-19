@@ -19,7 +19,9 @@ context cheap; the detail lives once, in each skill's `SKILL.md`.
 | `/addon-create` | Scaffold a new addon registry entry | `system/skills/addon-create/SKILL.md` |
 | `/addons` | Manage addons via `scripts/addons.sh` (status/install/enable/disable, launchd jobs) | `system/skills/addons/SKILL.md` |
 | `/brain-explain` | Render an agentBrain note into a themed, self-contained HTML explainer | `system/skills/brain-explain/SKILL.md` |
+| `/browser-monitor` | Watch the owner work in a browser and record what breaks (headed Playwright, writes a report) | `system/skills/browser-monitor/SKILL.md` |
 | `/explain-branch` | Generate a themed HTML explainer of a git branch's commits + merge/landing strategy, via brain-explain | `system/skills/explain-branch/SKILL.md` |
+| `/gaplog` | Start or maintain a gaplog: the register of what already looks built but does not do what it promises | `system/skills/gaplog/SKILL.md` |
 | `/queue` | Manage the work queue + dispatch via `scripts/queue.sh` (add/start/done/cancel/dispatch/board) | `system/skills/queue/SKILL.md` |
 | `/brain-extract` | Bundle a project's (or a space's) knowledge into a portable `.brain-package/` | `system/skills/brain-extract/SKILL.md` |
 | `/brain-forget` | Soft-delete a note to `vault/.trash/forget/` (recoverable via `/brain-recall`) | `system/skills/brain-forget/SKILL.md` |
@@ -57,6 +59,7 @@ context cheap; the detail lives once, in each skill's `SKILL.md`.
 | `/space-docs` | Produce a self-contained, transferable docs bundle (README + ARCHITECTURE + ROADMAP + MEMORY, rendered diagrams) that stands on its own boundary; deterministic `validate.sh` fails on machine-local paths, private/vault refs, and dead links | `system/skills/space-docs/SKILL.md` |
 | `/promote` | Move artifacts between `vault/X/` ↔ `system/X/` mirror folders | `system/skills/promote/SKILL.md` |
 | `/refactor-brain` | Plan + execute safe brain refactors | `system/skills/refactor-brain/SKILL.md` |
+| `/rename-symbol` | Rename a symbol across a codebase without breaking copy, evidence or stylesheets; verifies by running and looking, not by reading the diff | `system/skills/rename-symbol/SKILL.md` |
 | `/relevant` | Check whether open work is still needed (still-needed CLI) | `system/skills/relevant/SKILL.md` |
 | `/repo-distill` | Legacy alias for `/scanman` | `system/skills/repo-distill/SKILL.md` |
 | `/runbook` | Author a step-by-step runbook (commands + verifiable gates + recovery) for a multi-stage operation | `system/skills/runbook/SKILL.md` |

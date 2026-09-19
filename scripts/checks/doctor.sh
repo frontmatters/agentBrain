@@ -90,6 +90,7 @@ framework_checks=(
 	"bash scripts/checks/check-explainers.sh"
 	"bash scripts/checks/check-architecture.sh"
 	"bash scripts/checks/check-learnings-structure.sh"
+	"bash scripts/checks/check-enforcement.sh"
 	"bash scripts/checks/check-frontmatter.sh"
 	"bash scripts/checks/check-product-notes.sh"
 	"bash scripts/checks/check-verifiability.sh"
@@ -118,6 +119,7 @@ framework_checks=(
 	"bash scripts/checks/check-doctor.sh"
 	"bash scripts/checks/check-launchd-templates.sh"
 	"bash scripts/checks/check-rules-pointer-sync.sh"
+	"bash scripts/checks/check-vault-config.sh"
 	"bash scripts/checks/check-prompt-cache-hygiene.sh"
 	"bash scripts/checks/check-english-sources.sh"
 )
@@ -159,6 +161,7 @@ local_checks=(
 	"bash scripts/checks/check-decisions.sh"   # ADR discipline: valid Status + mandatory Alternatives
 	"bash scripts/checks/check-spec-version.sh"
 	"bash scripts/checks/check-skill-links.sh"
+	"bash scripts/checks/check-agent-pointers.sh"  # do the paths each agent is handed still exist?
 	"bash scripts/checks/check-shorthand.sh"
 	"bash scripts/checks/check-brain-hide-forget.sh"
 	"bash scripts/tests/test-validate-note-id.sh"
@@ -308,7 +311,7 @@ for check in "${all_checks[@]}"; do
 	# itself a repo). Git would climb into it and read its ignores. The ceiling
 	# is the checkout's parent; the vault beside it is reached by path, not by
 	# climbing, so it is unaffected.
-	if output="$(env -u VAULT -u AGENTBRAIN_DIR -u AGENTBRAIN_VAULT_DIR -u AGENTBRAIN_LOCAL_DIR -u BRAIN_DIR -u BRAIN_ALIAS GIT_CEILING_DIRECTORIES="${GIT_CEILING_DIRECTORIES:-$(dirname "$ROOT_DIR")}" "$BASH" -c "$check" 2>&1 </dev/null)"; then rc=0; else rc=1; fi
+	if output="$(env -u VAULT -u AGENTBRAIN_DIR -u AGENTBRAIN_VAULT -u AGENTBRAIN_VAULT_DIR -u AGENTBRAIN_LOCAL_DIR -u BRAIN_DIR -u BRAIN_ALIAS GIT_CEILING_DIRECTORIES="${GIT_CEILING_DIRECTORIES:-$(dirname "$ROOT_DIR")}" "$BASH" -c "$check" 2>&1 </dev/null)"; then rc=0; else rc=1; fi
 	touched=""
 	if ! touched="$(repo_snapshot_diff "$snap" 2>&1)"; then
 		rc=1

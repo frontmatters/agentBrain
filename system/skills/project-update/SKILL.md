@@ -74,7 +74,7 @@ Create or update a project in `vault/projects/` (personal, gitignored).
 
 If a project-specific insight is broadly applicable:
 
-1. Move it to `learnings/patterns.md`
+1. Move it to `vault/learnings/patterns.md`
 2. Leave a cross-reference in the project note
 
 ## Decisions (ADRs)

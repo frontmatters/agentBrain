@@ -20,3 +20,15 @@ export that brings the answers back into the chat.
 
 Local file only, never published: decision pages carry confidential product
 and client context.
+
+## Two templates
+
+- `template.html` with `check.mjs`, the option page: a handful of decisions, each
+  with A/B/C/D cards, wireframes and a comparison table.
+- `template-register.html` with `register.js`, the register page: ten to twenty
+  small decisions from a gaplog or review, each with evidence provenance, two or
+  three options and a multi-line note, plus a three-state theme switch.
+
+Theme: use the client's brand when there is one; otherwise the house style
+("Frontmatters flat", orange accent, Sentient + Instrument Sans). Swap only the
+token block at the top.

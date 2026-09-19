@@ -5,9 +5,11 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BRAIN_ROOT="$(cd "$HERE/../../.." && pwd)"
+# shellcheck source=scripts/lib/vault.sh
+. "$BRAIN_ROOT/scripts/lib/vault.sh"
 
 chmod +x "$HERE"/*.sh "$HERE"/bin/* 2>/dev/null || true
-mkdir -p "$BRAIN_ROOT/vault/sessions"
+mkdir -p "$VAULT_DIR/sessions"
 
 GUARD="$HERE/claude-pretooluse-guard.sh"
 BANNER="$HERE/session-banner.sh"

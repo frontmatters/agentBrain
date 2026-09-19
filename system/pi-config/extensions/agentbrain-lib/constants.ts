@@ -1,10 +1,13 @@
 export const MAX_FILE_BYTES = 50_000;
 export const MAX_PROJECT_BYTES = 80_000;
 
+// Canonical physical paths. `local/` is a compatibility alias used by UUID/context
+// logic; agents must be shown the real `vault/` paths so they can read them.
 export const CORE_FILES = [
-	"learnings/patterns.md",
-	"learnings/troubleshooting.md",
+	"vault/learnings/patterns.md",
+	"vault/learnings/troubleshooting.md",
 	"system/rules.md",
+	"system/agent-config/shared.md",
 	"system/skills.md",
 	"system/lifecycle.md",
 ];

@@ -8,7 +8,7 @@
  *
  * Usage:
  *   import { brainPath, brainDir } from "./brain-paths";
- *   const journal = brainPath("local", "sessions", "session-journal.md");
+ *   const journal = brainPath("vault", "sessions", "session-journal.md");
  */
 
 import * as fs from "node:fs";
@@ -53,20 +53,38 @@ export function brainDir(): string {
  * Where the vault sits on disk: vault/ in a current checkout, local/ in an older
  * one. Ids and index keys keep the local/ spelling; only disk access comes here.
  */
+export function vaultDir(): string {
+	const configured =
+		process.env.AGENTBRAIN_VAULT ??
+		process.env.AGENTBRAIN_VAULT_DIR ??
+		process.env.AGENTBRAIN_LOCAL_DIR;
+	if (configured) {
+		const expanded = configured.replace(/^~(?=\/|$)/, os.homedir());
+		return path.resolve(expanded);
+	}
+
+	const linked = path.join(brainDir(), "vault");
+	if (fs.existsSync(linked)) return linked;
+	return path.join(brainDir(), "local");
+}
+
+/** @deprecated Use vaultDir(). Kept for extension compatibility. */
 export function localDisk(): string {
-	const v = path.join(brainDir(), "vault");
-	return fs.existsSync(v) ? v : path.join(brainDir(), "local");
+	return vaultDir();
 }
 
 // pi-lens-ignore: ts-path-traversal
 export function brainPath(...segments: string[]): string {
 	// A local/... request is a vault path and lands where the vault is on disk.
 	const rel = segments.join("/");
-	const resolved =
-		rel === "local" || rel.startsWith("local/")
-			? path.resolve(localDisk(), rel.slice("local/".length))
-			: path.resolve(brainDir(), ...segments);
-	const relative = path.relative(brainDir(), resolved);
+	const isVaultPath =
+		rel === "local" || rel.startsWith("local/") ||
+		rel === "vault" || rel.startsWith("vault/");
+	const resolved = isVaultPath
+		? path.resolve(vaultDir(), rel.replace(/^(local|vault)\/?/, ""))
+		: path.resolve(brainDir(), ...segments);
+	const root = isVaultPath ? vaultDir() : brainDir();
+	const relative = path.relative(root, resolved);
 	const insideBrain =
 		relative === "" ||
 		(!relative.startsWith("..") && !path.isAbsolute(relative));

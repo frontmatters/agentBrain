@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { brainDir, brainPath } from "../brain-paths";
+import { brainDir, brainPath, vaultDir } from "../brain-paths";
 import { CORE_FILES } from "./constants";
 import { collectProjectContext } from "./project";
 import { relativeToBrain } from "./paths";
@@ -41,5 +41,5 @@ function formatProjectContextBlock(
 }
 
 function formatIntegrationInstructions(projectBlock: string): string {
-	return `## agentBrain Integration\n\nagentBrain is the user's canonical persistent memory at ${brainDir()}. Use the agentbrain_* tools for memory lookup before falling back to ad-hoc shell searches. At the start of meaningful coding work, consult the core memory files: ${CORE_FILES.join(", ")}, and your preferences under local/preferences/personal/ (each carries a "Wanneer" section that says when it applies). Save reusable learnings and reproducible fixes back to agentBrain according to system/rules.md. Never store secrets in shared notes. When writing a note under local/: use \`bash ${brainDir()}/scripts/new-note.sh <type> <vault-rel-path-no-ext> [title]\` for correct frontmatter — NEVER type the id field by hand (uuid5-gen.sh parity is enforced by the note-id-validator extension). If the repo being worked on differs from the harness CWD, pass \`--from <repo-path>\` so owner-space routing uses the actual project. ${projectBlock}`;
+	return `## agentBrain Integration\n\nagentBrain is the user's canonical persistent memory. The checkout is at ${brainDir()} and the active vault is at ${vaultDir()}. Use the agentbrain_* tools for memory lookup before falling back to ad-hoc shell searches. At the start of meaningful coding work, consult the core memory files: ${CORE_FILES.join(", ")}, and preferences under vault/preferences/personal/ (each carries a "Wanneer" section that says when it applies). Save reusable learnings and reproducible fixes back to agentBrain according to system/rules.md. Never store secrets in shared notes. When writing a note under vault/: use \`bash ${brainDir()}/scripts/new-note.sh <type> <vault-rel-path-no-ext> [title]\` for correct frontmatter — NEVER type the id field by hand (uuid5-gen.sh parity is enforced by the note-id-validator extension). If the repo being worked on differs from the harness CWD, pass \`--from <repo-path>\` so owner-space routing uses the actual project. ${projectBlock}`;
 }

@@ -76,6 +76,104 @@ under the project's conventions, or as a substitute for building the recipe.
 10. **When the answers come back**: record them in the spec or decision log
     with the date, then act. Update the page's title to mark it decided.
 
+## Two shapes: the option page and the register page
+
+The skill has two templates. Pick by *how many decisions* and *how much each one
+needs*, not by taste.
+
+**`template.html`, the option page.** Two to five decisions that each deserve
+the full treatment: A/B/C/D cards, a wireframe per option, a comparison table,
+what was rejected. Use it when the owner must *see* the consequence of a choice.
+
+**`template-register.html` plus `register.js`, the register page.** Ten to twenty
+decisions carried over from a gaplog, review or audit, where each is small but
+none may be lost. Full option cards times sixteen is unreadable; here each
+decision is one block: the problem, where it lives, the provenance of the
+evidence, two or three options, and a note field. Grouped by theme, with a
+running counter and a copy-out at the bottom.
+
+What the register page adds beyond the option page:
+
+- **Provenance per decision.** Every entry says `Measured today` (green) or
+  `Quoted` (amber) with the date of the original measurement. This is the part
+  that lets an owner stand behind a choice: a finding from three weeks ago that
+  nobody re-ran is not the same as one you just watched fail. Never mark
+  something measured that you did not run in this session.
+- **A correction block** at the top for when an earlier decision page carried a
+  premise that has since been disproved. An owner who decides on a claim you
+  have already retracted has made a decision you will have to undo. State the
+  wrong claim, the right number, and how you got it.
+- **A multi-line note per decision, not a one-line remark.** The option page's
+  single-line field gets single-line answers. A textarea that grows gets the
+  actual reason, the "yes but", and the counter-question, which is often more
+  valuable than the radio itself. A note without a choice is kept and counted
+  separately: "I want to know what this costs first" is an answer.
+- **A three-state theme switch** (system / light / dark), which is a house
+  requirement for anything with a UI, not a nicety.
+
+## Theme: the client's, otherwise the house style
+
+A decision page is the owner's document but it speaks about a product. So:
+
+1. **The client has a brand**: use their tokens and faces. The page sits next
+   to their product; matching it is what makes the mockups legible as *their*
+   screens.
+2. **No client brand, or an internal page**: fall back to the agentBrain house
+   style, flat, thin borders, lime accent, Sentient for headings, Instrument
+   Sans for text, Spline Sans Mono for code. Never Inter, Roboto, Poppins or
+   Lato as a display face; the slop test fails on them.
+
+   There are **two** house palettes and they are not interchangeable. agentBrain
+   is lime `#bef264` on near-black `#17171a`, as in its own onboarding mocks and
+   landing animations. Frontmatters flat is orange `#dd4b12` / `#ff6a2c`. A page
+   about agentBrain takes lime; a Frontmatters page takes orange. Lime is the
+   identity but fails as text on a light ground, so the light theme darkens it
+   to `#4d6b16` and keeps the real lime on the dark ground where the brand
+   actually lives.
+
+Swap only the token block and the font link at the top of the template. The rest
+of the sheet reads through the tokens, so a rebrand is one edit, not a sweep.
+
+## Language follows the context, from one attribute
+
+A decision page is read by one person in one language, and which language that is
+depends on the context it belongs to: a Dutch client's page is Dutch, an
+international project's page is English, an internal agentBrain page follows the
+framework's own convention.
+
+Set it in one place: `<html lang="nl">` or `<html lang="en">`. The controls
+around the decisions (the counter, "not chosen yet", the copy confirmation, the
+reset question, the labels in the exported text) come from the `TAAL` dictionary
+at the top of `register.js` and follow that attribute. Add a language by adding a
+key to that object; never by editing the code that reads it.
+
+The decisions themselves are authored in that same language: they are your
+writing, not interface chrome, so there is no second copy to keep in sync. That
+also means the page has no language switch, and should not get one. A switch
+would promise a translation of the content that nobody wrote.
+
+The trap this replaces: the counter, the export labels and the confirm dialog
+used to sit hardcoded in Dutch inside the script. An English page built from the
+template rendered English decisions under a Dutch counter, and nothing failed to
+warn about it.
+
+## Traps that cost a rebuild
+
+- **An unescaped quote in `data-titel` truncates the attribute** and the summary
+  row silently goes blank. Escape the attribute, then check the summary table
+  has as many filled rows as there are decisions.
+- **A styling rule on a bare element inside a block hits every instance.** A
+  `.let b { display:block; text-transform:uppercase }` meant for the label also
+  caught a `<b>` used for emphasis mid-sentence and threw a heading into the
+  middle of a paragraph. Scope to the direct child.
+- **The stored shape will change.** Going from `{id: 'o1'}` to
+  `{id: {keus, notitie}}` drops every earlier answer unless the reader accepts
+  both. Read the old shape; do not migrate silently and do not lose the owner's
+  work.
+- **A theme defined only inside a media query** leaves the page painting one
+  theme's text on the other's ground the moment someone toggles. Light on bare
+  `:root`, dark twice: behind the preference and behind the stamp.
+
 ## Extending a page later
 
 When the owner asks for more (another decision, the tenant-configurable
@@ -89,6 +187,9 @@ as the recipe exists: the mock is for the decision, the recipe is the truth.
 
 ## Files
 
+- `template-register.html` + `register.js`: the register page (many small
+  decisions): provenance markers, grouped blocks, multi-line notes, three-state
+  theme switch, counter and copy-out. Replace the placeholders in caps.
 - `template.html`: the page skeleton: styles for option cards, mock idiom,
   comparison table, choice blocks, sticky toolbar, and the script for
   persistence and markdown export. Copy it, replace the placeholder section,

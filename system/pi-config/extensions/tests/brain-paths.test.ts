@@ -12,6 +12,23 @@ test("brainPath resolves paths under AGENTBRAIN_DIR", async () => {
 	);
 });
 
+test("configured external vault is used for vault paths", async () => {
+	const mod = await import("../brain-paths");
+	process.env.AGENTBRAIN_VAULT = "/tmp/agentbrain-user-vault";
+
+	assert.equal(mod.vaultDir(), "/tmp/agentbrain-user-vault");
+	assert.equal(
+		mod.brainPath("vault", "learnings", "patterns.md"),
+		"/tmp/agentbrain-user-vault/learnings/patterns.md",
+	);
+	assert.equal(
+		mod.brainPath("local", "projects", "demo", "index.md"),
+		"/tmp/agentbrain-user-vault/projects/demo/index.md",
+	);
+
+	delete process.env.AGENTBRAIN_VAULT;
+});
+
 test("brainPath rejects traversal outside AGENTBRAIN_DIR", async () => {
 	const mod = await import("../brain-paths");
 

@@ -40,6 +40,32 @@ no longer fail the push or slip past it; what is green is what lands.
 | `tools/framework-validate-install.sh` (factory) | Fresh install + idempotent re-run + doctor in a disposable sandbox |
 | `tools/framework-release-check.sh` (factory) | Doctor, privacy scan, archive build, private-path check, disposable test install from the archive |
 
+### Disposable install validation
+
+Run the install gate from the factory root with:
+
+```sh
+bash tools/framework-validate-install.sh
+```
+
+The gate creates all paths below one generated `mktemp -d` root; it never uses
+or copies the user's real vault or agent directories:
+
+```text
+sandbox/
+├── agentBrain/   # disposable checkout/payload
+├── vault/        # external vault mounted through AGENTBRAIN_VAULT
+└── home/         # AGENTBRAIN_HOME and agent links
+```
+
+It validates a fresh install, seeded external vault, CLI smoke test, an
+idempotent update, and a leftover-checkout scenario. The first doctor is full;
+post-update checks are focused resolver/environment checks so the gate does not
+run the expensive full doctor repeatedly. The release gate owns the full doctor.
+On failure the sandbox is retained and the failure summary prints the failing
+step, exit code, sandbox path, and log names.
+A successful run removes the sandbox automatically.
+
 ### New addons are built off `main`
 
 `system/addons/` is part of the framework tree the doctor gates: `check-addons`

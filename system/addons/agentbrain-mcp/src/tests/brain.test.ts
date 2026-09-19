@@ -26,6 +26,22 @@ test("AGENTBRAIN_DIR wins over AGENTBRAIN_HOME", async () => {
   delete process.env.AGENTBRAIN_HOME;
 });
 
+test("configured external vault is accepted by brainPath", async () => {
+  process.env.AGENTBRAIN_DIR = ROOT;
+  process.env.AGENTBRAIN_VAULT = "/tmp/ab-user-vault";
+  const { vaultDir, brainPath } = await import("../brain");
+  assert.equal(vaultDir(), "/tmp/ab-user-vault");
+  assert.equal(
+    brainPath("vault", "learnings", "patterns.md"),
+    "/tmp/ab-user-vault/learnings/patterns.md",
+  );
+  assert.equal(
+    brainPath("local", "projects", "demo", "index.md"),
+    "/tmp/ab-user-vault/projects/demo/index.md",
+  );
+  delete process.env.AGENTBRAIN_VAULT;
+});
+
 test("brainPath rejects traversal outside the brain", async () => {
   process.env.AGENTBRAIN_DIR = ROOT;
   const { brainPath } = await import("../brain");

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # test-vault-lib.sh — one definition of the vault path, and a gate on the old spelling.
 set -uo pipefail
-unset VAULT AGENTBRAIN_DIR AGENTBRAIN_VAULT_DIR AGENTBRAIN_LOCAL_DIR BRAIN_DIR BRAIN_ALIAS   # a fixture test owns its brain location
+unset VAULT AGENTBRAIN_DIR AGENTBRAIN_VAULT AGENTBRAIN_VAULT_DIR AGENTBRAIN_LOCAL_DIR BRAIN_DIR BRAIN_ALIAS   # a fixture test owns its brain location
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 fail=0; ok() { echo "  ok[$1]: $2"; }; bad() { echo "  FAIL[$1]: $2" >&2; fail=1; }
 TMP="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$TMP"' EXIT; [ -n "$TMP" ] || exit 1

@@ -17,7 +17,7 @@ Read and follow, in order:
 
 Key reminders:
 
-- Public files describe HOW/WHERE; real user/project/security details go in `local/`.
-- Before asking for credentials, check `local/integrations/` and `local/security/`.
+- Public files describe HOW/WHERE; real user/project/security details go in `vault/` (the historical `local/` spelling is only an internal compatibility alias).
+- Before asking for credentials, check `vault/integrations/` and `vault/security/`.
 - Public changes require `scripts/privacy-scan.sh`.
 - Private local changes should be synced with `scripts/sync/sync-vault.sh`.

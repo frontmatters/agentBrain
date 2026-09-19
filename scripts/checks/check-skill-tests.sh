@@ -24,12 +24,26 @@ while IFS= read -r t; do
 	# `[ -s "SKILL.md" ]` and reported the file missing when run from the repo
 	# root, where that path means something else. The tests that already resolve
 	# paths from BASH_SOURCE are unaffected.
-	if out="$(cd "$(dirname "$t")" && bash "$(basename "$t")" 2>&1)"; then
+	rc=0
+	out="$(cd "$(dirname "$t")" && bash "$(basename "$t")" 2>&1)" || rc=$?
+	if [ "$rc" -eq 0 ]; then
 		printf '  %s: ok\n' "$skill"
 	else
 		failed=$((failed + 1)); names="$names $skill"
-		printf '  %s: FAILED\n' "$skill"
-		printf '%s\n' "$out" | tail -12 | sed 's/^/      /'
+		printf '  %s: FAILED (exit %s)\n' "$skill" "$rc"
+		# The whole output, not a tail. A skill test runs with set -e, so it can
+		# end mid-way with no message at all, and then the last twelve lines are
+		# its FIRST three: the reader sees two green ticks under the word FAILED
+		# and learns nothing. Three release gates were diagnosed that way, or
+		# rather were not. The cap is generous because a truncated failure report
+		# is the expensive kind.
+		printf '%s\n' "$out" | head -80 | sed 's/^/      /'
+		_lines="$(printf '%s\n' "$out" | wc -l | tr -d ' ')"
+		[ "$_lines" -gt 80 ] && printf '      ... %s more line(s)\n' "$((_lines - 80))"
+		# The signal that costs the most to miss: a test that stopped rather than
+		# reported. Its own summary line is the proof it reached the end.
+		printf '%s\n' "$out" | grep -qE '[0-9]+ passed, [0-9]+ failed' \
+			|| printf '      NOTE: no summary line, so the test ended early rather than reporting a failed assertion (set -e aborts silently)\n'
 	fi
 done < <(find system/skills vault/skills -mindepth 2 -maxdepth 2 -name test.sh 2>/dev/null | sort)
 

@@ -47,11 +47,13 @@ Usage:
 
   ./setup.sh --vault=PATH    Point this checkout's private vault/ at a shared central
                              vault (so multiple checkouts share one knowledge store).
-                             Default: a real, unshared vault/ dir in the checkout.
+                             Default: $HOME/.agentBrain/vault, mounted through the vault/ symlink.
 
 Environment:
   AGENTBRAIN_HOME=PATH       Same as --home= (flag wins if both are given).
-  AGENTBRAIN_VAULT=PATH      Same as --vault= (a shared vault to mount at vault/).
+  AGENTBRAIN_VAULT=PATH      Same as --vault= (the user-selected vault target mounted at vault/).
+  AGENTBRAIN_VAULT_DIR=PATH  Compatibility alias for AGENTBRAIN_VAULT.
+  AGENTBRAIN_LOCAL_DIR=PATH  Legacy compatibility alias for AGENTBRAIN_VAULT.
   AGENTBRAIN_SKIP_PI=1       Skip the optional Pi configuration step (headless/CI).
 EOF
 		exit 0
@@ -149,7 +151,7 @@ mkdir -p "$AGENTBRAIN_HOME"
 export AGENTBRAIN_HOME
 
 # ── Shared private vault (optional) ──────────────────────────
-# Where the private local/ layer lives. Unset = a real local/ dir in the checkout
+# Where the private vault lives. Unset = a real directory in the checkout
 # (the default). Set = a symlink into a shared central vault, so multiple checkouts
 # (e.g. live + dev) share one knowledge store. Resolved by setup-vault.sh below.
 for _arg in "$@"; do
@@ -338,6 +340,12 @@ bash "${SETUP_DIR}/setup-brain-config.sh"
 log "Templates & preferences"
 bash "${SETUP_DIR}/setup-templates.sh"
 
+# Seed the generated session surface before wiring agent pointers. Fresh installs
+# must not hand agents a dead startup-context link; the loop will refresh it later.
+if [ -f "${SCRIPTS}/flow/update-startup-context.sh" ]; then
+	bash "${SCRIPTS}/flow/update-startup-context.sh" || echo "  startup-context seed deferred to loop-tick"
+fi
+
 # Optional, opt-in: install agent CLIs the user doesn't have yet (agnostic — no agent is a
 # default). Runs before connecting so freshly-installed agents get picked up below. Skips
 # itself non-interactively (agentBrain never auto-installs an agent).
@@ -427,7 +435,9 @@ fi
 # configure-pi installs/updates Pi, links extension skills, generates the
 # extension tsconfig and validates. Its macOS-only pieces (keychain,
 # secrets-helper) self-guard on other platforms.
-if confirm "Configure Pi now? (install/update, skills, extensions config)" "Later: bash scripts/configure-pi.sh" Y; then
+if [ "${AGENTBRAIN_SKIP_PI:-}" = 1 ]; then
+	echo "  Skipped by AGENTBRAIN_SKIP_PI=1. Later: bash scripts/configure-pi.sh"
+elif confirm "Configure Pi now? (install/update, skills, extensions config)" "Later: bash scripts/configure-pi.sh" Y; then
 	bash "${SCRIPTS}/configure-pi.sh" || \
 		echo -e "${YELLOW}!${NC} Pi configuration had issues. Later: bash scripts/configure-pi.sh"
 else
@@ -437,7 +447,13 @@ fi
 # ── Validation (same step bootstrap-macos runs on macOS) ──
 # Setup-phase: an un-onboarded vault is the EXPECTED state here — the
 # onboarding check reports "pending" instead of failing the fresh install.
-AGENTBRAIN_SETUP_PHASE=1 bash "${SCRIPTS}/doctor.sh" --summary
+if [ "${AGENTBRAIN_SKIP_DOCTOR:-}" = 1 ]; then
+	echo "  Skipped by AGENTBRAIN_SKIP_DOCTOR=1. Run doctor separately after setup."
+elif [ "${AGENTBRAIN_DOCTOR_FAST:-}" = 1 ]; then
+	AGENTBRAIN_SETUP_PHASE=1 bash "${SCRIPTS}/doctor.sh" --fast --summary
+else
+	AGENTBRAIN_SETUP_PHASE=1 bash "${SCRIPTS}/doctor.sh" --summary
+fi
 
 # ── Setup complete ─────────────────────────────────────────
 

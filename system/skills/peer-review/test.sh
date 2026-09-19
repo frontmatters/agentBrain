@@ -70,11 +70,37 @@ EOF
 rm -f "$AGENTBRAIN_DIR/vault/events/cursors/$HOST_NAME/test-pr-reviewer/seen-ids.set"
 rm -f "$AGENTBRAIN_DIR/vault/events/cursors/$HOST_NAME/test-pr-requester/seen-ids.set"
 
-REQ_ID="$("$BIN" "$TESTDOC" --to=test-pr-reviewer --from=test-pr-requester 2>/dev/null || true)"
+# stderr is kept, not discarded. This assertion has failed inside release gates
+# on three occasions and was undiagnosable every time, because the reason went
+# to /dev/null here and the sandbox was deleted before anyone could look. The
+# test that reports the failure is the only place that still holds the evidence.
+REQ_ERR="$SANDBOX/request.err"
+# This file runs with set -e, so the call needs a guard or a failure ends the
+# whole test. "|| true" was that guard, and it also made $? the status of the
+# guard: the exit code was unrecoverable. Assigning inside the || keeps the
+# script alive and keeps the real code.
+REQ_ID=""; REQ_RC=0
+REQ_ID="$("$BIN" "$TESTDOC" --to=test-pr-reviewer --from=test-pr-requester 2>"$REQ_ERR")" || REQ_RC=$?
 if [ -n "$REQ_ID" ] && [[ "$REQ_ID" =~ ^[0-9a-f-]{36}$ ]]; then
     ok "request mode emits event_id ($REQ_ID)"
 else
     no "request mode failed to emit valid event_id (got: $REQ_ID)"
+    printf '      exit %s from %s\n' "$REQ_RC" "$BIN" >&2
+    printf '      AGENTBRAIN_DIR=%s\n' "$AGENTBRAIN_DIR" >&2
+    # Facts, not a re-derivation: sourcing vault.sh here failed silently and
+    # printed a question mark, which is worse than printing nothing.
+    printf '      brain.json %s | vault/ %s | local/ %s | inbox %s\n' \
+        "$([ -f "$AGENTBRAIN_DIR/brain.json" ] && echo present || echo MISSING)" \
+        "$([ -d "$AGENTBRAIN_DIR/vault" ] && echo present || echo absent)" \
+        "$([ -d "$AGENTBRAIN_DIR/local" ] && echo present || echo absent)" \
+        "$([ -d "$AGENTBRAIN_DIR/vault/events/inbox" ] && echo present || echo MISSING)" >&2
+    printf '      jq %s | PATH=%s\n' "$(command -v jq || echo MISSING)" "$PATH" >&2
+    if [ -s "$REQ_ERR" ]; then
+        printf '      stderr:\n' >&2
+        sed 's/^/        /' "$REQ_ERR" >&2
+    else
+        printf '      stderr: empty\n' >&2
+    fi
 fi
 
 # T5: consume --once picks up + emits completed
@@ -86,12 +112,26 @@ else
 fi
 
 # T6: list filtered by correlation shows the completed
-LIST_OUT="$("$BIN" --list --type=completed --correlation="$REQ_ID" --from=test-pr-requester --lookback=1h 2>/dev/null || true)"
+# stderr kept, same reason as T4: this assertion has failed inside a release gate
+# with nothing to say for itself. The window is a string comparison on the
+# filename timestamp, so the inbox listing and the archive listing are the two
+# things worth seeing next to the query.
+LIST_ERR="$SANDBOX/list.err"
+LIST_OUT=""; LIST_RC=0
+LIST_OUT="$("$BIN" --list --type=completed --correlation="$REQ_ID" --from=test-pr-requester --lookback=1h 2>"$LIST_ERR")" || LIST_RC=$?
 if echo "$LIST_OUT" | grep -q "peer-review.review.completed"; then
     ok "--list --correlation finds the completed"
 else
     no "--list --correlation didn't find the completed"
-fi
+    printf '      exit %s, correlation=%s\n' "$LIST_RC" "$REQ_ID" >&2
+    printf '      now(UTC) %s\n' "$(date -u '+%Y%m%dT%H%M%S')" >&2
+    printf '      inbox:\n' >&2
+    ls -1 "$AGENTBRAIN_DIR/vault/events/inbox" 2>/dev/null | sed 's/^/        /' >&2 || printf '        (none)\n' >&2
+    printf '      archive:\n' >&2
+    find "$AGENTBRAIN_DIR/vault/events/archive" -type f -name '*.json' 2>/dev/null | sed "s|^.*/|        |" >&2 || printf '        (none)\n' >&2
+    printf '      list stdout: %s\n' "${LIST_OUT:-(empty)}" >&2
+    if [ -s "$LIST_ERR" ]; then printf '      stderr:\n' >&2; sed 's/^/        /' "$LIST_ERR" >&2; fi
+    fi
 
 # T7: archive renders correctly
 COMP_ID="$(echo "$LIST_OUT" | jq -r '.event_id' | head -1 || true)"

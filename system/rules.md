@@ -40,6 +40,20 @@ The framework is self-documenting: each addon carries a `README.md`, each skill 
 
 Use the canonical env vars `AGENTBRAIN_DIR` (checkout root) and `AGENTBRAIN_HOME` (install parent, default `$HOME`) over hardcoded paths; prefer `AGENTBRAIN_DIR` for new content-access code. Full definitions + legacy `VAULT`/`ROOT_DIR` notes: `system/reference.md`.
 
+### `local/` is the permanent internal spelling
+
+The knowledge layer is `vault/`. Internally it is still spelled `local/`, and that is
+**settled, not a leftover**: every UUID in every vault is derived from the `local/` path, so
+`uuid5-gen.sh` folds `vault/` back to it and `test-vault-alias.sh` exists to prove the two
+hash identically. Changing the spelling would change ~4,600 ids at once, and since the vault
+is shared across machines, any checkout that lagged behind would fail validation on all of
+them (decided 2026-09-16, after the sweep in `scripts/scan-local-references.sh`).
+
+So: write `vault/` in anything a human reads, expect `local/` wherever an id is computed, and
+do not "clean up" the second. What is worth cleaning is prose that still describes `local/` as
+the layer, and any path that points at a `local/` directory which no longer exists;
+`check-agent-pointers.sh` now holds that line for the agent pointer blocks.
+
 ## Project Structure
 
 Projects use subfolders instead of single files.

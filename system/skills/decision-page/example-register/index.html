@@ -1,0 +1,244 @@
+<!doctype html><html lang="nl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Acht open besluiten</title>
+
+<!-- THEME. Two rules, in this order:
+     1. Does the client have a brand? Use their tokens and faces (this page is
+        the owner's, but it speaks about the client's product).
+     2. No client brand, or an internal page? Keep what is below: the agentBrain
+        house style -- flat, thin borders, lime accent (#bef264), dark-first.
+        Note there are two house palettes and they are not interchangeable:
+        agentBrain is lime, Frontmatters flat is orange (#dd4b12 / #ff6a2c).
+        An agentBrain page takes lime.
+     Swap ONLY the token block and the font link; the rest of the sheet reads
+     through the tokens and needs no edit. Never Inter/Roboto/Poppins/Lato as a
+     display face: the slop test fails on them. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Spline+Sans+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=sentient@400,500&display=swap">
+<script>try{var t=localStorage.getItem("voorbeeld-plaatkast-thema");
+if(t&&t!=="auto")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+<style>
+:root { color-scheme:light dark;
+  --bg:#fbfbfa; --fg:#14181a; --lijn:#e3e1dd; --zacht:#6d6a64;
+  --acc:#4d6b16; --gekozen:#f2f7e4; --vlak:#f4f3f0; --waar:#2f6b4f; --quote:#8a6d1f;
+  --sans:"Instrument Sans",system-ui,sans-serif;
+  --serif:"Sentient",Georgia,serif;
+  --mono:"Spline Sans Mono",ui-monospace,Menlo,monospace; }
+@media (prefers-color-scheme:dark) { :root:not([data-theme="light"]) {
+  --bg:#17171a; --fg:#f2f2f4; --lijn:#2a2a30; --zacht:#9a9aa4;
+  --acc:#bef264; --gekozen:#232a15; --vlak:#1c1c20; --waar:#7fc0a0; --quote:#d6b85c; } }
+:root[data-theme="dark"] {
+  --bg:#17171a; --fg:#f2f2f4; --lijn:#2a2a30; --zacht:#9a9aa4;
+  --acc:#bef264; --gekozen:#232a15; --vlak:#1c1c20; --waar:#7fc0a0; --quote:#d6b85c; }
+
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:14px/21px var(--sans); }
+main { max-width:1020px; margin:0 auto; padding:40px 24px 140px; position:relative; }
+h1 { font:500 30px/37px var(--serif); margin:0 0 8px; text-wrap:balance; padding-right:130px; }
+h2 { font:500 20px/27px var(--serif); margin:0 0 4px; }
+h3 { font:500 17px/24px var(--serif); margin:0 0 6px; text-wrap:balance; }
+p { margin:0 0 12px; } p:last-child { margin-bottom:0; }
+.lede { color:var(--zacht); max-width:66ch; margin-bottom:28px; }
+code { font-family:var(--mono); font-size:12px; background:var(--vlak); padding:1px 4px; border:1px solid var(--lijn); }
+
+/* Correction block: use it when an earlier page carried a premise that did not
+   hold. The owner must not decide on a claim you have since disproved. */
+.let { border:1px solid var(--acc); background:var(--gekozen); padding:15px 18px; margin:0 0 30px; }
+.let > b { display:block; font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--acc); margin-bottom:5px; }
+.let p { max-width:74ch; } .let p b { color:var(--fg); font-weight:600; }
+
+.groep { margin:0 0 12px; padding-top:26px; border-top:1px solid var(--lijn); }
+.groep .tel { float:right; font-size:12px; color:var(--zacht); }
+.groep p { color:var(--zacht); max-width:70ch; }
+
+article { border:1px solid var(--lijn); margin:0 0 18px; }
+article.af { border-color:var(--acc); }
+.hoofd { padding:16px 18px 14px; }
+.eyebrow { font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--zacht); margin-bottom:5px; }
+.eyebrow b { color:var(--acc); font-weight:600; }
+.prob { max-width:74ch; }
+
+/* Provenance, not decoration: say per decision whether you measured it now or
+   are quoting an older finding. It is what lets the owner stand behind a choice. */
+.bewijs { font-size:12px; line-height:18px; color:var(--zacht); margin-top:10px; padding-left:11px; border-left:2px solid var(--lijn); }
+.bewijs .g { color:var(--waar); font-weight:500; }
+.bewijs .c { color:var(--quote); font-weight:500; }
+
+figure { margin:0; border-top:1px solid var(--lijn); background:var(--vlak); padding:14px 18px; }
+figure img { display:block; width:100%; height:auto; border:1px solid var(--lijn); }
+figcaption { font-size:12px; color:var(--zacht); margin-top:8px; }
+
+.opties { border-top:1px solid var(--lijn); }
+label.optie { display:grid; grid-template-columns:auto 1fr; gap:11px; align-items:start;
+  padding:12px 18px; border-bottom:1px solid var(--lijn); cursor:pointer; }
+label.optie:last-child { border-bottom:0; }
+label.optie:hover { background:var(--vlak); }
+label.optie input { margin:3px 0 0; accent-color:var(--acc); }
+label.optie:has(input:checked) { background:var(--gekozen); }
+.o-kop { font-weight:500; }
+.o-kop em { font-style:normal; color:var(--acc); font-size:11px; letter-spacing:.06em; text-transform:uppercase; margin-left:7px; }
+.o-uit { color:var(--zacht); font-size:13px; line-height:19px; display:block; margin-top:2px; max-width:72ch; }
+
+/* Multi-line, because the reason is the point. A one-line remark field gets
+   one-line answers. */
+.notitie { border-top:1px solid var(--lijn); padding:12px 18px 14px; }
+.notitie label { display:block; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--zacht); margin-bottom:6px; }
+.notitie label span { text-transform:none; letter-spacing:0; font-size:12px; opacity:.8; }
+.notitie textarea { width:100%; min-height:34px; resize:none; overflow:hidden; font:inherit; font-size:13px;
+  line-height:20px; color:var(--fg); background:var(--bg); border:1px solid var(--lijn); padding:7px 9px; }
+.notitie textarea::placeholder { color:var(--zacht); opacity:.7; }
+.notitie textarea:focus { outline:2px solid var(--acc); outline-offset:-1px; border-color:var(--acc); }
+article.heeft-notitie .notitie textarea { border-color:var(--acc); background:var(--gekozen); }
+article.heeft-notitie .notitie label { color:var(--acc); }
+
+.thema { position:absolute; top:34px; right:24px; display:flex; border:1px solid var(--lijn); }
+.thema button { padding:6px 9px; border:0; border-right:1px solid var(--lijn); background:transparent;
+  color:var(--zacht); cursor:pointer; line-height:0; }
+.thema button:last-child { border-right:0; }
+.thema button:hover { color:var(--fg); background:var(--vlak); }
+.thema button[aria-pressed="true"] { color:var(--acc); background:var(--gekozen); }
+.thema svg { width:15px; height:15px; display:block; }
+
+.balkhoes { position:sticky; bottom:0; background:var(--bg); border-top:1px solid var(--lijn); padding:12px 0 0; margin-top:34px; }
+#balk { height:3px; background:var(--lijn); margin-bottom:11px; }
+#balk::after { content:''; display:block; height:3px; width:var(--af,0%); background:var(--acc); transition:width .18s; }
+.knoppen { display:flex; gap:9px; align-items:center; flex-wrap:wrap; }
+button { font:inherit; font-size:13px; padding:7px 14px; border:1px solid var(--lijn); background:var(--bg); color:var(--fg); cursor:pointer; }
+button:hover { border-color:var(--acc); color:var(--acc); }
+#teller { color:var(--zacht); font-size:13px; margin-left:auto; }
+
+table.uit { border-collapse:collapse; width:100%; font-size:13px; margin-top:18px; }
+table.uit td { border-bottom:1px solid var(--lijn); padding:6px 9px; vertical-align:top; }
+table.uit td:first-child { width:48px; color:var(--acc); font-weight:600; }
+table.uit td:nth-child(2) { width:38%; }
+table.uit .leeg { color:var(--zacht); font-style:italic; }
+table.uit .noot { display:block; color:var(--zacht); font-size:12px; line-height:18px; margin-top:3px;
+  padding-left:9px; border-left:2px solid var(--lijn); white-space:pre-wrap; }
+@media (max-width:620px) { table.uit td:nth-child(2) { width:auto; } }
+@media (max-width:560px) { .thema { position:static; margin:0 0 20px; width:max-content; } h1 { padding-right:0; } }
+
+.mock { border:1px solid var(--lijn); background:var(--bg); font-size:12px; line-height:17px; }
+.mock .bar { display:flex; gap:9px; align-items:center; padding:8px 11px; border-bottom:1px solid var(--lijn); color:var(--zacht); }
+.mock .bar b { color:var(--fg); font-weight:600; font-size:13px; }
+.mock .lijf { display:grid; grid-template-columns:130px 1fr; min-height:150px; }
+.mock .rail { border-right:1px solid var(--lijn); padding:9px 11px; color:var(--zacht); }
+.mock .rail div { padding:4px 0; } .mock .rail div.aan { color:var(--acc); font-weight:600; }
+.mock .vlak { padding:11px 13px; }
+.mock .rij { display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px solid var(--lijn); }
+.mock .rij:last-child { border-bottom:0; } .mock .rij span { color:var(--zacht); }
+.mock .knop { display:inline-block; border:1px solid var(--acc); color:var(--acc); padding:3px 9px; margin-top:9px; }
+.mock.na { border-color:var(--acc); }
+.tweeluik { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.tweeluik > div > figcaption { margin-top:6px; }
+.tweeluik > div { display:flex; flex-direction:column; }
+.tweeluik > div > .mock { flex:1; }
+
+@media (max-width:700px){ .tweeluik { grid-template-columns:1fr; } }
+</style></head><body><main>
+
+<div class="thema" role="group" aria-label="Weergave">
+<button type="button" data-thema="auto" aria-pressed="false" title="Volg mijn systeem" aria-label="Volg mijn systeem"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12v8H2z"/><path d="M6 14h4"/><path d="M8 11v3"/></svg></button>
+<button type="button" data-thema="light" aria-pressed="false" title="Licht" aria-label="Licht"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3.2"/><path d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1M12.9 12.9l-1.1-1.1M4.2 4.2L3.1 3.1"/></svg></button>
+<button type="button" data-thema="dark" aria-pressed="false" title="Donker" aria-label="Donker"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M13.4 9.6A5.8 5.8 0 0 1 6.4 2.6a5.9 5.9 0 1 0 7 7z"/></svg></button>
+</div>
+
+
+<h1>Acht open besluiten</h1>
+<p class="lede">Plaatkast, de catalogus van een platenzaak. Alles wat op jou wacht en niets anders. Per punt staat wat er mis is, waar dat is vastgesteld, en wat de keuzes zijn, met mijn advies gemarkeerd. Je keuzes blijven in deze browser bewaard; onderaan staat een knop om ze als tekst mee te nemen.</p>
+<div class="let"><b>Eerst een correctie</b><p>De vorige pagina ging uit van <b>4.000 platen</b>. Dat was het aantal titels, niet het aantal exemplaren: het zijn er <b>11.200</b>. Dat verschil raakt A3 rechtstreeks, dus dat punt staat hieronder op de nagetelde cijfers.</p></div>
+<div class="groep"><span class="tel">3 besluiten</span><h2>Wat de klant ziet</h2><p>Deze drie zitten in het scherm waar een klant een plaat bekijkt en reserveert.</p></div>
+<article data-id="A1" data-titel="&quot;Gereserveerd&quot; betekent twee dingen">
+<div class="hoofd"><div class="eyebrow"><b>A1</b> &middot; catalogus &rarr; statuslabel</div>
+<h3>&quot;Gereserveerd&quot; betekent twee dingen</h3><p class="prob">Een plaat die een klant vasthoudt en een plaat die de winkel apart legt dragen hetzelfde label. De verkoper ziet niet welke van de twee het is, en belt dus de verkeerde klant terug.</p>
+<p class="bewijs"><span class="g">Vandaag nagemeten</span> &mdash; <code>status=reserved</code> wordt op twee plekken gezet, in <code>klant-reservering.ts</code> en in <code>intern-apart.ts</code>, zonder onderscheidend veld.</p></div>
+<div class="opties">
+<label class="optie"><input type="radio" name="b-A1" value="o0" data-kort="twee labels"><span><span class="o-kop">Twee labels <em>advies</em></span><span class="o-uit"><em>Gereserveerd door klant</em> en <em>Apart gelegd</em>. Kleinste ingreep, meteen leesbaar.</span></span></label>
+<label class="optie"><input type="radio" name="b-A1" value="o1" data-kort="label met naam"><span><span class="o-kop">Een label, met de naam erachter</span><span class="o-uit">Blijft een status, maar toont voor wie. Werkt niet voor de interne variant.</span></span></label>
+<label class="optie"><input type="radio" name="b-A1" value="o2" data-kort="ongewijzigd"><span><span class="o-kop">Laat staan</span></span></label>
+</div>
+<div class="notitie"><label for="n-A1">Toelichting <span>optioneel, waarom of wat ik mis</span></label><textarea id="n-A1" data-notitie rows="1" placeholder="Bijvoorbeeld: eens, maar pas na de inventarisatie."></textarea></div>
+</article>
+<article data-id="A2" data-titel="De hoes staat onder de vouw">
+<div class="hoofd"><div class="eyebrow"><b>A2</b> &middot; catalogus &rarr; plaat bekijken</div>
+<h3>De hoes staat onder de vouw</h3><p class="prob">Zes tekstvelden staan boven de afbeelding. Een klant scrollt langs label, jaar en staat voordat hij ziet hoe de plaat eruitziet, terwijl de hoes de reden is dat hij klikte.</p>
+<p class="bewijs"><span class="c">Geciteerd</span> &mdash; Uit de doorloop van 3 september. Vandaag niet opnieuw gemeten; het scherm kan intussen veranderd zijn.</p></div>
+<figure><div class="tweeluik"><div><div class="mock"><div class="bar"><b>Plaatkast</b> <span>plaat bekijken</span></div><div class="lijf"><div class="rail"><div class="aan">Catalogus</div><div>Reserveringen</div><div>Klanten</div><div>Instellingen</div></div><div class="vlak"><div class="rij">Titel <span>Bitches Brew</span></div><div class="rij">Artiest <span>Miles Davis</span></div><div class="rij">Label <span>Columbia</span></div><div class="rij">Jaar <span>1970</span></div><div class="rij">Staat <span>VG+</span></div><div class="rij">Prijs <span>&euro; 48,00</span></div><div class="rij">Hoes <span>400px lager</span></div></div></div></div><figcaption>Nu: zes velden boven de hoes.</figcaption></div><div><div class="mock na"><div class="bar"><b>Plaatkast</b> <span>plaat bekijken</span></div><div class="lijf"><div class="rail"><div class="aan">Catalogus</div><div>Reserveringen</div><div>Klanten</div><div>Instellingen</div></div><div class="vlak"><div class="rij">Hoes <span>meteen zichtbaar</span></div><div class="rij">Bitches Brew <span>Miles Davis</span></div><div class="rij">Columbia &middot; 1970 <span>VG+</span></div><div class="rij">&euro; 48,00 <span></span></div><span class="knop">Reserveren</span></div></div></div><figcaption>Voorstel: hoes eerst, de rest eronder.</figcaption></div></div><figcaption>Nagetekend uit het scherm. Geen opname, dus de maten zijn indicatief.</figcaption></figure>
+<div class="opties">
+<label class="optie"><input type="radio" name="b-A2" value="o0" data-kort="hoes eerst"><span><span class="o-kop">Hoes eerst, tekst eronder <em>advies</em></span><span class="o-uit">Zoals rechts. De afbeelding staat er vanaf de eerste regel.</span></span></label>
+<label class="optie"><input type="radio" name="b-A2" value="o1" data-kort="twee kolommen"><span><span class="o-kop">Twee kolommen op desktop</span><span class="o-uit">Hoes links vast, gegevens rechts. Mooier op groot scherm, meer werk op telefoon.</span></span></label>
+<label class="optie"><input type="radio" name="b-A2" value="o2" data-kort="ongewijzigd"><span><span class="o-kop">Laat staan</span></span></label>
+</div>
+<div class="notitie"><label for="n-A2">Toelichting <span>optioneel, waarom of wat ik mis</span></label><textarea id="n-A2" data-notitie rows="1" placeholder="Bijvoorbeeld: eens, maar pas na de inventarisatie."></textarea></div>
+</article>
+<article data-id="A3" data-titel="De copy gaat uit van meerdere exemplaren">
+<div class="hoofd"><div class="eyebrow"><b>A3</b> &middot; catalogus &rarr; knop en bevestiging</div>
+<h3>De copy gaat uit van meerdere exemplaren</h3><p class="prob">De knop zegt <em>&quot;Reserveer een exemplaar&quot;</em> en de bevestiging <em>&quot;Er is er nog een beschikbaar&quot;</em>. Van 94 procent van de catalogus is er precies een. Bij een unicum is &quot;een exemplaar&quot; een vreemde zin.</p>
+<p class="bewijs"><span class="g">Vandaag nagemeten</span> &mdash; 11.200 platen, waarvan 10.528 met voorraad 1. De copy kent geen enkelvoudsvariant.</p></div>
+<div class="opties">
+<label class="optie"><input type="radio" name="b-A3" value="o0" data-kort="copy beweegt mee"><span><span class="o-kop">De copy beweegt mee <em>advies</em></span><span class="o-uit">Bij voorraad 1 wordt het <em>Reserveer deze plaat</em>. Knop, bevestiging en e-mail passen zich aan.</span></span></label>
+<label class="optie"><input type="radio" name="b-A3" value="o1" data-kort="alleen de knop"><span><span class="o-kop">Alleen de knop</span><span class="o-uit">Goedkoopst, maar de bevestigingsmail blijft dan raar.</span></span></label>
+<label class="optie"><input type="radio" name="b-A3" value="o2" data-kort="ongewijzigd"><span><span class="o-kop">Laat staan</span></span></label>
+</div>
+<div class="notitie"><label for="n-A3">Toelichting <span>optioneel, waarom of wat ik mis</span></label><textarea id="n-A3" data-notitie rows="1" placeholder="Bijvoorbeeld: eens, maar pas na de inventarisatie."></textarea></div>
+</article>
+<div class="groep"><span class="tel">2 besluiten</span><h2>Wie mag wat</h2><p>Twee punten over het verschil tussen meekijken en beslissen.</p></div>
+<article data-id="B1" data-titel="Elke medewerker kan de prijslijst wijzigen">
+<div class="hoofd"><div class="eyebrow"><b>B1</b> &middot; instellingen &rarr; prijslijst</div>
+<h3>Elke medewerker kan de prijslijst wijzigen</h3><p class="prob">Er is een beheerdersrol, maar die wordt alleen gecontroleerd bij het verwijderen van een klant. Prijzen, kortingen en openingstijden staan open voor iedereen die kan inloggen.</p>
+<p class="bewijs"><span class="c">Geciteerd</span> &mdash; Uit de review van 8 september. De rolpoort is op een plek aanwezig.</p></div>
+<div class="opties">
+<label class="optie"><input type="radio" name="b-B1" value="o0" data-kort="rolpoort op winkelinstellingen"><span><span class="o-kop">Rolpoort op alles wat de winkel raakt <em>advies</em></span><span class="o-uit">Prijzen, kortingen, openingstijden en labels achter dezelfde poort als klantverwijdering.</span></span></label>
+<label class="optie"><input type="radio" name="b-B1" value="o1" data-kort="alleen prijzen"><span><span class="o-kop">Alleen prijzen</span><span class="o-uit">Kleinste stap, maar de vraag komt bij de volgende instelling terug.</span></span></label>
+<label class="optie"><input type="radio" name="b-B1" value="o2" data-kort="ongewijzigd"><span><span class="o-kop">Laat staan</span></span></label>
+</div>
+<div class="notitie"><label for="n-B1">Toelichting <span>optioneel, waarom of wat ik mis</span></label><textarea id="n-B1" data-notitie rows="1" placeholder="Bijvoorbeeld: eens, maar pas na de inventarisatie."></textarea></div>
+</article>
+<article data-id="B2" data-titel="Niets legt vast wie een plaat afschreef">
+<div class="hoofd"><div class="eyebrow"><b>B2</b> &middot; voorraad &rarr; afschrijven</div>
+<h3>Niets legt vast wie een plaat afschreef</h3><p class="prob">Afschrijven haalt de plaat uit de catalogus en schrijft niets weg behalve de nieuwe voorraadstand. Bij een verschil tussen kas en catalogus is er geen spoor terug.</p>
+<p class="bewijs"><span class="c">Geciteerd</span> &mdash; Uit de review van 8 september.</p></div>
+<div class="opties">
+<label class="optie"><input type="radio" name="b-B2" value="o0" data-kort="loggen met reden"><span><span class="o-kop">Loggen met wie, wanneer en waarom <em>advies</em></span><span class="o-uit">Reden verplicht, net als bij heropenen elders in de app.</span></span></label>
+<label class="optie"><input type="radio" name="b-B2" value="o1" data-kort="wie en wanneer"><span><span class="o-kop">Alleen wie en wanneer</span><span class="o-uit">Minder wrijving, maar de reden is juist wat je later zoekt.</span></span></label>
+</div>
+<div class="notitie"><label for="n-B2">Toelichting <span>optioneel, waarom of wat ik mis</span></label><textarea id="n-B2" data-notitie rows="1" placeholder="Bijvoorbeeld: eens, maar pas na de inventarisatie."></textarea></div>
+</article>
+<div class="groep"><span class="tel">2 besluiten</span><h2>Bewaren en beloftes</h2><p>Twee plekken waar de app iets toezegt of iets laat liggen.</p></div>
+<article data-id="C1" data-titel="Reserveringen verlopen nooit">
+<div class="hoofd"><div class="eyebrow"><b>C1</b> &middot; reserveringen</div>
+<h3>Reserveringen verlopen nooit</h3><p class="prob">Een reservering blijft staan tot iemand hem met de hand weghaalt. De oudste open reservering is van 14 maart en houdt sindsdien een plaat vast die drie keer is opgevraagd.</p>
+<p class="bewijs"><span class="g">Vandaag nagemeten</span> &mdash; 61 open reserveringen, 23 daarvan ouder dan 60 dagen. Geen verlooptermijn in het datamodel.</p></div>
+<div class="opties">
+<label class="optie"><input type="radio" name="b-C1" value="o0" data-kort="14 dagen met herinnering"><span><span class="o-kop">Veertien dagen, met een herinnering op dag tien <em>advies</em></span><span class="o-uit">De klant krijgt bericht voordat het vervalt; daarna komt de plaat vrij.</span></span></label>
+<label class="optie"><input type="radio" name="b-C1" value="o1" data-kort="termijn per plaat"><span><span class="o-kop">Verlooptermijn per plaat</span><span class="o-uit">De winkel kiest zelf. Flexibel, maar iemand moet het per plaat instellen.</span></span></label>
+<label class="optie"><input type="radio" name="b-C1" value="o2" data-kort="alleen melden"><span><span class="o-kop">Alleen melden, nooit automatisch vrijgeven</span><span class="o-uit">Veiligst, maar lost de 23 oude niet op.</span></span></label>
+</div>
+<div class="notitie"><label for="n-C1">Toelichting <span>optioneel, waarom of wat ik mis</span></label><textarea id="n-C1" data-notitie rows="1" placeholder="Bijvoorbeeld: eens, maar pas na de inventarisatie."></textarea></div>
+</article>
+<article data-id="C2" data-titel="&quot;Binnenkort: verzenden&quot; staat er sinds maart">
+<div class="hoofd"><div class="eyebrow"><b>C2</b> &middot; voetregel &rarr; <em>Verzenden</em></div>
+<h3>&quot;Binnenkort: verzenden&quot; staat er sinds maart</h3><p class="prob">Een belofte zonder datum, zichtbaar voor elke klant, al zes maanden. Twee klanten hebben ernaar gemaild.</p>
+<p class="bewijs"><span class="c">Geciteerd</span> &mdash; Uit de doorloop van 3 september.</p></div>
+<div class="opties">
+<label class="optie"><input type="radio" name="b-C2" value="o0" data-kort="weghalen"><span><span class="o-kop">Weghalen tot het werkt <em>advies</em></span><span class="o-uit">Geen belofte is beter dan een belofte van zes maanden oud.</span></span></label>
+<label class="optie"><input type="radio" name="b-C2" value="o1" data-kort="datum erbij"><span><span class="o-kop">Datum erbij</span><span class="o-uit">Alleen als die datum er ook echt is.</span></span></label>
+<label class="optie"><input type="radio" name="b-C2" value="o2" data-kort="nu bouwen"><span><span class="o-kop">Nu bouwen</span></span></label>
+</div>
+<div class="notitie"><label for="n-C2">Toelichting <span>optioneel, waarom of wat ik mis</span></label><textarea id="n-C2" data-notitie rows="1" placeholder="Bijvoorbeeld: eens, maar pas na de inventarisatie."></textarea></div>
+</article>
+<div class="groep"><span class="tel">1 besluit</span><h2>Waar de tests niet komen</h2><p>Een punt, en het is de reden dat de voorraadfout kon ontstaan.</p></div>
+<article data-id="D1" data-titel="Het echte databasepad wordt niet getest">
+<div class="hoofd"><div class="eyebrow"><b>D1</b> &middot; <code>src/db/*-repo.ts</code></div>
+<h3>Het echte databasepad wordt niet getest</h3><p class="prob">Elke repo bestaat twee keer: een SQLite-versie en een versie in het geheugen. De tests draaien op de tweede, en die kan de fout van de eerste niet maken: hij geeft terug wat erin ging, terwijl de SQLite-versie kolommen naar velden vertaalt. Daar ontstond de voorraadfout van augustus.</p>
+<p class="bewijs"><span class="g">Vandaag nagemeten</span> &mdash; 140 repo-tests, alle 140 tegen de geheugenversie. Nul tegen SQLite.</p></div>
+<div class="opties">
+<label class="optie"><input type="radio" name="b-D1" value="o0" data-kort="ook tegen SQLite"><span><span class="o-kop">Dezelfde tests ook tegen SQLite <em>advies</em></span><span class="o-uit">Twee keer draaien. Vangt precies de klasse fouten die nu doorglipt.</span></span></label>
+<label class="optie"><input type="radio" name="b-D1" value="o1" data-kort="alleen SQLite"><span><span class="o-kop">De geheugenversie weghalen</span><span class="o-uit">Altijd echt. Trager, maar een waarheid.</span></span></label>
+<label class="optie"><input type="radio" name="b-D1" value="o2" data-kort="ongewijzigd"><span><span class="o-kop">Laat staan</span></span></label>
+</div>
+<div class="notitie"><label for="n-D1">Toelichting <span>optioneel, waarom of wat ik mis</span></label><textarea id="n-D1" data-notitie rows="1" placeholder="Bijvoorbeeld: eens, maar pas na de inventarisatie."></textarea></div>
+</article>
+<div class="groep"><h2>Je keuzes</h2></div>
+<table class="uit"><tbody id="uitslag"></tbody></table>
+<div class="balkhoes"><div id="balk"></div><div class="knoppen"><button id="kopieer" type="button">Kopieer als tekst</button><button id="wis" type="button">Begin opnieuw</button><span id="teller"></span></div></div>
+</main><script src="besluiten.js"></script></body></html>

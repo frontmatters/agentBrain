@@ -38,7 +38,7 @@ ARGUMENTS:
   goal              Free-form goal description (optional, trailing words).
 
 OUTPUT:
-  Creates ~/agentBrain/vault/research/repo-distill/<slug>/ with:
+  Creates $AGENTBRAIN_VAULT/research/repo-distill/<slug>/ with:
     - index.md (with method version + UUID5 frontmatter)
     - 00..05 canonical files
   In reproduction-spec mode, also creates:
@@ -104,7 +104,9 @@ fi
 # --- pure-bash fallback --------------------------------------------------------
 
 VAULT="$SCANMAN_AGENTBRAIN_DIR"
-TARGET="$VAULT/vault/research/repo-distill/$SLUG"
+# shellcheck source=../../../scripts/lib/vault.sh
+. "$VAULT/scripts/lib/vault.sh"
+TARGET="$VAULT_DIR/research/repo-distill/$SLUG"
 
 if [ -e "$TARGET" ]; then
     die "Scanman target already exists: $TARGET"

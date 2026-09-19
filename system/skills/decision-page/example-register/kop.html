@@ -1,0 +1,141 @@
+<!doctype html><html lang="nl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Acht open besluiten</title>
+
+<!-- THEME. Two rules, in this order:
+     1. Does the client have a brand? Use their tokens and faces (this page is
+        the owner's, but it speaks about the client's product).
+     2. No client brand, or an internal page? Keep what is below: the agentBrain
+        house style -- flat, thin borders, lime accent (#bef264), dark-first.
+        Note there are two house palettes and they are not interchangeable:
+        agentBrain is lime, Frontmatters flat is orange (#dd4b12 / #ff6a2c).
+        An agentBrain page takes lime.
+     Swap ONLY the token block and the font link; the rest of the sheet reads
+     through the tokens and needs no edit. Never Inter/Roboto/Poppins/Lato as a
+     display face: the slop test fails on them. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Spline+Sans+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=sentient@400,500&display=swap">
+<script>try{var t=localStorage.getItem("voorbeeld-plaatkast-thema");
+if(t&&t!=="auto")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+<style>
+:root { color-scheme:light dark;
+  --bg:#fbfbfa; --fg:#14181a; --lijn:#e3e1dd; --zacht:#6d6a64;
+  --acc:#4d6b16; --gekozen:#f2f7e4; --vlak:#f4f3f0; --waar:#2f6b4f; --quote:#8a6d1f;
+  --sans:"Instrument Sans",system-ui,sans-serif;
+  --serif:"Sentient",Georgia,serif;
+  --mono:"Spline Sans Mono",ui-monospace,Menlo,monospace; }
+@media (prefers-color-scheme:dark) { :root:not([data-theme="light"]) {
+  --bg:#17171a; --fg:#f2f2f4; --lijn:#2a2a30; --zacht:#9a9aa4;
+  --acc:#bef264; --gekozen:#232a15; --vlak:#1c1c20; --waar:#7fc0a0; --quote:#d6b85c; } }
+:root[data-theme="dark"] {
+  --bg:#17171a; --fg:#f2f2f4; --lijn:#2a2a30; --zacht:#9a9aa4;
+  --acc:#bef264; --gekozen:#232a15; --vlak:#1c1c20; --waar:#7fc0a0; --quote:#d6b85c; }
+
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:14px/21px var(--sans); }
+main { max-width:1020px; margin:0 auto; padding:40px 24px 140px; position:relative; }
+h1 { font:500 30px/37px var(--serif); margin:0 0 8px; text-wrap:balance; padding-right:130px; }
+h2 { font:500 20px/27px var(--serif); margin:0 0 4px; }
+h3 { font:500 17px/24px var(--serif); margin:0 0 6px; text-wrap:balance; }
+p { margin:0 0 12px; } p:last-child { margin-bottom:0; }
+.lede { color:var(--zacht); max-width:66ch; margin-bottom:28px; }
+code { font-family:var(--mono); font-size:12px; background:var(--vlak); padding:1px 4px; border:1px solid var(--lijn); }
+
+/* Correction block: use it when an earlier page carried a premise that did not
+   hold. The owner must not decide on a claim you have since disproved. */
+.let { border:1px solid var(--acc); background:var(--gekozen); padding:15px 18px; margin:0 0 30px; }
+.let > b { display:block; font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--acc); margin-bottom:5px; }
+.let p { max-width:74ch; } .let p b { color:var(--fg); font-weight:600; }
+
+.groep { margin:0 0 12px; padding-top:26px; border-top:1px solid var(--lijn); }
+.groep .tel { float:right; font-size:12px; color:var(--zacht); }
+.groep p { color:var(--zacht); max-width:70ch; }
+
+article { border:1px solid var(--lijn); margin:0 0 18px; }
+article.af { border-color:var(--acc); }
+.hoofd { padding:16px 18px 14px; }
+.eyebrow { font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--zacht); margin-bottom:5px; }
+.eyebrow b { color:var(--acc); font-weight:600; }
+.prob { max-width:74ch; }
+
+/* Provenance, not decoration: say per decision whether you measured it now or
+   are quoting an older finding. It is what lets the owner stand behind a choice. */
+.bewijs { font-size:12px; line-height:18px; color:var(--zacht); margin-top:10px; padding-left:11px; border-left:2px solid var(--lijn); }
+.bewijs .g { color:var(--waar); font-weight:500; }
+.bewijs .c { color:var(--quote); font-weight:500; }
+
+figure { margin:0; border-top:1px solid var(--lijn); background:var(--vlak); padding:14px 18px; }
+figure img { display:block; width:100%; height:auto; border:1px solid var(--lijn); }
+figcaption { font-size:12px; color:var(--zacht); margin-top:8px; }
+
+.opties { border-top:1px solid var(--lijn); }
+label.optie { display:grid; grid-template-columns:auto 1fr; gap:11px; align-items:start;
+  padding:12px 18px; border-bottom:1px solid var(--lijn); cursor:pointer; }
+label.optie:last-child { border-bottom:0; }
+label.optie:hover { background:var(--vlak); }
+label.optie input { margin:3px 0 0; accent-color:var(--acc); }
+label.optie:has(input:checked) { background:var(--gekozen); }
+.o-kop { font-weight:500; }
+.o-kop em { font-style:normal; color:var(--acc); font-size:11px; letter-spacing:.06em; text-transform:uppercase; margin-left:7px; }
+.o-uit { color:var(--zacht); font-size:13px; line-height:19px; display:block; margin-top:2px; max-width:72ch; }
+
+/* Multi-line, because the reason is the point. A one-line remark field gets
+   one-line answers. */
+.notitie { border-top:1px solid var(--lijn); padding:12px 18px 14px; }
+.notitie label { display:block; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--zacht); margin-bottom:6px; }
+.notitie label span { text-transform:none; letter-spacing:0; font-size:12px; opacity:.8; }
+.notitie textarea { width:100%; min-height:34px; resize:none; overflow:hidden; font:inherit; font-size:13px;
+  line-height:20px; color:var(--fg); background:var(--bg); border:1px solid var(--lijn); padding:7px 9px; }
+.notitie textarea::placeholder { color:var(--zacht); opacity:.7; }
+.notitie textarea:focus { outline:2px solid var(--acc); outline-offset:-1px; border-color:var(--acc); }
+article.heeft-notitie .notitie textarea { border-color:var(--acc); background:var(--gekozen); }
+article.heeft-notitie .notitie label { color:var(--acc); }
+
+.thema { position:absolute; top:34px; right:24px; display:flex; border:1px solid var(--lijn); }
+.thema button { padding:6px 9px; border:0; border-right:1px solid var(--lijn); background:transparent;
+  color:var(--zacht); cursor:pointer; line-height:0; }
+.thema button:last-child { border-right:0; }
+.thema button:hover { color:var(--fg); background:var(--vlak); }
+.thema button[aria-pressed="true"] { color:var(--acc); background:var(--gekozen); }
+.thema svg { width:15px; height:15px; display:block; }
+
+.balkhoes { position:sticky; bottom:0; background:var(--bg); border-top:1px solid var(--lijn); padding:12px 0 0; margin-top:34px; }
+#balk { height:3px; background:var(--lijn); margin-bottom:11px; }
+#balk::after { content:''; display:block; height:3px; width:var(--af,0%); background:var(--acc); transition:width .18s; }
+.knoppen { display:flex; gap:9px; align-items:center; flex-wrap:wrap; }
+button { font:inherit; font-size:13px; padding:7px 14px; border:1px solid var(--lijn); background:var(--bg); color:var(--fg); cursor:pointer; }
+button:hover { border-color:var(--acc); color:var(--acc); }
+#teller { color:var(--zacht); font-size:13px; margin-left:auto; }
+
+table.uit { border-collapse:collapse; width:100%; font-size:13px; margin-top:18px; }
+table.uit td { border-bottom:1px solid var(--lijn); padding:6px 9px; vertical-align:top; }
+table.uit td:first-child { width:48px; color:var(--acc); font-weight:600; }
+table.uit td:nth-child(2) { width:38%; }
+table.uit .leeg { color:var(--zacht); font-style:italic; }
+table.uit .noot { display:block; color:var(--zacht); font-size:12px; line-height:18px; margin-top:3px;
+  padding-left:9px; border-left:2px solid var(--lijn); white-space:pre-wrap; }
+@media (max-width:620px) { table.uit td:nth-child(2) { width:auto; } }
+@media (max-width:560px) { .thema { position:static; margin:0 0 20px; width:max-content; } h1 { padding-right:0; } }
+
+.mock { border:1px solid var(--lijn); background:var(--bg); font-size:12px; line-height:17px; }
+.mock .bar { display:flex; gap:9px; align-items:center; padding:8px 11px; border-bottom:1px solid var(--lijn); color:var(--zacht); }
+.mock .bar b { color:var(--fg); font-weight:600; font-size:13px; }
+.mock .lijf { display:grid; grid-template-columns:150px 1fr; min-height:150px; }
+.mock .rail { border-right:1px solid var(--lijn); padding:9px 11px; color:var(--zacht); }
+.mock .rail div { padding:4px 0; } .mock .rail div.aan { color:var(--acc); font-weight:600; }
+.mock .vlak { padding:11px 13px; }
+.mock .rij { display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px solid var(--lijn); }
+.mock .rij:last-child { border-bottom:0; } .mock .rij span { color:var(--zacht); }
+.mock .knop { display:inline-block; border:1px solid var(--acc); color:var(--acc); padding:3px 9px; margin-top:9px; }
+.mock.na { border-color:var(--acc); }
+.tweeluik { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.tweeluik figcaption { margin-top:6px; }
+@media (max-width:700px){ .tweeluik { grid-template-columns:1fr; } }
+</style></head><body><main>
+
+<div class="thema" role="group" aria-label="Weergave">
+<button type="button" data-thema="auto" aria-pressed="false" title="Volg mijn systeem" aria-label="Volg mijn systeem"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12v8H2z"/><path d="M6 14h4"/><path d="M8 11v3"/></svg></button>
+<button type="button" data-thema="light" aria-pressed="false" title="Licht" aria-label="Licht"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3.2"/><path d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1M12.9 12.9l-1.1-1.1M4.2 4.2L3.1 3.1"/></svg></button>
+<button type="button" data-thema="dark" aria-pressed="false" title="Donker" aria-label="Donker"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M13.4 9.6A5.8 5.8 0 0 1 6.4 2.6a5.9 5.9 0 1 0 7 7z"/></svg></button>
+</div>
+

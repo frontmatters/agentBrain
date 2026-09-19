@@ -78,7 +78,7 @@ Use recoverable curation:
 
 ## Path environment variables
 
-agentBrain uses two canonical env vars for filesystem paths (prefer over hardcoded):
+agentBrain uses three canonical env vars for filesystem paths (prefer over hardcoded):
 
 - **`AGENTBRAIN_DIR`** — brain checkout root. MUST contain `brain.json` + `system/` +
   `scripts/` + `vault/` for validators to consider it healthy. Default:
@@ -89,10 +89,14 @@ agentBrain uses two canonical env vars for filesystem paths (prefer over hardcod
   install/setup scripts that write tool-configs OUTSIDE the checkout (`.bashrc`,
   `.claude/CLAUDE.md`, `.pi/agent/`, `~/.copilot/`, `~/.gemini/`,
   `~/.config/opencode/`). Convention: `AGENTBRAIN_DIR = $AGENTBRAIN_HOME/agentBrain`.
+- **`AGENTBRAIN_VAULT`** — user-selected private-vault target. Default:
+  `$AGENTBRAIN_HOME/.agentBrain/vault`, mounted at the checkout's `vault/` symlink.
+  `AGENTBRAIN_VAULT_DIR` and `AGENTBRAIN_LOCAL_DIR` remain compatibility aliases.
 
 New consumer-facing code (skills, validators, doc-tools) should use `AGENTBRAIN_DIR`
-for content access. `VAULT` (exported by `setup.sh`) and `ROOT_DIR` (script-local) are
-legacy/implementation details — don't add new public usage.
+for checkout/framework access and the shared vault resolver for private knowledge.
+`VAULT` (exported by `setup.sh`) and `ROOT_DIR` (script-local) are legacy/implementation
+details — don't add new public usage.
 
 ## Forward-ref markers
 

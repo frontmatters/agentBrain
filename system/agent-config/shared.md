@@ -9,6 +9,21 @@ id: e0ec2f19-20d7-5b49-a8e8-4d161ac9cda0
 
 `system/rules.md` is canonical. If instructions conflict, follow `system/rules.md`.
 
+## Read a repo's own AGENTS.md before working in it
+
+**A repository carrying an `AGENTS.md` has written down how to work in it. Read it before
+building, publishing or deploying there.** It is the agent-neutral place for exactly that,
+which is why it must not be skipped by an agent that happens to load a different filename.
+
+**When this matters most**: an operation touching a credential, a registry, a deploy or a
+release always has a written procedure. Find it before the first attempt; not finding one
+is itself the finding. The tell that you are skipping it is reaching for a credential whose
+name you inferred from the task.
+
+Lived on 2026-09-16: a publish to an internal registry failed 401, and that repository's
+`AGENTS.md` carried both the procedure and the warning that the key chosen gives exactly
+that 401. Two directories above the cursor, unread.
+
 ## Incognito mode (read-only sessions)
 
 If `vault/sessions/.incognito` exists, the session is **read-only**: consult the

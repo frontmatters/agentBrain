@@ -18,7 +18,7 @@ root = Path('.')
 exclude_parts = {'.git', 'node_modules'}
 exclude_prefixes = [Path('system/pi-config/extensions/.pi-lens')]
 
-# Partition once: public layer vs the private local/ layer.
+# Partition once: public layer vs the private vault (spelled local/ internally, see rules.md).
 public_files, local_files = [], []
 for path in root.rglob('*.md'):
     if set(path.parts) & exclude_parts:

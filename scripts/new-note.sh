@@ -326,6 +326,11 @@ case "$TYPE" in
 	           # here either: this script is shared.
 	           EXTRA_FIELDS="# kind: product   # uncomment for anything you publish; pubcheck then watches it" ;;
 	backlog)   TAGS="[backlog]"   ; SOURCE="source: session" ; STATUS_FIELD="status: todo" ;;
+	# The backlog's counterpart: not what we intend to build, but what already looks built
+	# and does not do what it promises. Different register, different burden of proof:
+	# every row carries evidence and a verification date. Routing test and discipline:
+	# system/skills/gaplog/SKILL.md.
+	gaplog)    TAGS="[gaplog]"    ; SOURCE="source: session" ; STATUS_FIELD="status: active" ;;
 	feedback)  TAGS="[feedback]"  ; SOURCE="source: session" ;;
 	reference) TAGS="[reference]" ; SOURCE="" ;;
 	session)   TAGS="[session]"   ; SOURCE="" ; EXTRA_FIELDS="time: $NOW" ;;
@@ -338,7 +343,7 @@ case "$TYPE" in
 	decisions) TAGS="[decisions]" ; SOURCE="" ;;
 	explainer) TAGS="[explainer]" ; SOURCE="" ; EXTRA_FIELDS=$'category: general\ntheme: clean-flat' ;;
 	space) echo "new-note: space paspoorts have their own scaffold — use: scripts/new-space.sh <slug> --owner \"<name>\" --relation <relation>" >&2; exit 2 ;;
-	*) echo "Unknown type: $TYPE (use: learning|project|backlog|feedback|reference|session|device|integration|spec|task|decisions|explainer; for a space use scripts/new-space.sh)" >&2; exit 2 ;;
+	*) echo "Unknown type: $TYPE (use: learning|project|backlog|gaplog|feedback|reference|session|device|integration|spec|task|decisions|explainer; for a space use scripts/new-space.sh)" >&2; exit 2 ;;
 esac
 
 # Build the work-note MUST body scaffold (system/principles.md #1/#3), locale-aware
@@ -374,6 +379,61 @@ if [ -f "$_wn_contract" ] && [ -f "$_wn_ratchets" ]; then
 	fi
 fi
 
+# A gaplog is a register, not an essay: the scaffold ships the reading key, the empty
+# register with its required columns, and the allocation split. Inline like the rest of
+# this script (no template read) so a gaplog can be started on a machine that has only
+# scripts/, and agent-agnostic: plain Markdown, no agent-specific syntax.
+GAPLOG_BODY=""
+if [ "$TYPE" = "gaplog" ]; then
+	read -r -d '' GAPLOG_BODY <<'GAPLOG_EOF' || true
+> The backlog collects what we intend to build. This collects what **already looks built
+> but does not do what it promises**. You find a backlog by thinking; you find this by
+> looking, so it is lost the moment it stops being written down.
+>
+> **No row without evidence.** A file and line, a measurement, or a query. A hunch is a
+> valid row, but it is labelled UNVERIFIED and never stated as fact.
+>
+> **Record who found it.** Not for credit: it shows where each party is blind.
+>
+> **Verify claims yourself, and note what and when.** A report is an observation, not a
+> diagnosis, and an observation from yesterday may not reproduce today.
+
+## How to read
+
+| State | Meaning |
+|---|---|
+| BROKEN | demonstrably does not do what it promises |
+| MISLEADING | works technically, lies to the user |
+| UNFINISHED | half built, spec exists, chain not closed |
+| UNVERIFIED | suspicion, not yet measured |
+| RESOLVED | with date and commit |
+
+## Register
+
+| ID | Where | State | What | Found by | Evidence | Verified |
+|---|---|---|---|---|---|---|
+|  |  |  |  |  |  |  |
+
+## Who can close this
+
+A list is not a work queue. Split every entry by who can close it.
+
+| | Meaning |
+|---|---|
+| agent | evidence is in, the right outcome is not in dispute, no taste involved |
+| owner | several outcomes are defensible; guessing is how you get rework |
+| outside | a third party, or a memory we do not have |
+
+Anything filed as *agent* that turns out to need a modelling decision is handed back, with
+the options written out, never resolved by guesswork.
+
+## Spawned work
+
+A gap may spawn a backlog item; a backlog item never spawns a gap. Keep the reference here.
+
+GAPLOG_EOF
+fi
+
 {
 	echo "---"
 	echo "date: $TODAY"
@@ -392,6 +452,7 @@ fi
 	# Work-note MUST body scaffold, pre-computed above (config + locale driven). Empty
 	# when not a work type or config absent, so this stays backward-compatible.
 	[ -n "$WORK_BODY" ] && printf '%s' "$WORK_BODY"
+	[ -n "$GAPLOG_BODY" ] && printf '%s\n' "$GAPLOG_BODY"
 } > "$ABS_PATH"
 
 echo "$ABS_PATH"

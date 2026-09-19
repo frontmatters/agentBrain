@@ -1,0 +1,21 @@
+# Word lists the language verdict reads. One per line, tab separated.
+#
+#   code       language tag; becomes <code>.txt in the cache and shows up in the verdict
+#   bron       a URL, or SYSTEM to copy /usr/share/dict/words
+#   vorm       plain = one word per line | freq = "word count" per line, count stripped
+#   licentie   what the source allows, so attribution is not guesswork
+#   naam       what to call it in output
+#
+# Adding a language is one line. A file dropped into the cache by hand is picked up too,
+# as long as it is <code>.txt: the verdict reads the cache, not this file.
+#
+# English is deliberately a FREQUENCY list, not a dictionary. Webster's full list (which is
+# what /usr/share/dict/words holds) contains merk, wis, wissel and knop as obscure entries,
+# so "not in English" was true of almost nothing and the verdict collapsed. The 50k most
+# common words answer the question actually being asked: would an English speaker use this.
+nl	https://raw.githubusercontent.com/OpenTaal/opentaal-wordlist/master/wordlist.txt	plain	Revised BSD / CC BY 3.0 (OpenTaal)	Nederlands
+en	https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/en/en_50k.txt	freq	MIT (hermitdave/FrequencyWords)	Engels
+de	https://raw.githubusercontent.com/enz/german-wordlist/master/words	plain	GPL-3.0 (enz/german-wordlist)	Duits
+fr	https://raw.githubusercontent.com/Taknok/French-Wordlist/master/francais.txt	plain	MIT (Taknok/French-Wordlist)	Frans
+es	https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/es/es_50k.txt	freq	MIT (hermitdave/FrequencyWords)	Spaans
+pt	https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/pt/pt_50k.txt	freq	MIT (hermitdave/FrequencyWords)	Portugees

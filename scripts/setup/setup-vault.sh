@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# setup-vault.sh — Establish the private `local/` layer as either a real
+# setup-vault.sh — Establish the private vault (`vault/`, spelled `local/` internally) as either a real
 # directory (default) or a symlink into a shared central vault.
 #
 # Why this exists: knowledge must live ONCE. A user running multiple checkouts of
@@ -14,7 +14,7 @@
 #   --vault=PATH / AGENTBRAIN_VAULT=PATH   explicit shared vault (strongest)
 #   existing `local` symlink               keep its current target (idempotent)
 #   existing ~/.agentBrain/vault dir        offer to link (a vault already exists)
-#   otherwise                              real ./local dir, no symlink (the default)
+#   otherwise                              $AGENTBRAIN_HOME/.agentBrain/vault, mounted at vault/
 #
 # Data safety: an existing real `local/` is never destroyed. It is moved into the
 # vault losslessly (it BECOMES the vault when the vault is absent), or merged only

@@ -5,12 +5,14 @@ import { existsSync } from "fs";
 import { join, dirname, resolve } from "path";
 import { createHash } from "crypto";
 import { callModel } from "@agentbrain/lib/model-call";
+import { resolveVaultDir } from "@agentbrain/lib/vault-path";
 
 const SCRIPT_DIR = dirname(Bun.main);                    // the add-on dir (core.ts is run directly)
 const BRAIN = resolve(SCRIPT_DIR, "..", "..", "..");      // brain root: addons/<id> -> addons -> system -> root
 // Output dir + timeout are env-overridable so tests can run isolated (tmpdir) and
 // fast; production defaults are unchanged when the vars are unset.
-const OUT_DIR = process.env.EXTRACT_LEARNINGS_OUT_DIR ?? join(BRAIN, "vault", "learnings", "extracted");
+const VAULT_DIR = resolveVaultDir(BRAIN);
+const OUT_DIR = process.env.EXTRACT_LEARNINGS_OUT_DIR ?? join(VAULT_DIR, "learnings", "extracted");
 const MODEL_TIMEOUT_MS = Number(process.env.EXTRACT_LEARNINGS_TIMEOUT_MS ?? 60_000); // never hang a hook
 
 // Flatten a Claude .jsonl transcript into plain text (user+assistant turns only).
@@ -40,7 +42,7 @@ ${text}`;
 
 async function loadSettings(): Promise<any> {
   // Reuse the youtube-digest summarizer config if present; else empty (Pi fallback).
-  const p = join(BRAIN, "vault", "addons", "youtube-digest", "channels.json");
+  const p = join(VAULT_DIR, "addons", "youtube-digest", "channels.json");
   if (existsSync(p)) { try { return JSON.parse(await readFile(p, "utf-8")).settings ?? {}; } catch {} }
   return {};
 }

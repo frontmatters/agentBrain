@@ -28,5 +28,5 @@ This is the private layer of agentBrain. Nothing here is ever committed to git.
 ## Rules
 
 - Real project notes → `projects/<name>/index.md`
-- Real learnings → `learnings/troubleshooting.md` or `learnings/patterns.md`
+- Real learnings → `vault/learnings/troubleshooting.md` or `vault/learnings/patterns.md`
 - Never store token values here — use keychain + `integrations/*.md` for references only

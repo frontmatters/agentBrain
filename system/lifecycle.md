@@ -57,7 +57,7 @@ Verify the work. Review quality, test results, and deployment.
 
 Extract knowledge. What worked, what didn't, what to change.
 
-**Read**: `changelog.md`, `decisions.md`, `learnings/patterns.md`, `learnings/troubleshooting.md`
+**Read**: `changelog.md`, `decisions.md`, `vault/learnings/patterns.md`, `vault/learnings/troubleshooting.md`
 **Do**:
 - Extract reusable patterns -> `/save-learning`
 - Log fixes and workarounds -> `/save-troubleshoot`

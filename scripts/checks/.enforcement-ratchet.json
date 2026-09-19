@@ -1,0 +1,4 @@
+{
+  "_comment": "Trap learnings (tagged gotcha/valkuil/trap/pitfall/bug-class) with no `enforcement:` declaration. May only fall. Lower it when you add a declaration; scripts/checks/check-enforcement.sh explains why this exists at all.",
+  "unclassified": 28
+}

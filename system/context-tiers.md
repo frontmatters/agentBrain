@@ -15,7 +15,7 @@ As of 2026-05-26, the public startup set measured about **~19k characters / ~4.8
 
 | Tier               | Files                                                                                                                          | Approx size  |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| Hot public startup | `learnings/patterns.md`, `learnings/troubleshooting.md`, `system/rules.md`, `system/agent-config/shared.md` + the client config, `system/skills.md` | ~5k tokens |
+| Hot public startup | `vault/learnings/patterns.md`, `vault/learnings/troubleshooting.md`, `system/rules.md`, `system/agent-config/shared.md` + the client config, `system/skills.md` | ~5k tokens |
 
 Skill procedures (`SKILL.md`), the operations index (`system/tools.md`), warm reference (`system/reference.md`), and this tier policy itself load on demand, not hot. Do not promote content to hot unless it is repeatedly needed across sessions.
 

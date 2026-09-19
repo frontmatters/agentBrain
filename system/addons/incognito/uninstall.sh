@@ -4,8 +4,10 @@
 # again. Does NOT touch settings.json (remove the PreToolUse entry by hand if you
 # registered it). Never destructive beyond the flag file.
 set -euo pipefail
-VAULT="${AGENTBRAIN_HOME:-$HOME}/agentBrain"
-FLAG="$VAULT/vault/sessions/.incognito"
+BRAIN_ROOT="${AGENTBRAIN_DIR:-${AGENTBRAIN_HOME:-$HOME}/agentBrain}"
+# shellcheck source=scripts/lib/vault.sh
+. "$BRAIN_ROOT/scripts/lib/vault.sh"
+FLAG="$VAULT_DIR/sessions/.incognito"
 
 if [ -f "$FLAG" ]; then
 	rm -f "$FLAG"

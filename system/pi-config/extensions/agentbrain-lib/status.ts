@@ -68,7 +68,7 @@ function statusText(options: {
 		`detectedProject: ${options.projectDir ? relativeToBrain(options.projectDir) : "none"}`,
 		`userPreferencesPersonalized: ${options.placeholders ? "no - run /skill:onboard" : "yes"}`,
 		"",
-		"Core files:",
+		"Core files (paths relative to agentBrain root; vault/ is canonical):",
 		...CORE_FILES.map((f) => `- ${f}`),
 	].join("\n");
 }

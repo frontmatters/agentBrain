@@ -31,9 +31,15 @@ resolve_brain_dir() {
 }
 
 BRAIN_DIR="$(resolve_brain_dir)"
+# shellcheck source=scripts/lib/vault.sh
+AGENTBRAIN_DIR="$BRAIN_DIR" . "$BRAIN_DIR/scripts/lib/vault.sh"
 
 resolve_scope_root() {
-    local p="$BRAIN_DIR/$1"
+    local p
+    case "$1" in
+        local|vault) p="$VAULT_DIR" ;;
+        *) p="$BRAIN_DIR/$1" ;;
+    esac
     if command -v realpath >/dev/null 2>&1; then
         realpath "$p" 2>/dev/null && return 0
     fi
@@ -41,7 +47,7 @@ resolve_scope_root() {
 }
 
 SYSTEM_SKILLS="$(resolve_scope_root system)/skills"
-LOCAL_SKILLS="$(resolve_scope_root local)/skills"
+LOCAL_SKILLS="$(resolve_scope_root vault)/skills"
 # Some skills ship as addons (e.g. uxray at system/addons/uxray/SKILL.md). They carry
 # the same name/related frontmatter and are legitimate relation targets, so scan them
 # too — otherwise a real cross-reference to an addon-skill reads as "does not exist".
