@@ -239,6 +239,58 @@ Read the uninstall output before confirming. The uninstall process is designed t
 - Read [`system/addons/README.md`](../system/addons/README.md) before enabling add-ons.
 - Read [`system/skills.md`](../system/skills.md) for the complete shared skill inventory.
 
+## FAQ
+
+### Can multiple people use agentBrain?
+
+Yes, but agentBrain does not provide application-style user accounts. Each person should normally have a separate operating-system account, home directory, agent configuration, credentials, and private vault.
+
+Each user runs the setup from their own account:
+
+```sh
+git clone https://github.com/frontmatters/agentBrain.git ~/Developer/agentBrain
+cd ~/Developer/agentBrain
+./setup.sh
+```
+
+Do not run setup as User A while pointing `--home` at User B's home directory. Agent clients read fixed paths under the active user's real home, and mixing ownership creates broken pointers and unsafe credential access.
+
+### Does each user need to run setup again?
+
+For separate operating-system users, yes. Run setup once per user. Each run creates that user's agent pointers, skills, preferences, credentials, and private vault. The public framework can be shared through the repository, but the private vault should not be shared by default.
+
+### Can users share one knowledge base?
+
+Use a shared vault only when the users intentionally share its contents and access permissions. The private vault can be mounted explicitly with `--vault=PATH`, but this makes its notes shared data. For team or client knowledge, prefer the documented [shared vault](./shared-vault.md) or an owner-specific [space](./spaces.md) instead of pointing every user at one personal vault.
+
+A shared vault does not merge users into one agent account. Each user still has separate agent credentials, local preferences, sessions, and integration configuration.
+
+### Can one person have separate agentBrain profiles?
+
+Use separate checkouts and separate configuration homes only when you need isolated environments, such as work and personal setups. `AGENTBRAIN_HOME` or `./setup.sh --home=PATH` changes the configuration base used by setup, but many agent clients still read fixed paths under the active operating-system home. For strong isolation, use separate operating-system users, containers, or machines.
+
+### Can several users use the agentBrain Harness Web UI?
+
+The Harness Web UI is a separate runtime component. It is not an account and does not turn agentBrain into a multi-user server. Run one isolated deployment per user, or place an authenticated multi-user layer in front of a deliberately designed deployment. Do not expose a local development server to other users without reviewing workspace access, credentials, session storage, and approval policy.
+
+### Do users share API keys?
+
+No. Each user should authenticate their own harness account or provider and keep credentials in that user's credential store. Ollama is local instead of account-based, but each user still needs access to the Ollama service and at least one pulled model.
+
+### What is the correct order after setup?
+
+Use this order:
+
+1. Start one installed harness.
+2. Log in to its AI provider, or configure a local Ollama model.
+3. Send a small test request and confirm it succeeds.
+4. Run `/onboard` inside the harness, or run `brain onboard` when the harness cannot expose the skill.
+5. Run `brain doctor` and `bash scripts/selftest.sh`.
+
+### What if another user already installed agentBrain on this machine?
+
+Install under the second user's own home directory. Reusing another user's checkout is possible only when filesystem permissions, update ownership, vault routing, and privacy boundaries are intentionally designed. A fresh per-user checkout is the safer default.
+
 ## Installer questions and keyboard controls
 
 The installer has two layers: the public installer prompt and the setup prompts that run after the repository is present. The exact list can change with the operating system, installed tools, existing profiles, and detected agents. The order below is the current interactive order.
