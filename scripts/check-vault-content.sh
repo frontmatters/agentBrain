@@ -1,0 +1,1 @@
+checks/check-vault-content.sh

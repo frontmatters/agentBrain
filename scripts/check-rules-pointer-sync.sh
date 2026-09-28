@@ -1,0 +1,1 @@
+checks/check-rules-pointer-sync.sh

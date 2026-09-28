@@ -1,0 +1,1 @@
+tests/test-new-note.sh

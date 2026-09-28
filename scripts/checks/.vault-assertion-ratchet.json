@@ -1,0 +1,4 @@
+{
+  "_comment": "Checks that read vault content without asserting the vault is reachable. May only fall. Lower it when you add vault_required to one; scripts/checks/check-vault-assertion.sh explains why this exists at all.",
+  "unasserted": 16
+}

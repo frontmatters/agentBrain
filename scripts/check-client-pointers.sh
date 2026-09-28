@@ -1,0 +1,1 @@
+checks/check-client-pointers.sh

@@ -1,0 +1,46 @@
+/* brain-explain norm */
+/* Theme-agnostic structural skeleton. The semantic structure is identical for
+   every theme; only the [data-theme] layer (theme.css) differs. Self-contained:
+   fonts resolve via system-font stacks in each theme (no external load). */
+*{box-sizing:border-box}
+html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{margin:0}
+.wrap{max-width:1080px;margin:0 auto;padding:56px 40px 80px}
+.explainer > section{margin-top:40px}
+.layers{display:grid;gap:16px;grid-template-columns:repeat(3,1fr);margin:24px 0}
+.cards{display:grid;gap:16px;grid-template-columns:1fr 1fr;margin:24px 0}
+.flow{display:grid;gap:16px;margin:24px 0}
+@media(max-width:760px){.layers,.cards{grid-template-columns:1fr}}
+.flowline{display:none}
+table{width:100%;border-collapse:collapse;margin:0 0 18px}
+th,td{padding:8px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--rule)}
+th{font-weight:600}
+pre{margin:0 0 18px;padding:14px 16px;overflow-x:auto;border-radius:3px;line-height:1.5;
+  background:color-mix(in oklch,var(--ink) 5%,transparent)}
+pre code{display:block;white-space:pre;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+blockquote{margin:18px 0;padding:6px 0 6px 16px;color:var(--soft)}
+
+/* ---- dark mode: auto (OS) + CSS-only flip toggle, no JS ----
+   Themes wrap every palette value in light-dark(light,dark); this layer only
+   steers color-scheme. Default follows the OS; the checkbox flips to the
+   opposite (the @media rule inverts the flip when the OS is already dark).
+   No persistence across reloads — that would need localStorage (JS). */
+:root{color-scheme:light dark}
+html:has(#ex-mode:checked){color-scheme:dark}
+@media (prefers-color-scheme:dark){html:has(#ex-mode:checked){color-scheme:light}}
+
+/* round toggle, top-right. Both icons monochrome (currentColor=--ink); the
+   inactive one fades to transparent, so it crossfades on flip. Var fallback
+   chains keep it theme-agnostic (clean-flat --wash, oj --tint, whiteboard
+   --paper, editorial --wash). */
+.ex-mode{position:fixed;top:18px;right:18px;z-index:50}
+.ex-mode input{position:absolute;width:1px;height:1px;opacity:0;margin:0}
+.ex-mode label{display:grid;place-items:center;width:40px;height:40px;cursor:pointer;
+  border:1px solid var(--line,var(--rule,var(--edge,currentColor)));border-radius:999px;
+  background:var(--wash,var(--tint,var(--paper,transparent)));color:var(--ink);
+  transition:background .2s,border-color .2s}
+.ex-mode input:focus-visible + label{outline:2px solid var(--accent,currentColor);outline-offset:2px}
+.ex-mode .ic{grid-area:1/1;width:20px;height:20px;transition:color .25s,transform .3s}
+.ex-mode .sun{color:light-dark(var(--ink),transparent);transform:rotate(0)}
+.ex-mode .moon{color:light-dark(transparent,var(--ink));transform:rotate(0)}
+@media print{.ex-mode{display:none}}

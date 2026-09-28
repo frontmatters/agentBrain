@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "_comment": "Routes Claude Code's per-project auto-memory into agentBrain. Copy to local/memories/claude-redirect-config.json to override.",
+
+  "enabled": true,
+  "mode": "symlink",
+  "_mode_help": "symlink | sync_hook | instruction_only | disabled",
+
+  "target_root": "local/memories/projects",
+
+  "symlink": {
+    "auto_seed_on_session_start": true,
+    "backup_originals": true,
+    "_help": "On first run for a new project, replaces ~/.claude/projects/<encoded>/memory/ with a symlink to <target_root>/<project-slug>/. Originals are moved to a .pre-redirect-backup/ sibling first."
+  },
+
+  "sync_hook": {
+    "delete_original_after_sync": false,
+    "frontmatter_defaults": {
+      "type": "feedback",
+      "tags": ["claude-memory", "auto-synced"]
+    },
+    "_help": "Only used when mode=sync_hook. PostToolUse hook detects writes to ~/.claude/projects/*/memory/*.md and replicates to agentBrain with normalized frontmatter (UUID5 added). Originals can be optionally deleted."
+  },
+
+  "instruction_only": {
+    "_help": "Mode that does NOT touch files — relies entirely on CLAUDE.md instructing Claude to route memory writes through /save-learning or new-note.sh. Pure-discipline fallback."
+  },
+
+  "normalize": {
+    "default_type": "feedback",
+    "default_tags": ["claude-memory"],
+    "preserve_original_filename": true,
+    "_help": "Used during migrate AND sync to add UUID5 + agentBrain frontmatter to files that lack it."
+  },
+
+  "general": {
+    "log_path": "local/memories/.claude-redirect.log",
+    "log_enabled": true
+  }
+}

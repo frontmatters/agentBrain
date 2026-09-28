@@ -1,0 +1,1 @@
+checks/check-agentbrain-local.sh

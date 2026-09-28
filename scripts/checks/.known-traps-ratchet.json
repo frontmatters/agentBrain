@@ -1,0 +1,4 @@
+{
+  "_comment": "Occurrences of recorded shell traps: a literal brace in a ${VAR:-...} default, ROOT from dirname without realpath where a compat symlink points at the script, a remote heredoc through ssh quoting, and a find over the vault root without -L. May only fall. scripts/checks/check-known-traps.sh explains each arm.",
+  "unguarded": 60
+}

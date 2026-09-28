@@ -1,0 +1,1 @@
+checks/check-learnings-structure.sh

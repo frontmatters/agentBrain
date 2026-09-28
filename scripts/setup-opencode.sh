@@ -1,0 +1,1 @@
+setup/setup-opencode.sh

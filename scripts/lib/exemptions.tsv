@@ -1,0 +1,38 @@
+# exemptions.tsv — every exemption a check makes, with a reason and an end date.
+#
+# A rule without exceptions is a rule people route around; an exception nobody
+# wrote down is a rule that quietly stopped applying. Three checks carried
+# hard-coded exemption lists before this file existed, none of them with a
+# reason, and two had silently gone stale: one named a file that had moved, and
+# one was missing a sibling test written after the list. Both failures looked
+# like the guard working.
+#
+# Columns, tab separated:
+#   check    which check reads the row (its own name, no path)
+#   pattern  what to exempt; each check interprets this in its own terms
+#            (check-em-dash: a regex of text that is not prose;
+#             check-space-boundary: a path prefix of a file allowed to carry
+#             the literals the guard hunts for)
+#   expires  YYYY-MM-DD, or "structural"
+#   reason   why. Required. Write it for the person who finds this in a year.
+#
+# "structural" is not a waiver. It marks a case where the rule was stated too
+# broadly and this row is part of its real definition, so there is nothing to
+# come back to. Anything that is a temporary allowance gets a date, and
+# check-exemptions reports it as OVERDUE once that date passes.
+#
+# check	pattern	expires	reason
+em-dash	(^|[\s(\[])--[a-z][a-z0-9-]*	structural	A long CLI flag is not prose. The ban is on punctuation a reader sees as a dash; --no-verify and --dry-run are code that happens to live in a sentence. The header of check-em-dash promised this exemption from the start and the code never had it, so commit messages naming a flag were refused for punctuation they did not contain.
+space-boundary	scripts/checks/check-space-boundary.sh	structural	The guard necessarily contains the literals it searches for, in its own patterns and comments. It cannot be made to not match itself.
+space-boundary	scripts/tests/test-space-boundary.sh	structural	Exercises the guard, so it contains the same literals on purpose.
+space-boundary	scripts/tests/test-rename-space.sh	structural	Scaffolds a real space in the real vault for the length of its run (see its header), so during that window the fixture owner is a genuine passport entry and the guard finds the literal again in the test that created it.
+space-boundary	scripts/privacy-scan.sh	structural	Carries owner literals in its own detection patterns, for the same reason as the guard itself.
+intake	\.min\.(js|css)$	structural	A minified vendor bundle is not authored text. Invisible characters in it belong to the library that shipped them, and the rule is about characters smuggled into prose a human wrote. Rewriting a vendored bundle to satisfy a content check corrupts it.
+intake	addons/codemap/spike/viewer/index.html	2027-03-11	Carries an inlined third-party snippet (Framer.js spring physics, MIT) with one zero-width space. Dated rather than structural because this is a spike: if codemap graduates to an addon, the vendored snippet should be a separate file and this row should go.
+toolpaths	scripts/installer/install.sh	structural	This script IS the loader for its own run. It reaches a machine through curl into bash, before the repository exists, so it inlines the nvm and Homebrew probing that _toolpaths.sh does rather than sourcing a file that is not there yet.
+check-sandbox-home	scripts/sync/move-agentbrain.sh	structural	This tool relocates the user's real installation and rewrites the agent pointers in their actual home. AGENTBRAIN_HOME would send it at a sandbox and leave the machine untouched, which is the opposite of what it is for.
+check-sandbox-home	scripts/checks/negative/check-known-traps.sh	structural	The offending lines sit inside heredocs: this negative case writes a deliberately wrong script to prove the trap guard catches it. The literal is test data, never a path this repo resolves, so no sandbox can escape through it.
+check-vault-config	scripts/checks/negative/check-known-traps.sh	structural	The negative case writes throwaway scripts containing the exact hardcoded vault path the trap guard must catch. Quoting the defect is what proves the guard fires, so this file will always hold it; there is nothing to come back to.
+check-addon-license	chatgpt-import	2026-12-24	Adopted code credited to ultimate_tagger with no upstream URL and no licence anywhere in the addon. Ask the author or replace it; eight files, so rewriting is an option.
+check-addon-license	trailofbits-skills	2026-12-24	The README says to check the upstream LICENSE before redistribution and nobody did. Three files, no upstream code shipped, so the risk is low and the answer is one visit to the repository root.
+em-dash	<!--|-->	structural	The delimiters of an HTML comment are markup, not punctuation. Both carry two hyphens by syntax and neither can be written another way. Only the delimiters are stripped: a real "--" inside the comment text still trips the check, verified. Matching the whole comment instead does not work, because the stripper runs with re.M and not re.S, so a multi-line comment is never matched. 54 files carry <!-- PROVENANCE comments naming a vendored source, and each would trip on its next edit.

@@ -1,0 +1,1 @@
+checks/check-skills-index.sh

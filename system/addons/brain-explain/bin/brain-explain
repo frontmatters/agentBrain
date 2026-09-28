@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# brain-explain — render markdown explainers into themed, self-contained HTML.
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ADDON_DIR="$(cd "$HERE/.." && pwd)"
+
+usage() {
+	cat <<'EOF'
+brain-explain — render markdown explainers into themed HTML.
+
+  brain-explain render <note.md> [--theme <name>] [--out <path>] [--no-open]
+  brain-explain theme new <name> --prompt "<style description>"
+  brain-explain onboard
+  brain-explain --help
+
+Rendering with --out opens the result in the default browser afterwards.
+Opt out per call with --no-open, or globally with BRAIN_EXPLAIN_NO_OPEN=1
+(for cron/batch contexts).
+EOF
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+	render)
+		out=""; no_open=0; pass=()
+		while (($#)); do
+			case "$1" in
+				--no-open) no_open=1 ;;
+				--out) pass+=("$1" "${2:-}"); out="${2:-}"; shift ;;
+				*) pass+=("$1") ;;
+			esac
+			shift
+		done
+		python3 "$ADDON_DIR/lib/render.py" "${pass[@]}"
+		# auto-refresh the unified explainer index (best-effort; skip with BRAIN_EXPLAIN_NO_INDEX=1)
+		if [[ -n "$out" && -f "$out" && "${BRAIN_EXPLAIN_NO_INDEX:-0}" != "1" ]]; then
+			python3 "$ADDON_DIR/../../../scripts/reports/build-explainer-index.py" >/dev/null 2>&1 || true
+		fi
+		if [[ -n "$out" && -f "$out" && $no_open -eq 0 && "${BRAIN_EXPLAIN_NO_OPEN:-0}" != "1" ]]; then
+			command -v open >/dev/null 2>&1 && open "$out"
+		fi
+		;;
+	theme)   bash "$ADDON_DIR/lib/theme_creator.sh" "$@" ;;
+	onboard) bash "$ADDON_DIR/onboard.sh" "$@" ;;
+	index)   python3 "$ADDON_DIR/../../../scripts/reports/build-explainer-index.py" "$@" ;;
+	-h|--help|"") usage ;;
+	*) echo "brain-explain: unknown subcommand '$cmd'" >&2; usage >&2; exit 1 ;;
+esac

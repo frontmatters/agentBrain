@@ -1,0 +1,3 @@
+# rule-id	cutover	scope-types	check	contract
+# Active grandfathered rules. Human doc: system/ratchets.md
+work-note-contract	2026-08-21	backlog|project|task|spec|decisions	scripts/check-work-note-structure.sh	system/work-note-contract.tsv

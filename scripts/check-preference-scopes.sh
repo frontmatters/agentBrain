@@ -1,0 +1,1 @@
+checks/check-preference-scopes.sh

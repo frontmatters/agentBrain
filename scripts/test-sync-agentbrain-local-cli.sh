@@ -1,0 +1,1 @@
+tests/test-sync-agentbrain-local-cli.sh

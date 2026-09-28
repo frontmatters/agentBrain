@@ -1,0 +1,19 @@
+{
+  "//": "Defaults for factory-obeya.sh. A factory overrides any key under \"obeya\" in its factory.json. Relative paths resolve against the factory root; ~ is expanded. null means: not configured, the section says so.",
+  "andon": "R&D/dashboards/andon.md",
+  "page": "R&D/dashboards/obeya.md",
+  "sections": {"working": "Working on", "stopped": "Stopped or waiting on"},
+  "since": "since (\\d{4}-\\d{2}-\\d{2})",
+  "staleDays": 14,
+  "next": 5,
+  "done": 5,
+  "priorities": ["high", "medium", "low"],
+  "openStatuses": ["todo", "doing", "active", "blocked"],
+  "backlog": null,
+  "project": null,
+  "log": null,
+  "logSection": "Progress",
+  "stations": null,
+  "noteId": null,
+  "vault": null
+}

@@ -1,0 +1,12 @@
+# dev-registry roots — TEMPLATE (committed). Copy to the private mirror:
+#     cp system/references/dev-registry.roots.example local/references/dev-registry.roots
+# then edit local/references/dev-registry.roots with YOUR checkout roots.
+#
+# One path per line. `~` and `$HOME` expand. Lines starting with `#` are ignored.
+# List nested roots explicitly (the scan does not descend into `_`-prefixed dirs).
+# If this file is absent, the scan falls back to the baked-in default: ~/Developer
+#
+# One-off override without editing this file:  DEV_ROOTS="~/a:~/b" bash …/dev-registry.scan.sh
+
+~/Developer
+# ~/Developer/_work/wrk        # e.g. client-work checkouts live nested here

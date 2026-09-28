@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# rnd-init — scaffold the R&D convention in a repository.
+#
+# Research and validation artefacts otherwise scatter over verif-output/,
+# docs/ux/, /tmp and scratchpads, and get lost or overwritten. One dated,
+# kept-forever place with a fixed layout makes validation repeatable.
+#
+#   rnd-init                      scaffold in the current repo
+#   rnd-init --dir <path>         scaffold elsewhere
+#   rnd-init --with prototypes,art-studies
+#   rnd-init --migrate-verif-output
+#   rnd-init --no-gitignore
+#   rnd-init --dry-run
+#
+# Idempotent: a second run reports "already present" and changes nothing. An
+# R&D/README.md that has been edited is never overwritten.
+set -uo pipefail
+
+DIR="."
+EXTRAS=""
+MIGRATE=0
+TOUCH_GITIGNORE=1
+DRY=0
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--dir) DIR="${2:-}"; shift 2 ;;
+		--dir=*) DIR="${1#--dir=}"; shift ;;
+		--with) EXTRAS="${2:-}"; shift 2 ;;
+		--with=*) EXTRAS="${1#--with=}"; shift ;;
+		--migrate-verif-output) MIGRATE=1; shift ;;
+		--no-gitignore) TOUCH_GITIGNORE=0; shift ;;
+		--dry-run) DRY=1; shift ;;
+		-h|--help) sed -n '3,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+		*) printf 'rnd-init: unknown argument: %s\n' "$1" >&2; exit 2 ;;
+	esac
+done
+
+[ -d "$DIR" ] || { printf 'rnd-init: not a directory: %s\n' "$DIR" >&2; exit 1; }
+DIR="$(cd "$DIR" && pwd)"
+RND="$DIR/R&D"
+
+created=0; skipped=0
+note() { printf '  %s\n' "$1"; }
+act()  { [ "$DRY" -eq 1 ] && { note "would $1"; return 1; }; return 0; }
+
+# The four tracked folders carry a .gitkeep so the structure survives a clone.
+# captures/ and renders/ are git-ignored, so a keep file there would never be
+# committed; those exist on disk and are recreated by whatever writes into them.
+TRACKED="dashboards decisions logs experiments"
+IGNORED="captures renders"
+
+for sub in $TRACKED $IGNORED $(printf '%s' "$EXTRAS" | tr ',' ' '); do
+	target="$RND/$sub"
+	if [ -d "$target" ]; then
+		skipped=$((skipped + 1)); continue
+	fi
+	if act "create R&D/$sub"; then
+		mkdir -p "$target" || exit 1
+		case " $IGNORED " in
+			*" $sub "*) ;;
+			*) : > "$target/.gitkeep" ;;
+		esac
+		created=$((created + 1))
+		note "created R&D/$sub"
+	fi
+done
+
+# README: the convention travels with the folder, so a newcomer needs no other
+# document. Never overwrite one that exists: it may carry project-specific rules.
+if [ -f "$RND/README.md" ]; then
+	note "kept R&D/README.md (already present, not overwritten)"
+	skipped=$((skipped + 1))
+elif act "write R&D/README.md"; then
+	mkdir -p "$RND"
+	cat > "$RND/README.md" <<'EOF'
+# R&D
+
+Research and validation artefacts. Keep everything, including intermediate and
+rejected variants; use dated run directories so nothing overwrites earlier work.
+Production code stays outside this folder; plans and specs stay in `docs/`.
+
+> Quote any path containing `R&D` in shell commands. `&` is a shell operator,
+> so `cd R&D/captures` forks a background job and fails. Write `cd "R&D/captures"`.
+
+- `dashboards/`: validation dashboards (urls, links, commands, checklists).
+- `decisions/`: decision pages (options, advice, rationale; choices persisted in
+  the browser).
+- `captures/`: screenshots, contact sheets, axe reports, as
+  `<date>-<topic>/`. Git-ignored, kept on disk.
+- `renders/`: working documents rendered to HTML. Git-ignored, regenerate.
+- `logs/`: gate output worth keeping.
+- `experiments/`: proof-of-concept scripts and their data.
+
+Gates and sweeps write into `captures/<date>-<topic>/`. Decision pages and
+dashboards are local files and are never published.
+EOF
+	created=$((created + 1))
+	note "created R&D/README.md"
+fi
+
+# .gitignore: append only what is missing, so a second run adds nothing.
+if [ "$TOUCH_GITIGNORE" -eq 1 ]; then
+	gi="$DIR/.gitignore"
+	for line in 'R&D/captures/' 'R&D/renders/'; do
+		if [ -f "$gi" ] && grep -qxF "$line" "$gi"; then
+			skipped=$((skipped + 1)); continue
+		fi
+		if act "add $line to .gitignore"; then
+			[ -f "$gi" ] && [ -n "$(tail -c 1 "$gi")" ] && printf '\n' >> "$gi"
+			printf '%s\n' "$line" >> "$gi"
+			created=$((created + 1))
+			note "added $line to .gitignore"
+		fi
+	done
+fi
+
+# verif-output: opt-in, because it moves data that already exists.
+if [ "$MIGRATE" -eq 1 ]; then
+	vo="$DIR/verif-output"
+	if [ -L "$vo" ]; then
+		note "verif-output is already a symlink, left alone"
+	elif [ ! -e "$vo" ]; then
+		note "no verif-output to migrate"
+	elif act "move verif-output/* into R&D/captures/ and symlink it"; then
+		mkdir -p "$RND/captures"
+		# mv, never rm: the originals are moved, not deleted.
+		find "$vo" -mindepth 1 -maxdepth 1 -exec mv {} "$RND/captures/" \; || exit 1
+		mv "$vo" "$DIR/.verif-output.migrated" || exit 1
+		ln -s "R&D/captures" "$vo" || exit 1
+		note "migrated verif-output -> R&D/captures (old dir kept as .verif-output.migrated)"
+		created=$((created + 1))
+	fi
+elif [ -d "$DIR/verif-output" ] && [ ! -L "$DIR/verif-output" ]; then
+	note "verif-output/ exists; re-run with --migrate-verif-output to fold it into R&D/captures"
+fi
+
+if [ "$DRY" -eq 1 ]; then
+	printf 'rnd-init: dry run, nothing written.\n'
+	exit 0
+fi
+printf 'rnd-init: %d created, %d already present -> %s\n' "$created" "$skipped" "$RND"

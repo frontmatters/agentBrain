@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# brain-name — a readable bus name (adjective-animal) derived from a key.
+#
+# A djb2-based adjective-animal generator: djb2 over the key's UTF-8 bytes as
+# unsigned 32-bit, then adjectives[h % 64] and animals[(h >> 8) % 64].
+# A key always yields the same name, so a session keeps its name across restarts
+# of its listener and any client with the same word lists shows the same name.
+#
+# Two listeners sharing one name share one cursor and steal each other's events,
+# so the key must be unique per listener. The default is the Claude Code session
+# id; other agents pass their own.
+#
+# Usage:
+#   brain-name              # key = $CLAUDE_CODE_SESSION_ID
+#   brain-name <key>
+set -euo pipefail
+
+case "${1:-}" in
+	-h|--help) sed -n '3,16p' "$(realpath "${BASH_SOURCE[0]}")" | sed 's/^# \{0,1\}//'; exit 0 ;;
+esac
+KEY="${1:-${CLAUDE_CODE_SESSION_ID:-}}"
+[ -n "$KEY" ] || { echo "brain-name: no key given and CLAUDE_CODE_SESSION_ID is unset" >&2; exit 1; }
+
+# tests/test-name.sh can compare these lists against a reference implementation
+# (BRAIN_NAME_REFERENCE) and fails when the two drift apart.
+ADJECTIVES="
+calm brave swift quiet bright warm cool wild soft sharp bold golden deep
+light rugged smooth agile amber breezy brisk clever cosmic crisp curious
+daring dapper eager fearless fleet frosty gentle glowing grand happy hardy
+jolly keen lively loyal lunar merry mighty misty nimble noble plucky proud
+rapid rosy royal rustic serene silver sleek snowy steady sturdy sunny
+tranquil velvet vivid wise witty zesty
+"
+ANIMALS="
+otter lynx heron fox badger hawk robin deer beaver owl stag starling marten
+hedgehog falcon ibex alpaca bison bobcat camel caribou cheetah condor coyote
+crane dolphin eagle egret elk ferret finch flamingo gazelle giraffe jackal
+jaguar kestrel kingfisher koala lemur leopard magpie moose narwhal ocelot
+osprey panda panther parrot pelican penguin puffin rabbit raven sparrow
+squirrel swan tapir tiger toucan walrus wolf wren zebra
+"
+
+python3 - "$KEY" "$ADJECTIVES" "$ANIMALS" <<'EOF'
+import sys
+key, adjectives, animals = sys.argv[1], sys.argv[2].split(), sys.argv[3].split()
+h = 5381
+for b in key.encode("utf-8"):
+    h = (h * 33 + b) & 0xFFFFFFFF
+print(f"{adjectives[h % len(adjectives)]}-{animals[(h >> 8) % len(animals)]}")
+EOF

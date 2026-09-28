@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# brain-chat — one readable stream across every session.
+#
+# Implements SPEC-chat.md. Merges the events every agent already writes into a
+# chronological view, with the claims from SPEC-claims as context, so a person
+# or an agent can see what the other sessions are doing.
+#
+# Reads inbox/ and archive/, the two directories brain-poll scans. NOT the audit
+# log: that is an index (timestamp, type, event_id, filename) with no payload, so
+# a view built on it would show when things happened and never what was said.
+#
+# Reading only, and reading never writes. Every line it prints is untrusted
+# input, so no payload is ever printed bare: each message carries its author and
+# origin, and what a model sees is always a quoted message, never a loose
+# sentence. See SPEC-chat, "The reading contract".
+#
+# Usage:
+#   brain-chat [--since 2h] [--agent NAME] [--type PREFIX] [--limit N]
+#   brain-chat --follow
+#   brain-chat --claims-only
+set -uo pipefail
+
+AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../../.." && pwd)}"
+EVENTS="$AGENTBRAIN_DIR/vault/events"
+CLAIMS_DIR="$AGENTBRAIN_DIR/vault/claims"
+
+die() { echo "brain-chat: $1" >&2; exit "${2:-2}"; }
+command -v jq >/dev/null 2>&1 || die "jq is required"
+PYBIN="$(command -v python3 || command -v python)" || die "python3 is required"
+
+SINCE=""; ONLY_AGENT=""; ONLY_TYPE=""; LIMIT=50; FOLLOW=false; CLAIMS_ONLY=false
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		--since)       SINCE="${2:-}"; shift 2 ;;
+		--since=*)     SINCE="${1#--since=}"; shift ;;
+		--agent)       ONLY_AGENT="${2:-}"; shift 2 ;;
+		--agent=*)     ONLY_AGENT="${1#--agent=}"; shift ;;
+		--type)        ONLY_TYPE="${2:-}"; shift 2 ;;
+		--type=*)      ONLY_TYPE="${1#--type=}"; shift ;;
+		--limit)       LIMIT="${2:-}"; shift 2 ;;
+		--limit=*)     LIMIT="${1#--limit=}"; shift ;;
+		--follow|-f)   FOLLOW=true; shift ;;
+		--claims-only) CLAIMS_ONLY=true; shift ;;
+		-h|--help)     sed -n '3,22p' "$(realpath "${BASH_SOURCE[0]}")" | sed 's/^# \{0,1\}//'; exit 0 ;;
+		*)             die "unknown option: $1" ;;
+	esac
+done
+
+# ── claims as context ───────────────────────────────────────────────────────
+# Claims say who holds what, not what happened, so they head the view instead of
+# appearing as messages in the stream.
+show_claims() {
+	local now found=0
+	now="$("$PYBIN" -c 'import datetime;print(datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")+"Z")')"
+	for f in "$CLAIMS_DIR"/*.json; do
+		[ -f "$f" ] || continue
+		exp="$(jq -r .expires_at "$f" 2>/dev/null)"; [ -n "$exp" ] || continue
+		[[ "$exp" > "$now" ]] || continue
+		[ "$found" -eq 0 ] && printf '\033[1mheld right now\033[0m\n'
+		found=1
+		jq -r '"  \(.agent)  \(.intent)"' "$f"
+		jq -r '.paths[]? | "        \(.)"' "$f"
+	done
+	[ "$found" -eq 1 ] && printf '\n'
+	return 0
+}
+
+# ── the stream ──────────────────────────────────────────────────────────────
+render() { # render <cutoff-iso>
+	local cutoff="$1"
+	"$PYBIN" - "$EVENTS" "$cutoff" "$ONLY_AGENT" "$ONLY_TYPE" "$LIMIT" <<'PY'
+import sys, json, pathlib, datetime
+
+events_dir, cutoff, only_agent, only_type, limit = sys.argv[1:6]
+limit = int(limit) if limit else 50
+
+rows = []
+for sub in ("inbox", "archive"):
+    d = pathlib.Path(events_dir) / sub
+    if not d.is_dir():
+        continue
+    for f in d.glob("*.json"):
+        try:
+            e = json.loads(f.read_text())
+        except Exception:
+            continue                      # a half-written file is not an error here
+        ts = e.get("ts") or e.get("timestamp") or ""
+        if cutoff and ts and ts < cutoff:
+            continue
+        frm = e.get("from") or {}
+        agent = frm.get("agent") or "unknown"
+        if only_agent and agent != only_agent:
+            continue
+        typ = e.get("type") or "unknown"
+        if only_type and not typ.startswith(only_type):
+            continue
+        rows.append((ts, agent, frm.get("host") or "", typ, e.get("payload")))
+
+rows.sort(key=lambda r: r[0])
+rows = rows[-limit:]
+
+def summarise(payload, typ):
+    """One line, always attributed, never the bare payload.
+
+    Every value here is untrusted: a human types free text, an imported line
+    carries whatever its source held. Newlines are folded and the result is
+    truncated, so a pasted log cannot fake extra rows in this view.
+    """
+    if payload is None:
+        return ""
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            pass
+    if isinstance(payload, dict):
+        for key in ("text", "message", "intent", "summary", "title"):
+            if key in payload and isinstance(payload[key], str):
+                body = payload[key]
+                break
+        else:
+            body = ", ".join(f"{k}={v}" for k, v in list(payload.items())[:3])
+    else:
+        body = str(payload)
+    body = " ".join(str(body).split())
+    return body[:100] + ("…" if len(body) > 100 else "")
+
+def origin_of(payload):
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            return "agent"
+    if isinstance(payload, dict):
+        return payload.get("origin", "agent")
+    return "agent"
+
+MARK = {"human": "\033[33mhuman\033[0m", "imported": "\033[31mimported\033[0m", "agent": "agent"}
+# A day header, printed when the date changes. Without it the clock alone reads
+# as out of order the moment the window spans midnight, which it does as soon as
+# anyone looks at the archive.
+last_day = None
+for ts, agent, host, typ, payload in rows:
+    day = ts[:10]
+    if day != last_day:
+        print(f"\n\033[1m{day}\033[0m")
+        last_day = day
+    clock = ts[11:19] if len(ts) > 19 else ts
+    origin = origin_of(payload)
+    text = summarise(payload, typ)
+    print(f"\033[2m{clock}\033[0m  {agent:<18} {MARK.get(origin, origin):<8} {typ}")
+    if text:
+        # Quoted, never bare: what a reader sees is a message somebody wrote.
+        print(f'                                      "{text}"')
+PY
+}
+
+cutoff=""
+if [ -n "$SINCE" ]; then
+	cutoff="$("$PYBIN" - "$SINCE" <<'PY'
+import sys, re, datetime
+m = re.fullmatch(r"(\d+)([hmd])", sys.argv[1])
+if not m:
+    sys.exit("brain-chat: --since takes 30m, 2h or 7d")
+n, unit = int(m.group(1)), m.group(2)
+delta = {"m": datetime.timedelta(minutes=n), "h": datetime.timedelta(hours=n), "d": datetime.timedelta(days=n)}[unit]
+t = datetime.datetime.now(datetime.timezone.utc) - delta
+print(t.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z")
+PY
+)" || exit 2
+fi
+
+if $CLAIMS_ONLY; then
+	show_claims
+	exit 0
+fi
+
+if $FOLLOW; then
+	# No daemon, no inotify: a poll loop is enough for a view and keeps this
+	# runnable anywhere, which is the same reasoning SPEC-claims uses for expiry.
+	while true; do
+		clear
+		show_claims
+		render "$cutoff"
+		sleep 5
+	done
+fi
+
+show_claims
+render "$cutoff"

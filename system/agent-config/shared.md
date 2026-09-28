@@ -1,0 +1,213 @@
+---
+date: 2026-05-17
+type: system
+tags: [agent-config, shared]
+id: e0ec2f19-20d7-5b49-a8e8-4d161ac9cda0
+---
+
+# Shared Agent Instructions
+
+`system/rules.md` is canonical. If instructions conflict, follow `system/rules.md`.
+
+## Read a repo's own AGENTS.md before working in it
+
+**A repository carrying an `AGENTS.md` has written down how to work in it. Read it before
+building, publishing or deploying there.** It is the agent-neutral place for exactly that,
+which is why it must not be skipped by an agent that happens to load a different filename.
+
+**When this matters most**: an operation touching a credential, a registry, a deploy or a
+release always has a written procedure. Find it before the first attempt; not finding one
+is itself the finding. The tell that you are skipping it is reaching for a credential whose
+name you inferred from the task.
+
+## Incognito mode (read-only sessions)
+
+If `vault/sessions/.incognito` exists, the session is **read-only**: consult the
+brain freely, but persist **nothing**. Skip every write below — no journal
+archive/update, no learnings, no project notes, no memories. This is agent-neutral
+and applies to *all* agents.
+
+Claude Code and Pi also enforce this mechanically (a PreToolUse hook / a `tool_call`
+guard extension) and the agentbrain MCP server blocks its write tools regardless of
+agent. Agents without a write-interception mechanism (e.g. Copilot CLI) rely on this
+instruction — so honor it; do not write while the flag is present. Toggle with the
+`incognito` skill/CLI (`/incognito on|off`).
+
+## Session start
+
+1. Read the public framework hot set — the canonical list is **`system/rules.md` Step 1** (patterns, troubleshooting, rules, skills, lifecycle). Read `system/integrations/opensrc.md` too if working with any npm/PyPI/crates.io dependency.
+2. Read private context when relevant:
+   - Preference scopes, in order when present:
+     - `vault/preferences/organization/` — organization-wide rules/context
+     - `vault/preferences/team/` — team agreements/context
+     - `vault/preferences/personal/` — individual preferences/style
+   - Treat the scopes as additive context. If they appear to disagree, surface the tension instead of silently inventing a rule.
+   - `vault/projects/[name]/index.md`
+   - `vault/memories/`
+3. **Session continuity** — read and archive the session journal:
+   - Read `vault/sessions/session-journal.md` (if exists)
+   - Briefly summarize to the user: where were we, what was the next step
+   - Archive it → `vault/sessions/archive/YYYY-MM/YYYYMMDD-HHMMSS-<pid>.md`
+     - PID = 4 lowercase random hex chars (e.g. `openssl rand -hex 2`); if the target file exists, generate a new PID and retry
+     - Generate UUID5 from the final archive path: `scripts/uuid5-gen.sh "vault/sessions/archive/YYYY-MM/YYYYMMDD-HHMMSS-<pid>"`
+     - Write with full frontmatter (`id`, `date`, `project`, `previous`)
+   - Start a fresh `session-journal.md` with new timestamp
+4. For credential/API/Gitea/GitHub/keychain tasks, check before asking for tokens:
+   - `vault/integrations/README.md`
+   - relevant `vault/integrations/*.md`
+   - `vault/security/README.md`
+   - relevant `vault/security/**/*.md`
+5. Use documented secrets-helper/keychain helpers first.
+6. Never print or persist token values.
+7. **agentBrain self-update** — if the session context contains a line starting with `[agentBrain] An update is available`, ask the user whether to update; on a yes, run `scripts/brain-update.sh`. This is agent-neutral: the `ask` auto_update mode hands the decision to you (any consuming agent) because the session-start hook has no TTY of its own.
+
+## Private skill extensions
+
+When invoking an agentBrain skill named `<name>`, read its public `system/skills/<name>/SKILL.md` as usual, then check for `vault/skills/<name>.private.md`. If the private file exists, read it as **additional** instructions for this installation; if absent, proceed without it. Use the same rule for agentBrain skills shipped by addons, keyed by their invoked skill name. Do not search for other filenames or infer an extension when none exists.
+
+The private extension is not another `SKILL.md` and is never linked as a standalone skill. It may refine choices and add owner-specific steps, but cannot weaken public safety rules or change the skill's public contract. Keep private contents and examples out of public files, logs, and published artifacts. An exact-name collision under `vault/skills/<name>/SKILL.md` is a replacement, **not** an extension; do not use it for layering. See `system/skill-patterns.md` for the convention.
+
+## Lookup-first — search before you answer
+
+For any unknown term, tool, service, path, or "how do I reach X" question, **search
+before concluding you don't know**. An empty result from one source proves nothing —
+widen the query or switch sources. The answer often spans several places and must be
+stitched together (e.g. a note holds the host + key, but the exact user/command lives
+in the project's own script).
+
+Search in this order, and don't stop at the first miss:
+
+1. **The brain.** Full-text search the vault (agentBrain search tool / `grep` over
+   `vault/`). Try specific single terms, not one long sentence — each term that
+   matches nowhere costs rank. Search by **filename** too; a device/host/spec is
+   often in the name.
+2. **The filesystem.** The brain tools are vault-scoped, so also `grep`/`find` the
+   user's code directory (e.g. `~/Developer`) and other relevant roots. The built-in
+   `bash`/`grep`/`find`/`read` tools are **not** vault-jailed — use them. The
+   decisive detail (an IP, a user, an exact command) frequently lives in a repo's
+   deploy script, not in a note.
+3. **Synthesize.** Combine what each source gives instead of reporting the first
+   partial hit. Only after these come up empty do you say the information is absent —
+   and say *where* you looked.
+
+**Know what your search tool cannot see.** This is separate from covering enough
+sources. A single source can be searched with an instrument that silently skips part
+of it. Search tooling in agent harnesses is commonly wrapped, and a wrapper may honour
+`.gitignore`, skip hidden or binary files, cap results, or scope itself to a project
+root. None of that is announced; you get an empty result and an exit code that looks
+like an honest zero.
+
+So repeat the search with an unwrapped tool (the absolute path to the real binary,
+`find`, or a second tool of a different kind) whenever the **absence** carries your
+conclusion. Those are the claims that sound like "it does not exist", "zero
+occurrences", "every reference is updated", "nothing else uses this". For an ordinary lookup where one hit is enough,
+the wrapper is fine and usually faster. Your agent-specific config names the wrapper
+on your runtime, if there is one.
+
+This is agent-neutral. Do not answer "I don't know" or ask the user for something
+(a credential, a host, a path) before running the search — it is very often already
+recorded.
+
+## Session continuity
+
+Agent maintains `vault/sessions/session-journal.md` for crash recovery and session continuity.
+
+### During session
+
+After each significant action, update `session-journal.md`:
+
+- Project name
+- Current task
+- What's done (checklist)
+- Next step
+- Open questions / blockers
+
+### Journal format
+
+```yaml
+---
+date: YYYY-MM-DD
+type: session-journal
+tags: [session]
+project: <name>
+previous: <YYYYMMDD-HHMMSS-<pid> of archived session>
+id: <UUID5>
+status: active
+---
+
+# Session Journal
+
+## Last updated: HH:MM
+
+### Project: <name>
+### Task: <what we're doing>
+
+### Done
+- [x] ...
+
+### Files changed
+- `path/to/file` — what changed
+
+### Next step
+-> ...
+
+### Open questions
+- ...
+```
+
+### Archive
+
+- Location: `vault/sessions/archive/YYYY-MM/YYYYMMDD-HHMMSS-<pid>.md` (PID = random 4-hex collision guard)
+- Archived at session start (previous journal), never deleted
+- Monthly subfolders keep listings manageable (~50-150 files per month)
+- All links (`[[wiki-links]]`, UUID5 `id` in frontmatter) remain intact permanently
+
+## Live connections — keys, not prompts
+
+When connecting agentBrain to external data sources (calendar, email, project
+management, CRM, finance, …), follow this permission model:
+
+- **Scoped API keys** — give the agent the narrowest possible scope (e.g.
+  read-only for transcripts, no-delete for email). Store keys in
+  `vault/security/` (never in public files). Reference them by name; never
+  print values.
+- **Keys, not prompts** — a prompt that says "don't send emails" is not a
+  permission layer. If the agent has the key/auth to send, it may send. Strip
+  the key entirely if the action must never happen.
+- **Document what it can touch** — for each connection, write a one-liner in
+  `vault/integrations/<tool>.md`: what scope, what it can read/write/delete.
+  This is the actual permission surface, auditable at any time.
+- **Verify before automating** — run a capability manually (cadence=manual)
+  until you trust the output. Only then schedule it.
+
+Store integration notes under `vault/integrations/`. See `system/security-guidance.md`
+for the full credential-management policy.
+
+## Model routing (delegation)
+
+When delegating work to subagents/workers, consult the routing table in
+`vault/preferences/personal/model-routing.md` (if present). Core rule: frontier
+models plan and review; cheaper models execute from a spec.
+
+- **Claude Code**: use the agentBrain-managed subagents in
+  `system/agent-config/claude-agents/` (symlinked into `~/.claude/agents/`) —
+  `executor` (sonnet) for spec-driven implementation, `scout` (haiku) for
+  read-only reconnaissance.
+- **Other agents**: apply the table with the harness's own model-selection
+  mechanism (e.g. Pi's provider/model config).
+
+## Prompt-cache hygiene
+
+Keep the prompt prefix stable within a session: no mid-session model/reasoning
+switches or skill/MCP toggles, dynamic content at the bottom. Full guideline:
+`system/llm-prompt-composition.md`.
+
+## Write locations
+
+- Public HOW/WHERE framework changes: public repo (`system/` incl. `system/skills/`, `templates/`, `scripts/`, `system/pi-config/`).
+- Private WHAT/user/project/security details: `vault/` only.
+
+## Validation
+
+- Public changes: run `scripts/privacy-scan.sh`.
+- Private local changes: run `scripts/checks/check-vault-private.sh` or `scripts/sync/sync-vault.sh`. The session-start hooks run `scripts/sync/pull-vault.sh` (fast-forward only) so a second machine starts on current notes; a diverged vault is reported, never merged for you.

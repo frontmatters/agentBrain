@@ -1,0 +1,530 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# install-agent-clis.sh — Optionally install/uninstall AI agent CLIs and tools (opt-in, agent-agnostic).
+#
+# Checkbox menu: ↑/↓ move, Space marks the highlighted row, Enter applies, q cancels.
+# Marking depends on the row's current state:
+#   - a MISSING agent  → marked for INSTALL   ([+], green)
+#   - an INSTALLED one → marked for UNINSTALL  ([✗], red, name struck through)
+# A standalone module; also called by setup.sh. Skips entirely non-interactively — agentBrain
+# connects to whatever agents you have; (un)installing them is a convenience, never a default.
+#
+# Portable (macOS, Linux, WSL; bash 3.2+): arrow keys send ESC [ A/B (3 bytes together); read
+# the 2 trailing bytes WITHOUT a `-t` timeout (bash 3.2 — Apple's default — rejects a fractional
+# one). Strikethrough uses a Unicode overlay, not ANSI SGR 9 (which macOS Terminal.app ignores).
+# Static header + in-place list redraw avoid flicker. Agent CLIs install via npm, extensions
+# via the editor's own CLI; an editor itself only after an explicit choice (its platform recipe).
+
+set -euo pipefail
+
+# Load user-scoped tool locations before probing for a tool, or a restricted
+# PATH reports "not installed" for something that is. See scripts/lib/_toolpaths.sh.
+_ab_tp="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/lib/_toolpaths.sh"
+# shellcheck disable=SC1090,SC1091
+[ -f "$_ab_tp" ] && . "$_ab_tp"
+
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+# Strike text through, terminal-independent: append a Unicode combining long stroke overlay
+# (U+0336 = UTF-8 0xCC 0xB6) after each character. Real struck-through glyphs, so it shows even
+# where ANSI strikethrough (SGR 9) doesn't render (e.g. macOS Terminal.app). Names are ASCII.
+strike() {
+	local s="$1" out="" combine=$'\xcc\xb6' c
+	for ((c = 0; c < ${#s}; c++)); do out="${out}${s:c:1}${combine}"; done
+	printf '%s' "$out"
+}
+
+# Is npm's global module dir (or its nearest existing ancestor) writable by us? `npm install -g`
+# lands in `$(npm config get prefix)/lib/node_modules`; a root-owned prefix (system Node's
+# /usr/lib) is exactly what makes it die with EACCES. Testing the nearest existing ancestor lets
+# a not-yet-created nvm prefix dir (writable parent) still count as OK, avoiding false blocks.
+npm_global_writable() {
+	command -v npm >/dev/null 2>&1 || return 0 # no npm → let the real command report it
+	local d
+	d="$(npm config get prefix 2>/dev/null)/lib/node_modules"
+	while [ -n "$d" ] && [ ! -e "$d" ]; do d="${d%/*}"; done
+	[ -n "$d" ] && [ -w "$d" ] && return 0
+	return 1
+}
+
+# ── Editor resolution for extension rows ─────────────────────────────────────
+# Sets EDITOR_CLI and EDITOR_LABEL, or returns non-zero to skip the row.
+#
+# One installed editor: use it, no question. Several: ask, because "VS Code
+# extension" is ambiguous on a machine that also runs Cursor and VSCodium.
+# None: offer to install one, with enough explanation to choose.
+EDITOR_CLI=""
+EDITOR_LABEL=""
+_EDITOR_CHOICE=""   # remembered for the rest of the run
+
+resolve_editor_for() { # <row label> <extension id>
+	local row="$1" ext="$2" line id label cli mk
+
+	# A choice made earlier in this run stands for every later row.
+	if [ -n "$_EDITOR_CHOICE" ]; then
+		line="$_EDITOR_CHOICE"
+	else
+		local -a found=()
+		while IFS= read -r line; do [ -n "$line" ] && found+=("$line"); done < <(editor_flavors)
+
+		if [ "${#found[@]}" -eq 0 ]; then
+			offer_editor_install "$row" || return 1
+			while IFS= read -r line; do [ -n "$line" ] && found+=("$line"); done < <(editor_flavors)
+			[ "${#found[@]}" -gt 0 ] || return 1
+		fi
+
+		if [ "${#found[@]}" -eq 1 ]; then
+			line="${found[0]}"
+		else
+			local -a pairs=()
+			for line in "${found[@]}"; do
+				IFS='|' read -r id label cli mk <<<"$line"
+				case "$cli" in
+					/Applications/*) pairs+=("$id" "$label (app bundle, CLI not on PATH)") ;;
+					*) pairs+=("$id" "$label") ;;
+				esac
+			done
+			pairs+=("__skip" "skip this row")
+			echo
+			echo "Several editors are installed. Which one should get the extension?"
+			ab_prompt_choose "$row" "${pairs[@]}" || return 1
+			[ "$REPLY_ID" = "__skip" ] && return 1
+			for line in "${found[@]}"; do
+				case "$line" in "$REPLY_ID"'|'*) break ;; esac
+			done
+		fi
+		_EDITOR_CHOICE="$line"
+	fi
+
+	IFS='|' read -r id label cli mk <<<"$line"
+
+	# Open VSX carries a smaller catalogue than the Microsoft marketplace, and
+	# GitHub Copilot is one of the extensions that is not on it. Saying so here
+	# beats letting the install fail with a registry 404.
+	if [ "$mk" = openvsx ] && [ "$ext" = "GitHub.copilot" ]; then
+		echo -e "  ${YELLOW}!${NC} $label installs from Open VSX, which does not carry GitHub Copilot. Skipping this row."
+		return 1
+	fi
+
+	EDITOR_CLI="$cli"
+	EDITOR_LABEL="$label"
+	return 0
+}
+
+# Does the editor actually carry this extension now? The CLI exits non-zero when
+# ANY extension in a batch fails, and one of the ways a batch fails is a bundled
+# dependency that is already NEWER than the one being pulled in:
+#
+#   Installing extension 'github.copilot'...
+#   Error while installing extension github.copilot-chat: Extension
+#   'github.copilot-chat' is a built-in extension with version '0.65.0' and
+#   cannot be downgraded to version '0.48.1'.
+#
+# github.copilot installed. The row still reported a failure and told the user to
+# run by hand the command that had just worked. An exit code describes the batch;
+# only the editor can say what the user will actually have.
+#
+# Ids are compared case-insensitively: the row says GitHub.copilot and the editor
+# answers github.copilot.
+_ext_present() { # <cli> <ext-id>
+	local want
+	want="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
+	"$1" --list-extensions 2>/dev/null | tr '[:upper:]' '[:lower:]' | grep -qx "$want"
+}
+
+# Is <pid> a descendant of <ancestor>? Walks the parent chain, so a Spotlight
+# lookup started by someone else on this machine is never touched.
+_descends_from() { # <pid> <ancestor>
+	local p="$1" want="$2" hops=0
+	while [ -n "$p" ] && [ "$p" -gt 1 ] 2>/dev/null; do
+		[ "$p" = "$want" ] && return 0
+		hops=$((hops + 1)); [ "$hops" -gt 12 ] && return 1
+		p="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')"
+	done
+	return 1
+}
+
+# No editor at all: offer to install one. agentBrain does not install editors
+# behind your back, so this is a question with a default of "neither".
+offer_editor_install() { # <row label>
+	echo
+	echo "No VS Code family editor found, so \"$1\" has nothing to install into."
+	echo
+	echo "  Visual Studio Code  Microsoft's build. Uses the Microsoft marketplace,"
+	echo "                      which carries every extension including GitHub Copilot."
+	echo "                      Ships with telemetry (can be turned off in settings)."
+	echo
+	echo "  VSCodium            The same source, MIT licensed, built without Microsoft"
+	echo "                      branding or telemetry. Uses Open VSX, a smaller"
+	echo "                      marketplace that does NOT carry GitHub Copilot."
+	echo
+	local pick_vscode pick_codium
+	pick_vscode="$(capability_install_cmd vscode)"
+	pick_codium="$(capability_install_cmd vscodium)"
+	# Options and their capability ids are built together, so no row index is
+	# mapped back to a meaning by hand.
+	local -a pairs=()
+	[ -n "$pick_vscode" ] && pairs+=(vscode "Visual Studio Code -- $pick_vscode")
+	[ -n "$pick_codium" ] && pairs+=(vscodium "VSCodium -- $pick_codium")
+	if [ "${#pairs[@]}" -eq 0 ]; then
+		echo "  No install recipe for this platform. Install one yourself, then re-run setup."
+		return 1
+	fi
+	pairs+=(__none "neither -- skip editor extensions")
+
+	ab_prompt_choose --default __none "Install an editor?" "${pairs[@]}" || return 1
+	local cap="$REPLY_ID"
+	[ "$cap" = "__none" ] && return 1
+	local cmd; cmd="$(capability_install_cmd "$cap")"
+	echo -e "  ${CYAN}Installing${NC} $cap -- $cmd"
+
+	# An optional step may not hold the install hostage.
+	#
+	# `brew install --cask` calls /usr/bin/mdfind to see whether the app already
+	# sits somewhere on disk. On a machine whose Spotlight index is rebuilding,
+	# that call can go on for many minutes before anything is downloaded.
+	# Homebrew's app_with_bundle_id has no timeout and no way to skip it.
+	#
+	# So: wait a few minutes, and if it is still going, let it finish on its own
+	# and carry on. Nothing is killed, because the alternative reading of a long
+	# silence is a legitimate slow download, and cutting that off is worse than
+	# waiting. The row is skipped and the user is told how to finish it.
+	#
+	# HOMEBREW_NO_AUTO_UPDATE is separate: brew refreshes its whole catalogue
+	# before installing, which is pure waiting for one already-resolved cask.
+	local _wait=0 _limit="${AGENTBRAIN_EDITOR_INSTALL_WAIT:-240}"
+	local _nudge="${AGENTBRAIN_EDITOR_INSTALL_NUDGE:-45}" _nudged=0
+	HOMEBREW_NO_AUTO_UPDATE=1 eval "$cmd" &
+	local _pid=$!
+	while kill -0 "$_pid" 2>/dev/null; do
+		[ "$_wait" -ge "$_limit" ] && break
+		# The stuck mdfind is our own descendant and nobody else's business, so
+		# end that one call rather than the install. brew then reads an empty
+		# result, which is the truthful answer here: the caller already
+		# established this editor is not on the machine.
+		if [ "$_nudged" -eq 0 ] && [ "$_wait" -ge "$_nudge" ]; then
+			local _md
+			for _md in $(pgrep -x mdfind 2>/dev/null); do
+				_descends_from "$_md" "$_pid" || continue
+				kill "$_md" 2>/dev/null && {
+					echo "  ${DIM:-}(freed a Spotlight lookup brew was waiting on)${NC:-}"
+					_nudged=1
+				}
+			done
+			[ "$_nudged" -eq 0 ] && _nudged=1   # nothing to nudge; do not keep looking
+		fi
+		sleep 2; _wait=$((_wait + 2))
+	done
+
+	if kill -0 "$_pid" 2>/dev/null; then
+		disown "$_pid" 2>/dev/null || true
+		echo -e "  ${YELLOW}!${NC} Still running after ${_limit}s; leaving it to finish in the background."
+		echo "     brew waits on Spotlight (mdfind) before installing a cask, which can"
+		echo "     take many minutes on a machine that was off for a while."
+		echo "     When it is done: bash scripts/setup/setup.sh   (re-run to pick up the editor)"
+		return 1
+	fi
+
+	wait "$_pid" || {
+		echo -e "  ${RED}✗${NC} install failed; run it yourself and re-run setup."
+		return 1
+	}
+	return 0
+}
+
+# id | display | install command | detect command (empty = no command-line check).
+# Agent CLIs install via npm on macOS, Linux and WSL. agentBrain is agent-agnostic;
+# the order is informational, not a default.
+AGENTS=(
+	# agentBrain Harness belongs to agentBrain and is offered first.
+	"abh|agentBrain Harness|npm install -g @agentbrain-harness/abh|abh"
+	"pi|Pi|npm install -g @earendil-works/pi-coding-agent|pi"
+	"claude-code|Claude Code|npm install -g @anthropic-ai/claude-code|claude"
+	"copilot|GitHub Copilot CLI|npm install -g @github/copilot|copilot"
+	"gemini-cli|Gemini CLI|npm install -g @google/gemini-cli|gemini"
+	"opencode|OpenCode|npm install -g opencode-ai|opencode"
+	# Extension rows carry the extension id. Which editor installs it is decided
+	# at run time: this machine may have several, or carry the CLI only inside an
+	# app bundle. See the editor resolution below.
+	"vscode-copilot|GitHub Copilot extension|ext:GitHub.copilot|"
+	"cline|Cline extension|ext:saoudrizwan.claude-dev|"
+)
+N=${#AGENTS[@]}
+
+# Never (un)install an agent non-interactively.
+if [ "${AGENTBRAIN_ASSUME_YES:-}" = "1" ] || [ ! -t 0 ] || [ ! -t 1 ]; then
+	echo "Agent CLI install: skipped (non-interactive — agentBrain connects to agents you install yourself)."
+	exit 0
+fi
+
+# The shared prompt helper decodes terminal bytes into semantic keys (UP/DOWN/etc.).
+# shellcheck disable=SC1091
+. "$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.." && pwd)/installer/prompt-helper.sh"
+# Editor detection and the install recipes for the extension rows.
+# shellcheck source=../lib/editors.sh
+. "$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.." && pwd)/lib/editors.sh"
+# shellcheck source=../lib/platform.sh
+. "$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.." && pwd)/lib/platform.sh"
+# shellcheck source=../lib/capability-install.sh
+. "$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.." && pwd)/lib/capability-install.sh"
+
+# Prefer user-scoped nvm Node/npm over any system Node, so the `npm install -g` commands below
+# target a user-writable global prefix (~/.nvm/...) instead of a root-only one (system Node's
+# /usr/lib, which fails with EACCES). Sourced best-effort; a missing/odd nvm never aborts the
+# menu. Also makes the install-detection below see nvm-managed CLIs on PATH.
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+# shellcheck disable=SC1091
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1 || true
+
+declare -a MARK
+for ((i = 0; i < N; i++)); do MARK[i]=0; done
+cursor=0
+
+# Detect-status cache (1 = installed). A PATH entry alone is not enough: a stale
+# shim or config directory must not make a clean machine look like it has an agent.
+declare -a INSTALLED VERSIONS LATEST
+for ((i = 0; i < N; i++)); do
+	IFS='|' read -r id _ _ detect <<<"${AGENTS[$i]}"
+	VERSIONS[i]=""
+	LATEST[i]=""
+	if [ -n "$detect" ] && command -v "$detect" &>/dev/null; then
+		version="$($detect --version </dev/null 2>/dev/null | head -1 | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//' | cut -c1-28)" || version=""
+		if [ -n "$version" ]; then
+			INSTALLED[i]=1; VERSIONS[i]="$version"
+			if [ "$id" = "abh" ] && command -v npm >/dev/null 2>&1; then
+				LATEST[i]="$(npm view @agentbrain-harness/abh version 2>/dev/null | head -1 | tr -d '[:space:]')" || LATEST[i]=""
+			fi
+		else INSTALLED[i]=0; fi
+	else
+		INSTALLED[i]=0
+	fi
+done
+
+echo -e "${CYAN}Install / uninstall agent CLIs and tools${NC} — optional"
+echo "agentBrain connects to whatever you have; this is a convenience. agentBrain Harness and Pi are recommended"
+echo "(deepest integrations today). Space marks a row: a missing agent → install, an installed"
+echo -e "one → ${RED}uninstall${NC} (struck through)."
+echo
+echo "↑/↓ or number move · Space/number toggle · a = all · Enter = apply · q = cancel"
+echo
+
+# Redraw only our own block, in place — exactly like the shared prompt helper.
+# Never clear the viewport: earlier questions and the prerequisites scan stay
+# visible above the menu. Every frame prints exactly CLI_LIST_LINES lines.
+CLI_LIST_LINES=0
+render() {
+	if [ "$CLI_LIST_LINES" -gt 0 ]; then printf '\033[%sA' "$CLI_LIST_LINES"; fi
+	local ins=0 uns=0
+	for ((i = 0; i < N; i++)); do
+		IFS='|' read -r id name _ _ <<<"${AGENTS[$i]}"
+		local pointer="  "
+		[ "$i" -eq "$cursor" ] && pointer="${CYAN}>${NC} "
+		local inst=""
+		if [ "${INSTALLED[i]}" -eq 1 ]; then
+			inst=" (installed${VERSIONS[i]:+ v${VERSIONS[i]}})"
+			if [ "$id" = "abh" ] && [ -n "${LATEST[i]}" ]; then
+				# Keep the row below a normal terminal width so the ANSI redraw cursor
+				# cannot land in the middle of a wrapped line when Space is pressed.
+				installed_short="${VERSIONS[i]#0.1.0-}"
+				latest_short="${LATEST[i]#0.1.0-}"
+				if [ "${VERSIONS[i]}" = "${LATEST[i]}" ]; then inst=" (${installed_short}, up to date)"; else inst=" (${installed_short} -> ${latest_short}, update)"; fi
+			fi
+		fi
+		local rec=""
+		if [ "$id" = "abh" ] || [ "$id" = "pi" ]; then rec=" ${CYAN}(recommended)${NC}"; fi
+		local box="[ ]" label=""
+		if [ "${MARK[i]}" -eq 1 ] && [ "${INSTALLED[i]}" -eq 1 ] && [ "$id" = "abh" ]; then
+			# Update agentBrain Harness in place; it is never removed by this menu.
+			box="[${CYAN}↑${NC}]"
+			label="${CYAN}${name}${inst}${NC}"
+			ins=$((ins + 1))
+		elif [ "${MARK[i]}" -eq 1 ] && [ "${INSTALLED[i]}" -eq 1 ]; then
+			# Uninstall: strike the NAME (+installed), keep the box as the marker.
+			box="[${RED}✗${NC}]"
+			label="${RED}$(strike "${name}${inst}")${NC}"
+			uns=$((uns + 1))
+		elif [ "${MARK[i]}" -eq 1 ]; then
+			box="[${GREEN}+${NC}]"
+			label="${name}"
+			ins=$((ins + 1))
+		else
+			label="${name}${YELLOW}${inst}${NC}"
+		fi
+		printf "\033[2K%b%b %b%b\n" "$pointer" "$box" "$label" "$rec"
+	done
+	printf '\033[2K\n'
+	printf '\033[2K%d to install/update · %d to uninstall\n' "$ins" "$uns"
+	printf '\033[2K↑/↓ move · 1-%d toggle · Space mark · a = mark all · Enter = apply · q = cancel\n' "$N"
+	CLI_LIST_LINES=$((N + 3))
+}
+
+ab_prompt_begin || {
+	echo "Interactive terminal input unavailable — use numeric/plain mode instead." >&2
+	exit 2
+}
+while true; do
+	render
+	ab_prompt_key
+	key="$REPLY"
+	case "$key" in
+	UP) cursor=$(((cursor - 1 + N) % N)) ;;
+	DOWN) cursor=$(((cursor + 1) % N)) ;;
+	SPACE) MARK[cursor]=$((1 - MARK[cursor])) ;;
+	[1-9])
+		# Direct toggle on the numbered row, like the shared checkbox menus.
+		if [ "$key" -le "$N" ]; then
+			cursor=$((key - 1))
+			MARK[cursor]=$((1 - MARK[cursor]))
+		fi ;;
+	a | A) for ((i = 0; i < N; i++)); do MARK[i]=1; done ;;
+	q | Q | ESC | CTRL_C)
+		ab_prompt_cleanup
+		echo ""
+		echo "Cancelled — nothing changed."
+		exit 0
+		;;
+	ENTER) ab_prompt_cleanup; break ;; # Enter → apply
+	esac
+done
+
+# Apply: install missing marked agents, uninstall installed marked ones.
+todo=()
+for ((i = 0; i < N; i++)); do [ "${MARK[i]}" -eq 1 ] && todo+=("$i"); done
+if [ "${#todo[@]}" -eq 0 ]; then
+	echo ""
+	echo "Nothing marked — no changes."
+	exit 0
+fi
+
+echo ""
+ok=0
+fail=0
+# A skipped row is not a failure: the user chose to skip, or nothing was
+# installable on this platform. Counting it as a failure made a deliberate
+# choice look like a broken run.
+skipped=0
+for i in "${todo[@]}"; do
+	IFS='|' read -r id name cmd detect <<<"${AGENTS[$i]}"
+	if [ "${INSTALLED[i]}" -eq 1 ] && [ "$id" = "abh" ]; then
+		action="Updating"
+		run="$cmd"
+	elif [ "${INSTALLED[i]}" -eq 1 ]; then
+		action="Uninstalling"
+		# Derive the uninstall command: every install verb here contains "install"
+		# (npm install / brew install --cask / code --install-extension).
+		run="${cmd//install/uninstall}"
+	else
+		action="Installing"
+		run="$cmd"
+	fi
+	echo -e "${CYAN}${action} ${name}${NC} — ${run}"
+	# Guardrail (install-only, npm-only): an `npm install -g` against a root-owned global prefix
+	# (system Node) dies with a wall of EACCES whose "run manually" hint just reproduces the
+	# failure. Catch it first and point at the real fix — nvm-managed Node, never sudo.
+	is_npm_install=0
+	[ "${INSTALLED[i]}" -eq 0 ] && case "$run" in npm\ *) is_npm_install=1 ;; esac
+	# Reset per row: a stale id would verify the previous row's extension.
+	EXT_VERIFY_ID=""; EXT_VERIFY_WANT=""
+	# Extension rows: resolve which editor installs this, now. Three states, not
+	# two. The old guard tested `command -v code` only, which called an installed
+	# VS Code "not installed" whenever its CLI had not been linked into PATH (the
+	# default on macOS until the user runs the palette command), and could not
+	# tell VS Code from Cursor, which ships a `code` binary of its own.
+	case "$run" in ext:*)
+		ext_id="${run#ext:}"
+		if ! resolve_editor_for "$name" "$ext_id"; then
+			# Declined or nothing installable: not the user's mistake, so this is
+			# a skip and not a failure.
+			skipped=$((skipped + 1))
+			continue
+		fi
+		run="$EDITOR_CLI --install-extension $ext_id"
+		EXT_VERIFY_ID="$ext_id"; EXT_VERIFY_WANT=present
+		if [ "${INSTALLED[i]}" -eq 1 ]; then
+			run="$EDITOR_CLI --uninstall-extension $ext_id"
+			EXT_VERIFY_WANT=absent
+		fi
+		echo -e "  ${CYAN}via${NC} $EDITOR_LABEL"
+		;;
+	esac
+	# Fresh-machine guard: no npm at all (a Linux install never ran the macOS
+	# bootstrap). Offer nvm-managed Node LTS ONCE — same mechanism and pinned
+	# nvm version as install-prerequisites.sh — then fall through to the
+	# writability guard below. Declining skips every npm row with a clear hint.
+	if [ "$is_npm_install" -eq 1 ] && ! command -v npm >/dev/null 2>&1; then
+		if [ "${NODE_OFFERED:-0}" -eq 0 ]; then
+			NODE_OFFERED=1
+			echo -e "  ${YELLOW}!${NC} npm not found — ${name} needs Node."
+			if ab_prompt_confirm --default yes "Install nvm-managed Node LTS now?"; then _ans="Y"; else _ans="n"; fi
+			if [[ ! ${_ans:-Y} =~ ^[Nn] ]]; then
+				curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash || true
+				export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+				if [ -s "$NVM_DIR/nvm.sh" ]; then
+					set +u
+					# shellcheck disable=SC1091
+					. "$NVM_DIR/nvm.sh" >/dev/null 2>&1 || true
+					set -u
+					nvm install --lts && nvm alias default 'lts/*' >/dev/null || true
+				fi
+				hash -r 2>/dev/null || true
+			fi
+		fi
+		if ! command -v npm >/dev/null 2>&1; then
+			echo -e "  ${RED}✗${NC} ${name} skipped — npm not available. Install Node (nvm recommended), then re-run setup."
+			fail=$((fail + 1))
+			continue
+		fi
+	fi
+	if [ "$is_npm_install" -eq 1 ] && ! npm_global_writable; then
+		pfx="$(npm config get prefix 2>/dev/null || echo unknown)"
+		echo -e "  ${RED}✗${NC} ${name} skipped — npm global prefix ($pfx) isn't writable (system Node, not nvm)."
+		echo -e "     ${YELLOW}↳${NC} Don't sudo. Load nvm-managed Node, then re-run setup:"
+		echo "         export NVM_DIR=\"\$HOME/.nvm\"; . \"\$NVM_DIR/nvm.sh\"; nvm install --lts && nvm use --lts"
+		fail=$((fail + 1))
+		continue
+	fi
+	# Show real output: a wrong/rotted command must fail visibly, never a silent success.
+	if eval "$run"; then
+		if [ "${INSTALLED[i]}" -eq 0 ] && [ -n "$detect" ]; then
+			# Verify the CLI actually RUNS — npm exit 0 alone is not an install. npm's
+			# allow-scripts may skip a dep's install script (node-pty gyp build, a
+			# postinstall that fetches the platform binary); catch that here, loudly.
+			hash -r 2>/dev/null || true
+			out="$("$detect" --version </dev/null 2>/dev/null)"; rc=$?
+			if [ "$rc" -eq 0 ]; then
+				echo -e "  ${GREEN}✓${NC} ${name} (${out%%$'\n'*})"
+				ok=$((ok + 1))
+			else
+				echo -e "  ${YELLOW}⚠${NC} ${name} installed, but '${detect} --version' fails — a dependency install script was likely skipped (npm allow-scripts; see the warnings above)."
+				echo "     Fix: re-run with the allow-scripts flag npm printed, e.g.:"
+				echo "         ${cmd/npm install -g/npm install -g --allow-scripts=<pkgs>}"
+				fail=$((fail + 1))
+			fi
+		else
+			echo -e "  ${GREEN}✓${NC} ${name}"
+			ok=$((ok + 1))
+		fi
+	elif [ -n "$EXT_VERIFY_ID" ] && {
+			{ [ "$EXT_VERIFY_WANT" = present ] &&   _ext_present "$EDITOR_CLI" "$EXT_VERIFY_ID"; } ||
+			{ [ "$EXT_VERIFY_WANT" = absent  ] && ! _ext_present "$EDITOR_CLI" "$EXT_VERIFY_ID"; }
+		}; then
+		# The batch reported a failure but the thing the row is about is in the
+		# state it asked for, so the failure was about something else it pulled
+		# in. Say which, rather than claiming a clean success.
+		echo -e "  ${GREEN}✓${NC} ${name} — ${EXT_VERIFY_ID} is ${EXT_VERIFY_WANT}; a bundled dependency was left alone (see the output above)."
+		ok=$((ok + 1))
+	else
+		echo -e "  ${RED}✗${NC} ${name} failed — run manually: ${run}"
+		fail=$((fail + 1))
+	fi
+done
+
+echo ""
+_summary="Done: ${ok} ok, ${fail} failed"
+[ "$skipped" -gt 0 ] && _summary="$_summary, ${skipped} skipped"
+echo "${_summary}. (Re-run setup so agentBrain reflects the change.)"

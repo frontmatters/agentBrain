@@ -1,0 +1,5 @@
+{
+  "//": "Layout the factory spec prescribes. factory-doctor.sh reads it; nothing here is repeated in a script.",
+  "legacyDir": "R&D/legacy",
+  "referenceDir": "R&D/reference"
+}

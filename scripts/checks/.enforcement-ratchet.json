@@ -1,0 +1,5 @@
+{
+  "_comment": "Traps with no `enforcement:` declaration, plus every learning declared `unenforced`. May only fall. Lower it when you add a guard or a declaration; scripts/checks/check-enforcement.sh explains why this exists at all.",
+  "_raising": "Raising it for a newly recorded trap is allowed: recording a trap makes existing debt visible rather than creating it. The number to watch is unenforced going to gate, not the total staying flat.",
+  "unclassified": 29
+}

@@ -1,0 +1,1 @@
+tests/test-check-cmdb-coverage.sh

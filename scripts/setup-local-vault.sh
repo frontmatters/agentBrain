@@ -1,0 +1,1 @@
+setup/setup-local-vault.sh

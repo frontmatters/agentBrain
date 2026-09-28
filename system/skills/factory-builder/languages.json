@@ -1,0 +1,20 @@
+{
+  "en": {
+    "forbidden": {
+      "nl": ["vergelijking", "toegevoegd", "verwijderd", "gewijzigd", "navigatie", "mislukt", "ongeldig", "onbekend", "ontbreekt", "verplicht", "samenvatting", "voorbeelden", "afbeeldingen", "aanwezig", "gearchiveerd", "bestanden", "opnieuw", "zonder", "gebruik", "profiel", "voortgang", "fouten", "waarschuwing"],
+      "de": ["beispiele", "verwendung", "hinzugefügt", "entfernt", "fehlgeschlagen", "ungültig", "dateien", "erforderlich", "zusammenfassung", "warnung"],
+      "fr": ["exemples", "utilisation", "ajouté", "supprimé", "échoué", "invalide", "fichiers", "obligatoire", "résumé", "avertissement"],
+      "pt": ["exemplos", "utilização", "adicionado", "removido", "falhou", "inválido", "arquivos", "ficheiros", "obrigatório", "resumo", "aviso"],
+      "es": ["ejemplos", "utilización", "añadido", "eliminado", "falló", "inválido", "archivos", "obligatorio", "resumen", "advertencia"],
+      "it": ["esempi", "utilizzo", "aggiunto", "rimosso", "fallito", "non valido", "file mancanti", "obbligatorio", "riepilogo", "avviso"],
+      "pl": ["przykłady", "użycie", "dodano", "usunięto", "niepowodzenie", "nieprawidłowy", "pliki", "wymagane", "podsumowanie", "ostrzeżenie"],
+      "tr": ["örnekler", "kullanım", "eklendi", "kaldırıldı", "başarısız", "geçersiz", "dosyalar", "zorunlu", "özet", "uyarı"],
+      "ru": ["примеры", "использование", "добавлено", "удалено", "неудача", "неверный", "файлы", "обязательно", "сводка", "предупреждение"],
+      "zh": ["使用方法", "示例", "已添加", "已删除", "无效", "必填", "摘要", "警告"],
+      "ja": ["使い方", "使用例", "追加しました", "削除しました", "無効です", "必須です", "概要", "警告"],
+      "ko": ["사용법", "사용 예시", "추가됨", "삭제됨", "잘못된", "필수", "요약", "경고"],
+      "ar": ["أمثلة", "الاستخدام", "تمت الإضافة", "تم الحذف", "غير صالح", "مطلوب", "ملخص", "تحذير"],
+      "hi": ["उदाहरण", "उपयोग", "जोड़ा गया", "हटाया गया", "अमान्य", "आवश्यक", "सारांश", "चेतावनी"]
+    }
+  }
+}

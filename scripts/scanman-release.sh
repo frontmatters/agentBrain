@@ -1,0 +1,1 @@
+scanman/scanman-release.sh

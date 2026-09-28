@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# brain-claims — read back who holds what, right now.
+#
+# Implements SPEC-claims.md. Reading has no side effects: an expired claim is
+# filtered from the output and left on disk, so anyone can run this to look
+# without changing what the next reader sees. Moving expired claims out is a
+# separate, explicit act: --gc.
+#
+# Usage:
+#   brain-claims [--json] [--repo PATH]
+#   brain-claims --gc
+#
+# Exit codes:
+#   0  listed (also when nothing is held)
+#   2  usage error
+#   7  cannot compute the current time
+set -uo pipefail
+
+AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../../.." && pwd)}"
+CLAIMS_DIR="$AGENTBRAIN_DIR/vault/claims"
+HERE="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+
+die() { echo "brain-claims: $1" >&2; exit "${2:-2}"; }
+command -v jq >/dev/null 2>&1 || die "jq is required"
+
+GC=false; AS_JSON=false; ONLY_REPO=""
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		--gc)     GC=true; shift ;;
+		--json)   AS_JSON=true; shift ;;
+		# Hashed to match what brain-claim writes: the stored field is a hash of
+		# the path, so a client name never reaches the shared vault. Callers still
+		# pass a real path here; the conversion is ours.
+		--repo)   ONLY_REPO="$(printf '%s' "${2:-}" | shasum -a 256 | cut -c1-16)"; shift 2 ;;
+		-h|--help) sed -n '3,17p' "$(realpath "${BASH_SOURCE[0]}")" | sed 's/^# \{0,1\}//'; exit 0 ;;
+		*)        die "unknown option: $1" ;;
+	esac
+done
+
+[ -d "$CLAIMS_DIR" ] || { $AS_JSON && echo '[]'; exit 0; }
+# See brain-claim: BSD date prints "6N" literally instead of failing, so the
+# comparison string must come from the same source that writes the records.
+PYBIN="$(command -v python3 || command -v python)" || die "python3 is required"
+NOW="$("$PYBIN" -c 'import datetime;print(datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")+"Z")')"
+[ -n "$NOW" ] || die "cannot compute current time" 7
+
+# ── --gc: the only path that writes ─────────────────────────────────────────
+if $GC; then
+	n=0
+	for f in "$CLAIMS_DIR"/*.json; do
+		[ -f "$f" ] || continue
+		exp="$(jq -r .expires_at "$f" 2>/dev/null)"; [ -n "$exp" ] || continue
+		[[ "$exp" > "$NOW" ]] && continue
+		# History is best-effort (SPEC-claims.md): a failed emit is reported on
+		# stderr and never stops the gc. Broadcast, attributed to the claim's agent.
+		if [ -x "$HERE/brain-emit" ]; then
+			AGENTBRAIN_DIR="$AGENTBRAIN_DIR" "$HERE/brain-emit" --type=work.claim.expired --broadcast \
+				--from="$(jq -r '.agent // "unknown"' "$f" 2>/dev/null)" --payload="$(jq -c . "$f" 2>/dev/null || echo '{}')" >/dev/null \
+				|| echo "brain-claims: warning: brain-emit failed; work.claim.expired not written for $(basename "$f")" >&2
+		else
+			echo "brain-claims: warning: $HERE/brain-emit not found; work.claim.expired not written" >&2
+		fi
+		rm -f "$f"; n=$((n + 1))
+	done
+	echo "brain-claims: removed $n expired claim(s)"
+	exit 0
+fi
+
+live=()
+for f in "$CLAIMS_DIR"/*.json; do
+	[ -f "$f" ] || continue
+	exp="$(jq -r .expires_at "$f" 2>/dev/null)"; [ -n "$exp" ] || continue
+	[[ "$exp" > "$NOW" ]] || continue
+	[ -n "$ONLY_REPO" ] && [ "$(jq -r .repo "$f" 2>/dev/null)" != "$ONLY_REPO" ] && continue
+	live+=("$f")
+done
+
+if $AS_JSON; then
+	[ "${#live[@]}" -eq 0 ] && { echo '[]'; exit 0; }
+	jq -s '.' "${live[@]}"
+	exit 0
+fi
+
+[ "${#live[@]}" -eq 0 ] && { echo "nothing held"; exit 0; }
+printf '%-14s %-12s %-22s %s\n' "ID" "AGENT" "BRANCH" "INTENT"
+for f in "${live[@]}"; do
+	jq -r '[.id, .agent, (.branch // "-"), .intent] | @tsv' "$f" \
+	 | awk -F'\t' '{printf "%-14s %-12s %-22s %s\n", $1, $2, substr($3,1,22), $4}'
+	# Paths are the part a reader needs to compare against their own work, so
+	# they get their own lines rather than a truncated column.
+	jq -r '.paths[]? | "               \(.)"' "$f"
+done
+exit 0

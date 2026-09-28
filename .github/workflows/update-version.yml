@@ -1,0 +1,37 @@
+name: Update version in README
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  update-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update version in README
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          DATE="$(date -u '+%Y-%m-%d')"
+          sed -i "s|^# agentBrain.*|# agentBrain ${TAG_NAME}|" README.md
+          sed -i "s|^> Version:.*|> Version: ${TAG_NAME} (${DATE})|" README.md
+          if ! grep -q "^> Version:" README.md; then
+            sed -i "/^# agentBrain/a\\
+          > Version: ${TAG_NAME} (${DATE})" README.md
+          fi
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git diff --cached --quiet || git commit -m "Update version to ${GITHUB_REF_NAME}"
+          git push

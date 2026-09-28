@@ -1,0 +1,29 @@
+# clients.txt — the client columns of the add-on capability matrix, in order.
+#
+# This is a declared list, not a derived one, because the generated clients.md
+# has to be identical everywhere. A release ships a slim core (see
+# scripts/lib/essential-addons.txt), so deriving the columns from the manifests
+# that happen to be present produced a different file in a fresh install than
+# in a full checkout, and check-addons reported the shipped file as stale. The
+# release gate caught it; nothing else would have.
+#
+# A hand-kept list drifts, which is the reason the derivation was tried at all.
+# check-addons now fails when a manifest declares a client that is missing here,
+# so drift is reported instead of silently dropping a column: a matrix that
+# omits a client reads as "no add-on supports it".
+#
+# Adding a client: put it here, then run `bash scripts/addons.sh clients --write`.
+claude
+gemini
+opencode
+pi
+cursor
+copilot
+codex
+windsurf
+cline
+hermes
+abh
+aider
+claude-desktop
+kiro
