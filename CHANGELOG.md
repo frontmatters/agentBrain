@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.14.2] - 2026-09-28
+
+### Fixed
+
+- The GitHub health check no longer runs the space boundary guard on its own.
+  On a runner there is no vault, so the guard correctly reports "not measured"
+  (exit 77) and the job failed; a real install runs it in the full doctor.
+
 ## [v1.14.1] - 2026-09-28
 
 ### Changed
