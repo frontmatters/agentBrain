@@ -27,6 +27,8 @@ CLINE_RULES="${CLINE_DIR}/Rules/agentBrain.md"
 # Already configured = our own rules file exists.
 if [ -f "$CLINE_RULES" ]; then
 	echo -e "${YELLOW}Skip${NC}    Cline (already configured)"
+elif ! agentbrain_pointer_target_ok "$CLINE_RULES" "$VAULT"; then
+	echo -e "${YELLOW}Skip${NC}    Cline (config file resolves into the agentBrain checkout)"
 else
 	mkdir -p "$(dirname "$CLINE_RULES")"
 	agentbrain_pointer_block "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "cline.md" >"$CLINE_RULES"

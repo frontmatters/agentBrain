@@ -14,6 +14,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.14.1] - 2026-09-28
+
+### Changed
+
+- Upgrading from 1.13.x or older: the public repository was republished with a
+  fresh history at 1.14.0, so `brain update` cannot fast-forward an older
+  install. Reinstall once with the installer; the vault lives outside the
+  checkout and is kept.
+
+### Fixed
+
+- Setup no longer writes the agent pointer through a client config that is a
+  symlink into the agentBrain checkout or its vault. Appended there, the block
+  edited a tracked product file and the privacy scan failed on the user's own
+  install. Setup now skips that client and says which link to replace.
+- `check-vault-config` searches with `grep` only. It used ripgrep when present,
+  so a machine without `rg` found nothing and passed without measuring, and the
+  two engines skipped different files.
+- The example project in a new vault no longer links to notes that do not
+  exist, so a fresh install has no dead-link warnings.
+- `.github/copilot-instructions.md` points at `vault/` instead of the retired
+  `local/` paths.
+
+### Removed
+
+- The GitHub workflow that rewrote the README version line after every tag. It
+  pushed an unreviewed commit onto `main` after each release.
+
 ## [v1.14.0] - 2026-09-28
 
 ### Security

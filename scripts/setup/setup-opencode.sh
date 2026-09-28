@@ -34,6 +34,8 @@ fi
 # Already configured = pointer file exists AND is registered in the instructions array.
 if [ -f "$POINTER_FILE" ] && [ -f "$OPENCODE_JSON" ] && grep -q "agentbrain-pointer.md" "$OPENCODE_JSON" 2>/dev/null; then
 	echo -e "${YELLOW}Skip${NC}    OpenCode (already configured)"
+elif ! agentbrain_pointer_target_ok "$POINTER_FILE" "$VAULT"; then
+	echo -e "${YELLOW}Skip${NC}    OpenCode (config file resolves into the agentBrain checkout)"
 else
 	mkdir -p "$OPENCODE_DIR"
 	agentbrain_pointer_block "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "opencode.md" >"$POINTER_FILE"

@@ -34,6 +34,8 @@ mkdir -p "$COPILOT_DIR"
 MARKER="## agentBrain"
 if [ -f "$COPILOT_INSTRUCTIONS" ] && grep -q "^${MARKER}" "$COPILOT_INSTRUCTIONS" 2>/dev/null; then
 	echo -e "${YELLOW}Skip${NC}    Copilot CLI (already configured)"
+elif ! agentbrain_pointer_target_ok "$COPILOT_INSTRUCTIONS" "$VAULT"; then
+	echo -e "${YELLOW}Skip${NC}    Copilot CLI (config file resolves into the agentBrain checkout)"
 else
 	agentbrain_pointer_block "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "copilot-cli.md" >>"$COPILOT_INSTRUCTIONS"
 	echo -e "${GREEN}✓${NC} Copilot CLI"

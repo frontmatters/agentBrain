@@ -15,11 +15,11 @@ Read and follow, in order:
 2. `system/agent-config/shared.md` — shared agent startup/checklist.
 3. `system/agent-config/copilot.md` — Copilot-specific behaviour.
 
-4. Read today’s daily note for context (e.g., `${VAULT}/local/daily-notes/$(date +%F).md`).
+4. Read today’s daily note for context (e.g., `${VAULT}/vault/daily-notes/$(date +%F).md`).
 
 Key reminders:
 
-- Public files describe HOW/WHERE; real user/project/security details go in `local/`.
-- Before asking for credentials, check `local/integrations/` and `local/security/`.
+- Public files describe HOW/WHERE; real user/project/security details go in `vault/`.
+- Before asking for credentials, check `vault/integrations/` and `vault/security/`.
 - Public changes require `scripts/privacy-scan.sh`.
-- Private local changes should be synced with `scripts/sync-vault.sh`.
+- Private local changes should be synced with `scripts/sync/sync-vault.sh`.

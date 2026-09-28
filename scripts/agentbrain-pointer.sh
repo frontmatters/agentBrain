@@ -12,6 +12,25 @@
 #   agentbrain_pointer_block "$VAULT" "claude.md" >> "$CLIENT_CONFIG"   # append
 #   agentbrain_pointer_block "$VAULT" "cline.md"  >  "$CLIENT_CONFIG"   # overwrite
 
+# agentbrain_pointer_target_ok <client-config-file> <checkout>
+# A client config that resolves into the agentBrain checkout or its vault is a
+# symlink into a git-tracked file: appending the pointer there edits the product
+# (or a vault note) instead of the client config, and the privacy scan then flags
+# the absolute paths it carries. Refuse, and say which link to replace.
+agentbrain_pointer_target_ok() {
+	local target="$1" checkout="$2" resolved root
+	resolved="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$target" 2>/dev/null)" || return 0
+	for root in "$checkout" "$checkout/vault"; do
+		root="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$root" 2>/dev/null)" || continue
+		case "$resolved/" in "$root"/*)
+			echo "agentBrain: not writing the pointer into $target: it resolves to $resolved, inside $root." >&2
+			echo "  Replace that symlink with a regular file, then re-run setup." >&2
+			return 1 ;;
+		esac
+	done
+	return 0
+}
+
 agentbrain_pointer_block() {
 	local vault="$1" agent_config="$2"
 	cat <<POINTER

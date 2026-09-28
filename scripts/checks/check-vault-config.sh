@@ -8,7 +8,7 @@ ROOT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)"
 # executable code must resolve the user's vault through vault.sh or vaultDir().
 # A negative case has to contain the defect it proves, so the register carries
 # those paths with a reason, the same way check-sandbox-home does. Filtering here
-# rather than in the ripgrep globs keeps the exemption visible in one file
+# rather than in the search exclusions keeps the exemption visible in one file
 # instead of hidden in a pattern list.
 _REG="$ROOT_DIR/scripts/lib/exemptions.tsv"
 _exempt_filter() {
@@ -28,10 +28,21 @@ _exempt_filter() {
 }
 
 PATTERN='(\$HOME|\$\{HOME\}|~/)\.?/?agentBrain/vault|join\([^)]*(BRAIN_ROOT|BRAIN),[[:space:]]*"vault'
-HITS="$(rg -n --glob '*.sh' --glob '*.ts' --glob '*.mjs' \
-  --glob '!**/tests/**' --glob '!**/*.test.ts' \
-  --glob '!scripts/checks/check-vault-config.sh' \
-  "$PATTERN" "$ROOT_DIR/scripts" "$ROOT_DIR/system" 2>/dev/null \
+# One engine, grep, which every supported system has: a second engine with its
+# own exclusion rules skipped different files, and once a machine without rg
+# measured nothing at all. Exclusions only look below the search roots, so a
+# checkout that sits under a folder named tests/ or node_modules/ is still
+# scanned. This file is removed by its exact path afterwards; a negative case
+# that shares its name is still scanned. -I skips binary files.
+SELF="$ROOT_DIR/scripts/checks/check-vault-config.sh"
+_search() {
+  grep -rnIE --include='*.sh' --include='*.ts' --include='*.mjs' \
+    --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=tests \
+    --exclude='*.test.ts' \
+    "$PATTERN" "$ROOT_DIR/scripts" "$ROOT_DIR/system" 2>/dev/null \
+    | { grep -vF "$SELF:" || true; }
+}
+HITS="$(_search \
   | grep -vE ':[0-9]+:[[:space:]]*(#|//|\*|echo[[:space:]]|printf[[:space:]])' \
   | _exempt_filter || true)"
 

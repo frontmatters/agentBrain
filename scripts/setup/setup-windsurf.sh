@@ -36,6 +36,8 @@ mkdir -p "$(dirname "$WINDSURF_RULES")"
 MARKER="## agentBrain"
 if [ -f "$WINDSURF_RULES" ] && grep -q "^${MARKER}" "$WINDSURF_RULES" 2>/dev/null; then
 	echo -e "${YELLOW}Skip${NC}    Windsurf (already configured)"
+elif ! agentbrain_pointer_target_ok "$WINDSURF_RULES" "$VAULT"; then
+	echo -e "${YELLOW}Skip${NC}    Windsurf (config file resolves into the agentBrain checkout)"
 else
 	agentbrain_pointer_block "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "windsurf.md" >>"$WINDSURF_RULES"
 	echo -e "${GREEN}✓${NC} Windsurf"

@@ -26,5 +26,6 @@ This is an example project note. Replace this with a description of what the pro
 - 2026-03-17: Added core feature X
 
 ## Related
-- [[Rules]] -- self-learning protocol
-- [[Patterns]] -- code patterns
+- [[patterns]]: code patterns
+- [[troubleshooting]]: problems and their fixes
+- `system/rules.md`: the self-learning protocol (framework, not a vault note)

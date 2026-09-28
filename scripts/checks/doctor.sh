@@ -127,6 +127,7 @@ framework_checks=(
 	"bash scripts/checks/check-vault-config.sh"
 	"bash scripts/checks/check-prompt-cache-hygiene.sh"
 	"bash scripts/checks/check-english-sources.sh"
+	"bash scripts/tests/test-pointer-guard.sh" # a client config linked into the checkout never gets the pointer appended
 )
 
 # Pi-agent checks — only when Pi is installed

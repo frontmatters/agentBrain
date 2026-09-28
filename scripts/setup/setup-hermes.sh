@@ -37,6 +37,8 @@ mkdir -p "$HERMES_HOME"
 MARKER="## agentBrain"
 if [ -f "$SOUL" ] && grep -q "^${MARKER}" "$SOUL" 2>/dev/null; then
 	echo -e "${YELLOW}Skip${NC}    Hermes (already configured)"
+elif ! agentbrain_pointer_target_ok "$SOUL" "$VAULT"; then
+	echo -e "${YELLOW}Skip${NC}    Hermes (config file resolves into the agentBrain checkout)"
 else
 	agentbrain_pointer_block "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "hermes.md" >>"$SOUL"
 	echo -e "${GREEN}✓${NC} Hermes (pointer appended to ${SOUL})"

@@ -31,6 +31,8 @@ mkdir -p "${GEMINI_DIR}"
 MARKER="## agentBrain"
 if [ -f "${GEMINI_MD}" ] && grep -q "^${MARKER}" "${GEMINI_MD}" 2>/dev/null; then
 	echo -e "${YELLOW}Skip${NC}    Gemini CLI (already configured)"
+elif ! agentbrain_pointer_target_ok "${GEMINI_MD}" "$VAULT"; then
+	echo -e "${YELLOW}Skip${NC}    Gemini CLI (config file resolves into the agentBrain checkout)"
 else
 	agentbrain_pointer_block "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "gemini.md" >>"${GEMINI_MD}"
 	echo -e "${GREEN}✓${NC} Gemini CLI"
