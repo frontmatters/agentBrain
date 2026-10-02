@@ -6,7 +6,6 @@ tags: [refactoring, maintenance, migration, naming]
 user-invocable: true
 resources:
   - system/rules.md
-  - scripts/checks/check-path-naming.sh
   - scripts/checks/doctor.sh
   - scripts/privacy-scan.sh
 ---
@@ -119,7 +118,7 @@ Use safe read-only commands first:
 
 ```bash
 find . -maxdepth 3 -print
-bash scripts/checks/check-path-naming.sh
+brain doctor --dev --verbose   # in the agentBrain source; includes the path-naming report
 ```
 
 For each candidate file, report:
@@ -166,9 +165,8 @@ FRONTMATTER
   tags to add/update:
 
 VALIDATION
-  bash scripts/checks/check-path-naming.sh
   bash scripts/privacy-scan.sh
-  bash scripts/checks/doctor.sh --summary
+  brain doctor --dev --summary
 
 RISKS
   compatibility concerns:
@@ -202,9 +200,8 @@ If any changed path/reference appears in this skill:
 Run:
 
 ```bash
-bash scripts/checks/check-path-naming.sh
 bash scripts/privacy-scan.sh
-bash scripts/checks/doctor.sh --summary
+brain doctor --dev --summary
 ```
 
 If `doctor.sh --summary` is too broad for the current slice, explain why and run the narrower relevant checks.
@@ -274,7 +271,7 @@ FRONTMATTER
   add tag: tech-stack if missing
 
 VALIDATION
-  check-path-naming
+  brain doctor --dev (path naming)
   privacy-scan
 ```
 

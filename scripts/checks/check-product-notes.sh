@@ -12,15 +12,26 @@
 set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR" || exit 1
+# The vault through the resolver (AGENTBRAIN_VAULT first, then <checkout>/vault),
+# not a literal vault/: a worktree has none and a vault may live elsewhere.
+# shellcheck source=scripts/lib/vault.sh
+. scripts/lib/vault.sh
+# a declared vault that is gone must not pass as "0 notes, nothing wrong"
+vault_required check-product-notes "$VAULT_DIR" || exit $?
 
 errors=0
 scanned=0
 products=0
 VALID="product experiment fork"
 
+# Reading every note's frontmatter with awk cost three processes per note: 38 s
+# on a vault of 9500 notes, where five carry kind:. Count every note, then read
+# only the ones with a kind: line (grep over all of them in one pass).
+LIST="$(mktemp)"; trap 'rm -f "$LIST"' EXIT
+find -L "$VAULT_DIR/" -name '*.md' -not -path '*/.trash/*' -print0 2>/dev/null > "$LIST"
+scanned="$(tr -cd '\0' < "$LIST" | wc -c | tr -d ' ')"
 while IFS= read -r f; do
 	[ -f "$f" ] || continue
-	scanned=$((scanned + 1))
 	fm="$(awk '/^---[[:space:]]*$/{n++; next} n==1' "$f")"
 	kind="$(printf '%s\n' "$fm" | awk '/^kind:/{sub(/^kind:[[:space:]]*/,""); print; exit}')"
 	[ -n "$kind" ] || continue
@@ -57,7 +68,7 @@ while IFS= read -r f; do
 # -L, because vault/ is a symlink into ~/.agentBrain/vault. Without it find
 # returns nothing and this check reports "passed" having read zero files, which
 # is worse than not existing: it is a green light that means nothing.
-done < <(find -L vault -name '*.md' -not -path '*/.trash/*' 2>/dev/null)
+done < <(xargs -0 grep -lE '^kind:' < "$LIST" 2>/dev/null)
 
 if [ "$errors" -gt 0 ]; then
 	echo "check-product-notes: $errors error(s)" >&2

@@ -3,24 +3,22 @@
 # vault-pre-commit.sh — the vault's pre-commit gate, versioned SOURCE.
 #
 # Installed into every vault by scripts/sync/sync-vault.sh (idempotent
-# self-heal, into whatever directory core.hooksPath names). This file once
-# carried only the note-id layer while a hand-installed hook ran four; a fresh
-# install got no secret scan, no NDA gate and no intake check at commit time,
-# and nothing compared the two. This is now the one copy.
+# self-heal, into whatever directory core.hooksPath names). This is the one
+# copy, so every vault gets the same layers at commit time.
 #
-# pre-commit (local/ repo) — validates UUID5 frontmatter on staged .md files.
-#
-# Per the agent-agnostic + always-validate principle: every commit to local/
-# should pass the same content rules that doctor.sh enforces.
+# pre-commit (vault/ repo): every commit to the vault should pass the same
+# content rules that doctor.sh enforces.
 #
 # Layers:
 #   1. validate-note-id.sh on each staged .md (cheap, per-file)
-#   2. check-vault-private.sh — plaintext-secret scan over the working tree.
+#   2. check-vault-private.sh: plaintext-secret scan over the working tree.
 #      This vault is private, so private URLs and project names are allowed; the
-#      scan blocks high-confidence credential patterns only. It ran in doctor
-#      before, which is after the fact — a pushed secret stays in the history.
-#   3. (deferred) full check-vault-content.sh — covers wikilinks too but scans
-#      the entire tree; would slow commits noticeably
+#      scan blocks high-confidence credential patterns only. Doctor alone would
+#      catch it after the fact, and a pushed secret stays in the history.
+#   3. check-nda.sh --staged: owner material outside its space
+#   4. check-intake.sh --staged: invisible characters carried in from outside
+#   The full check-vault-content.sh (wikilinks too) scans the entire tree and
+#   would slow every commit, so it stays in doctor.
 #
 # Skip-escape: COMMIT_SKIP_VALIDATE=1 git commit … (use sparingly)
 
@@ -35,9 +33,21 @@ fi
 BRAIN_DIR="${BRAIN_DIR:-$(realpath ~/agentBrain 2>/dev/null \
                        || (cd ~/agentBrain 2>/dev/null && pwd -P))}"
 VALIDATOR="$BRAIN_DIR/scripts/validate-note-id.sh"
+# This hook is installed as a copy inside the vault, so the library cannot sit
+# beside it: it is found through BRAIN_DIR, and the vault is asked for BY that
+# root. Left to itself the library answers for the checkout its own file lives
+# in, which is another brain whenever BRAIN_DIR/scripts is a link.
+if [ -f "$BRAIN_DIR/scripts/lib/vault.sh" ]; then
+  # shellcheck source=scripts/lib/vault.sh
+  . "$BRAIN_DIR/scripts/lib/vault.sh"
+  VAULT_DIR="$(vault_dir "$BRAIN_DIR")"
+else
+  echo "pre-commit (vault/): scripts/lib/vault.sh not found under $BRAIN_DIR — skipping" >&2
+  exit 0
+fi
 
 if [ ! -x "$VALIDATOR" ]; then
-  echo "pre-commit (local/): validate-note-id.sh not found at $VALIDATOR — skipping" >&2
+  echo "pre-commit (vault): validate-note-id.sh not found at $VALIDATOR — skipping" >&2
   exit 0
 fi
 
@@ -51,10 +61,10 @@ if [[ ${#staged[@]} -eq 0 ]]; then
   exit 0
 fi
 
-# Validate each. The repo root maps to `local/` inside the brain.
+# Validate each. The repo root is the vault (VAULT_DIR).
 fail=0
 for rel_local in "${staged[@]}"; do
-  abs="$BRAIN_DIR/vault/$rel_local"
+  abs="$VAULT_DIR/$rel_local"
   if [ -f "$abs" ]; then
     if ! "$VALIDATOR" "$abs"; then
       fail=1
@@ -65,7 +75,7 @@ done
 if [ "$fail" -ne 0 ]; then
   echo "" >&2
   echo "✗ pre-commit (vault/) BLOCKED: at least one staged file failed UUID5 validation." >&2
-  echo "  Fix: regenerate id via 'bash \$BRAIN_DIR/scripts/uuid5-gen.sh local/<path-no-ext>'" >&2
+  echo "  Fix: regenerate id via 'bash \$BRAIN_DIR/scripts/uuid5-gen.sh vault/<path-no-ext>'" >&2
   echo "  Bypass (use sparingly): COMMIT_SKIP_VALIDATE=1 git commit …" >&2
   exit 1
 fi
@@ -88,7 +98,7 @@ fi
 
 # --- layer 3: owner material outside its space ------------------------------
 # Ratchet, not amnesty: the baseline of pre-existing material is exempted in
-# local/.nda-allow, so this blocks what is NEW. Staged-only, so it costs ~50ms.
+# vault/.nda-allow, so this blocks what is NEW. Staged-only, so it stays cheap.
 NDA_CHECK="$BRAIN_DIR/scripts/checks/check-nda.sh"
 if [ -x "$NDA_CHECK" ]; then
   if ! bash "$NDA_CHECK" --staged >/tmp/agentbrain-nda.$$ 2>&1; then

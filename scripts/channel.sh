@@ -18,7 +18,9 @@ set -euo pipefail
 
 
 BRAIN="${AGENTBRAIN_DIR:-$HOME/agentBrain}"
-CFG="$BRAIN/vault/update/config.json"
+# shellcheck source=scripts/lib/vault.sh
+. "$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)/lib/vault.sh"
+CFG="$VAULT_DIR/update/config.json"
 # Repo the channel refs resolve against: the checkout the brain alias points
 # at, else the installer's default ~/Developer/agentBrain. Mirrors
 # brain-update.sh's _default_repo.

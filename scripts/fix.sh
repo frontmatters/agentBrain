@@ -7,10 +7,10 @@
 #   1. regenerate system/addons/clients.md when it drifted from the manifests
 #   2. .github/skills/ symlinks: recreate missing ones, remove dangling ones
 #   3. restore lost exec bits on scripts/, .githooks/ and addon entrypoints
-#   4. namespace backup into local/
+#   4. namespace backup into vault/
 #   5. ~/agentBrain alias repair
 #   6. re-sync brain skills into agent dirs (setup-skills.sh) on drift
-#   7. create expected local/ working dirs
+#   7. create expected vault/ working dirs
 #
 # Anything requiring judgement (content, manifests, privacy) stays manual —
 # fix.sh repairs plumbing, never knowledge.
@@ -65,9 +65,9 @@ while IFS= read -r -d '' f; do
 done < <(find scripts .githooks system/addons/*/bin -maxdepth 1 -type f \
 	\( -name '*.sh' -o -path '*/bin/*' -o -path '.githooks/*' \) ! -perm -u+x -print0 2>/dev/null)
 
-# ── 4. namespace backup into local/ (rides the private repo) ──
+# ── 4. namespace backup into vault/ (rides the private repo) ──
 # Only the namespace is backed up: brain.json's path/created fields differ per
-# checkout (dev vs live share local/), so a full-file backup would flap.
+# checkout (dev vs live share vault/), so a full-file backup would flap.
 if [ -f brain.json ] && [ -d vault ]; then
 	ns="$(python3 -c 'import json;print(json.load(open("brain.json")).get("namespace",""))' 2>/dev/null || true)"
 	if [ -n "$ns" ]; then

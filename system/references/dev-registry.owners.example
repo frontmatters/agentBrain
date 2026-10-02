@@ -1,5 +1,5 @@
 # dev-registry owners — TEMPLATE (committed). Copy to the private mirror:
-#     cp system/references/dev-registry.owners.example local/references/dev-registry.owners
+#     cp system/references/dev-registry.owners.example vault/references/dev-registry.owners
 # then list YOUR git orgs / usernames / author-name fragments — one regex per line.
 # A checkout whose git remote or commit-author matches any of these is classified "eigen".
 # Lines starting with # are ignored; patterns are joined with | (extended regex, case-insensitive).

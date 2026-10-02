@@ -25,6 +25,14 @@ resolve_brain_dir() {
 }
 
 BRAIN_DIR="$(resolve_brain_dir)"
+# The resolver is code and belongs to this script's checkout; BRAIN_DIR is data
+# and may be a fixture that holds a vault and nothing else. So the library is
+# found from here first, and the vault is asked for BY the root that was given.
+_VAULT_LIB="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../../.." 2>/dev/null && pwd -P || true)/scripts/lib/vault.sh"
+[ -f "$_VAULT_LIB" ] || _VAULT_LIB="$BRAIN_DIR/scripts/lib/vault.sh"
+# shellcheck source=/dev/null
+. "$_VAULT_LIB"
+VAULT_DIR="$(vault_dir "$BRAIN_DIR")"
 source "$BRAIN_DIR/system/lib/visibility.sh"
 
 INCLUDE_TRASH=0
@@ -38,7 +46,7 @@ done
 declare -a HIDDEN_FILES=()
 while IFS= read -r f; do
     is_hidden "$f" && HIDDEN_FILES+=("$f")
-done < <(find "$BRAIN_DIR/vault/" -name "*.md" -type f \
+done < <(find "$VAULT_DIR/" -name "*.md" -type f \
     -not -path "*/.trash/*" \
     -not -path "*/sessions/*" \
     -not -path "*/daily-notes/*" 2>/dev/null)
@@ -51,7 +59,7 @@ fi
 if [ ${#HIDDEN_FILES[@]} -gt 0 ]; then
     printf '%-4s %-12s %-17s %s\n' "#" "TYPE" "LAST TOUCHED" "PATH"
     for f in "${HIDDEN_FILES[@]}"; do
-        rel="${f#$BRAIN_DIR/}"
+        rel="vault/${f#"$VAULT_DIR"/}"
         type=$(echo "$rel" | awk -F/ '{print $2}')
         # LAST TOUCHED: mtime (consistent with the other /list-* skills)
         if touched=$(date -r "$f" "+%Y-%m-%d %H:%M" 2>/dev/null); then
@@ -68,7 +76,7 @@ fi
 
 declare -a TRASH_BATCHES=()
 if [ "$INCLUDE_TRASH" -eq 1 ]; then
-    TRASH_DIR="$BRAIN_DIR/vault/.trash/forget"
+    TRASH_DIR="$VAULT_DIR/.trash/forget"
     if [ -d "$TRASH_DIR" ]; then
         for batch in "$TRASH_DIR"/*/; do
             [ -d "$batch" ] || continue
@@ -93,13 +101,13 @@ if [ "$INCLUDE_TRASH" -eq 1 ]; then
     fi
 fi
 
-CACHE="$BRAIN_DIR/vault/.hidden-index.json"
+CACHE="$VAULT_DIR/.hidden-index.json"
 {
     printf '{"hidden":['
     first=1
     idx_cache=1
     for f in "${HIDDEN_FILES[@]+"${HIDDEN_FILES[@]}"}"; do
-        rel="${f#$BRAIN_DIR/}"
+        rel="vault/${f#"$VAULT_DIR"/}"
         [ $first -eq 0 ] && printf ','
         first=0
         hidden_at=$(grep -E '^hidden-at:' "$f" | head -1 | awk '{print $2}')

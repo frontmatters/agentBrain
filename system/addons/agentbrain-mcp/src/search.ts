@@ -35,7 +35,7 @@ export function isExcluded(relPath: string): boolean {
 // so nothing becomes unreachable — only unranked.
 const DEFAULT_SKIP = ["local/.trash/", "local/graphify-out/", "local/quarantine/"];
 
-// Vault-local override at `local/.searchignore`: one brain-relative path prefix per
+// Vault-local override at `vault/.searchignore`: one brain-relative path prefix per
 // line, `#` for comments, and a leading `!` to re-admit one of the defaults. Prefixes
 // rather than globs on purpose — every case this exists for is "an entire directory",
 // and a glob dialect is a thing to learn, document and get wrong.
@@ -61,7 +61,7 @@ export function isSkipped(relPath: string, prefixes = skipPrefixes()): boolean {
   return prefixes.some((p) => norm === p || norm.startsWith(p));
 }
 
-// Vault-local synonym map at `local/.searchmap`, one concept per line:
+// Vault-local synonym map at `vault/.searchmap`, one concept per line:
 //   term: synonym1, synonym2, synonym3
 // Same spirit as `.searchignore`: `#` comments and blank lines are ignored, and a
 // malformed line (no colon, empty key, or no synonyms after the colon) is skipped

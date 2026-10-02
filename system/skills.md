@@ -69,7 +69,7 @@ context cheap; the detail lives once, in each skill's `SKILL.md`.
 | `/save-troubleshoot` | Log a problem + solution | `system/skills/save-troubleshoot/SKILL.md` |
 | `/scanman` | Analyze a repo end-to-end: architecture, dependencies, runtime flows, redesign distillation | `system/skills/scanman/SKILL.md` |
 | `/shorthand` | Manage personal abbreviations (agent-agnostic glossary + shell aliases) | `system/skills/shorthand/SKILL.md` |
-| `/skills` | Manage the local skill lifecycle: list/sources/audit/sync + add-repo (thin router over skill-finder/promote/addons) | `system/skills/skills/SKILL.md` |
+| `/skills` | Manage the skill lifecycle: the full catalogue (list, --json), sources/audit/sync + add-repo (thin router over skill-finder/promote/addons) | `system/skills/skills/SKILL.md` |
 | `/technique-transplant` | Harvest a reference site's design/motion technique and re-apply it onto your own components | `system/skills/technique-transplant/SKILL.md` |
 | `/treasure-hunt` | Turn one found bug/anti-pattern instance into a full sweep + durable detector, not a one-off fix | `system/skills/treasure-hunt/SKILL.md` |
 | `/understand` | Knowledge graph of the agentBrain codebase | `system/skills/understand/SKILL.md` |
@@ -82,6 +82,10 @@ context cheap; the detail lives once, in each skill's `SKILL.md`.
 | `/web-3d` | 3D/WebGL/WebXR on the web (Three.js, R3F, Babylon, PlayCanvas, PixiJS, Spline, A-Frame, lightweight effects); engine-selection + performance/a11y guardrails | `system/skills/web-3d/SKILL.md` |
 | `/weekly-review` | Weekly markdown summary of vault activity (learnings/projects/backlog/sessions) | `system/skills/weekly-review/SKILL.md` |
 | `/youtube-digest` | Sync YouTube channel transcripts into the vault, or fetch a single video | `system/skills/youtube-digest/SKILL.md` |
+
+This table lists the framework skills. The full catalogue, with the vault's own
+skills and every add-on skill (enabled or available, with its kind), is
+`bash system/skills/skills/bin/skills list` (`--json` for tools).
 
 Some commands ship with an addon or script rather than a skill directory:
 `/journal` (session-journal addon — `system/addons/session-journal/README.md`) and

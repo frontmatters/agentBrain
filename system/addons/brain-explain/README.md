@@ -15,8 +15,10 @@ bans) are enforced by `scripts/checks/check-explainers.sh` for every theme.
 ## Use
 - `brain-explain render <note.md> [--theme <name>] [--out <path>]` — render to stdout,
   or to `<path>` with `--out`.
-- `brain-explain theme new <name> --prompt "..."` — generate a norm-compliant theme.
+- `BRAIN_EXPLAIN_LLM=ollama:<local-model> brain-explain theme new <name> --prompt "..."` — generate a norm-compliant theme. Choose the backend explicitly; no prompt is sent when it is unset. Only use a cloud model when you intend to send the prompt there.
 - `brain-explain onboard` — first-run theme setup.
+
+Personal theme setup and generation honour `AGENTBRAIN_VAULT` when the vault is external.
 
 Themes: `clean-flat` (default), `editorial`, `whiteboard`, plus your own under
 `vault/explainers/themes/`. The theme resolves as `--theme`, then the note's `theme:`

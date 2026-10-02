@@ -12,7 +12,7 @@ resolve_brain_dir() {
     # Script-relative first: <root>/system/skills/<name>/bin/<self>. cd -P
     # resolves symlinked skill dirs, so dev/sandbox checkouts stay self-contained.
     local root
-    root="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../../.." 2>/dev/null && pwd -P || true)"
+    root="$(cd -P "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../../.." 2>/dev/null && pwd -P || true)"
     if [ -n "$root" ] && [ -f "$root/system/rules.md" ]; then
         echo "$root"; return 0
     fi
@@ -28,7 +28,7 @@ resolve_brain_dir() {
 
 BRAIN_DIR="$(resolve_brain_dir)"
 
-# local/ and system/ may live on different filesystems (e.g., private vault on
+# vault/ and system/ may live on different filesystems (e.g., private vault on
 # a separate volume). Resolve each scope root independently so prefix checks
 # stay correct regardless of how the mirror is mounted.
 resolve_scope_root() {
@@ -48,8 +48,13 @@ resolve_scope_root() {
 
 # The private root is the vault, resolved like every other script
 # (scripts/lib/vault.sh): vault/, the legacy local/ alias, or AGENTBRAIN_VAULT.
-# shellcheck source=/dev/null
-. "$BRAIN_DIR/scripts/lib/vault.sh"
+# A copy without scripts/lib (a test fixture) falls back to the checkout's own.
+if [ -f "$BRAIN_DIR/scripts/lib/vault.sh" ]; then
+	# shellcheck source=/dev/null
+	. "$BRAIN_DIR/scripts/lib/vault.sh"
+else
+	VAULT_DIR="${AGENTBRAIN_VAULT:-$BRAIN_DIR/vault}"
+fi
 LOCAL_ROOT="$(cd "$VAULT_DIR" 2>/dev/null && pwd -P || echo "$VAULT_DIR")"
 SYSTEM_ROOT="$(resolve_scope_root system)"
 MIRROR_FOLDERS=(addons agent-config integrations pi-config skills)
@@ -202,9 +207,9 @@ if [ -e "$TARGET" ]; then
 fi
 
 # --- English-only language gate (promote local -> system only) ---
-# Policy: everything outside local/ must be in English. promote cannot translate
+# Policy: everything outside vault/ must be in English. promote cannot translate
 # (no LLM), so refuse to move Dutch markdown INTO system/ and tell the caller to
-# translate first. demote (system -> local) is exempt — Dutch is fine in local/.
+# translate first. demote (system -> vault) is exempt — Dutch is fine in vault/.
 # Fixtures may stay Dutch (they simulate a local vault). Same detector as
 # doctor's check-english-sources, so the two gates cannot drift.
 if [ "$VERB" = "promote" ]; then

@@ -41,7 +41,7 @@ not use it to record a demo. Do not leave it running unattended: it holds a brow
 
 ```bash
 # start (background; the owner works in the window that opens)
-python3 ~/agentBrain/system/skills/browser-monitor/bin/monitor.py \
+uv run --script ~/agentBrain/system/skills/browser-monitor/bin/monitor.py \
   --url http://127.0.0.1:3000/admin/records \
   --log .tmp/browser-monitor/$(date +%Y%m%d-%H%M).log \
   --watch record-editor:value.list \
@@ -51,7 +51,7 @@ python3 ~/agentBrain/system/skills/browser-monitor/bin/monitor.py \
 tail -20 .tmp/browser-monitor/*.log
 
 # stop and write the report the next agent reads
-python3 ~/agentBrain/system/skills/browser-monitor/bin/monitor.py --stop --log <same path>
+uv run --script ~/agentBrain/system/skills/browser-monitor/bin/monitor.py --stop --log <same path>
 ```
 
 `--watch <tag>:<path>` polls one element's state every few seconds and logs it only

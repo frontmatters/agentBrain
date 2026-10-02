@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# new-space.sh — scaffold a sealed agentBrain space passport (local/spaces/<slug>/index.md).
+# new-space.sh — scaffold a sealed agentBrain space passport (vault/spaces/<slug>/index.md).
 #
-# A space is a per-owner (client/employer/…) compartment of local/, sealed out of
-# the personal vault by local/.gitignore and versioned as its own nested git repo.
+# A space is a per-owner (client/employer/…) compartment of vault/, sealed out of
+# the personal vault by vault/.gitignore and versioned as its own nested git repo.
 # This writes ONLY the passport; it does not create the nested repo — run
 # `scripts/sync/sync-space.sh <slug>` after setting `sync:` to a remote to seal + back up.
 #
@@ -57,7 +57,7 @@ while [ $# -gt 0 ]; do
 done
 
 # Slug guard — same rule as new-note.sh --space: reject anything that could escape
-# local/spaces/<slug>/ (empty, '/', '..', leading dot, or chars outside [a-z0-9._-]).
+# vault/spaces/<slug>/ (empty, '/', '..', leading dot, or chars outside [a-z0-9._-]).
 case "$SLUG" in
 	*[!a-z0-9._-]* | "" | .* | *..* )
 		echo "new-space: invalid slug: '$SLUG' (allowed: lowercase a-z 0-9 . _ -, no '/' or '..')" >&2
@@ -128,7 +128,7 @@ if [ ! -e "$SPACE_DIR/.git" ]; then
 	fi
 fi
 
-# Fail-closed second layer, one level up. The `spaces/*` rule in local/.gitignore
+# Fail-closed second layer, one level up. The `spaces/*` rule in vault/.gitignore
 # states the intent; this holds when that rule is edited away or a checkout
 # arrives without it. It constrains nothing inside a space: a nested repository
 # never consults a parent's ignore rules.

@@ -5,6 +5,7 @@
 //! Preserves existing YAML frontmatter on every write.
 
 use crate::frontmatter;
+use crate::init::workspace_dir;
 use crate::init::find_agentbrain_dir;
 use anyhow::{Context, Result};
 use ignore::WalkBuilder;
@@ -19,9 +20,7 @@ pub fn run(repo_path: &Path, slug: &str) -> Result<()> {
         .canonicalize()
         .with_context(|| format!("canonicalize {}", repo_path.display()))?;
     let agentbrain_dir = find_agentbrain_dir()?;
-    let target = agentbrain_dir
-        .join("local/research/repo-distill")
-        .join(slug);
+    let target = workspace_dir(&agentbrain_dir, slug);
 
     if !target.is_dir() {
         anyhow::bail!(

@@ -17,7 +17,7 @@ experiment, client project, library or AgentBrain addon.
 ## Minimum factory
 
 ```text
-<tool>-factory/
+~/Developer/<area>/<tool>.factory/
 ├── <tool>-dev/
 ├── <tool>-next/
 ├── <tool>/              # validated live lane
@@ -28,6 +28,17 @@ experiment, client project, library or AgentBrain addon.
 ├── VERSION
 └── CHANGELOG.md
 ```
+
+**Name and place.** A factory directory is `<tool>.factory`, inside the area
+it belongs to: `~/Developer/<area>/mytool.factory`,
+`~/Developer/clients/<client>/<tool>.factory`. Never `<tool>-factory` and never
+directly in `~/Developer/`. The suffix makes a factory recognisable in any
+listing and lets `factory-registry.sh` find it at any depth up to
+`factoryDepth`; both values live in `layout.json`. Before creating one, look at
+the existing factories in that area (`factory-registry.sh`) and copy their
+layout. `factory-doctor.sh` fails on any other name. A factory that already
+existed under another name keeps it only with `"legacyName": "<reason>"` in its
+`factory.json`; that is a note, not a pass for new factories.
 
 `R&D/` must use the shared layout from `rnd-init`:
 `dashboards/`, `decisions/`, `captures/`, `renders/`, `logs/` and
@@ -122,11 +133,70 @@ bash ~/agentBrain/system/skills/factory-builder/bin/factory-rollback.sh --confir
 bash ~/agentBrain/system/skills/factory-builder/bin/factory-registry.sh
 bash ~/agentBrain/system/skills/factory-builder/bin/factory-inventory.sh
 bash ~/agentBrain/system/skills/factory-builder/bin/factory-obeya.sh --write
+bash ~/agentBrain/system/skills/factory-builder/bin/factory-link.sh --factory .
+bash ~/agentBrain/system/skills/factory-builder/bin/factory-paths.sh show
 ```
 
-`factory-doctor.sh` is the read-only consistency gate. `factory-registry.sh` scans `~/Developer/*/factory.json` and writes a machine-readable registry plus a Markdown dashboard. `factory-inventory.sh` scans project-like directories and writes evidence for deciding which projects should become factories. Its heuristics are discovery hints only; it never registers a factory automatically. `factory-check.sh` is
+`factory-doctor.sh` is the read-only consistency gate. It runs `factory-leakscan.sh` over tracked shell, TypeScript, JavaScript and Python source in all three lanes, failing on variable secrets passed as command arguments. Run `factory-leakscan.sh --factory .` alone for a focused scan. `factory-registry.sh` finds every `<tool>.factory` under `~/Developer` (and any `factory.json` directly in it) and writes a machine-readable registry plus a Markdown dashboard. `factory-inventory.sh` scans project-like directories and writes evidence for deciding which projects should become factories. Its heuristics are discovery hints only; it never registers a factory automatically. `factory-check.sh` is
 strict and blocks dirty/incomplete release candidates. Promotion and rollback
 are deliberately separate commands because they change lane state.
+
+## Hard rule: every tool has a version
+
+Enforced by `factory-doctor.sh`:
+
+- Every factory has a version of record: a `VERSION` (or `*_VERSION`) file, or
+  a `version` in a lane's `package.json`. Without one the doctor fails.
+- Every command (`cli` in `factory.json`) should answer `--version` with exit 0
+  and a version number. `factory-link.sh --check` fails if next does not; a
+  missing live response is INFO when next passes, so a new candidate can be
+  checked before live is updated.
+- An app without a command (a `.app`) carries its version of record the same
+  way; its bundle shows it.
+
+## Where a tool keeps its state
+
+One variable per tool, declared in `factory.json`, and one central file to set
+them all:
+
+```json
+"paths": { "env": "MYTOOL_HOME", "default": "~/.mytool",
+           "holds": "config, sessions, browser profiles" }
+```
+
+- Name it `<TOOL>_HOME` for a new tool and keep everything the tool writes
+  under it. `extra` (same fields) only for a tool with a second place, such as
+  a secrets tool's keychains.
+- The central file is `~/.config/factories/paths.env` (`KEY=value`, parsed and
+  never run). The shell loads it through a managed rc block
+  (`factory-paths.sh rc`), and every `<tool>-next` wrapper loads it the same
+  way. A variable already set in the environment wins.
+- `factory-paths.sh show` lists every tool's variable and the value in effect;
+  `init` writes the central file with each variable commented out.
+- To move a tool: `factory-paths.sh set MYTOOL_HOME /new/place` writes the
+  setting and moves the data, and refuses when the new place already holds
+  data (`--no-move` changes only the setting). Open a new shell afterwards.
+- `factory-doctor.sh` notes a command without a `paths` block and fails a
+  malformed one.
+
+## The next lane on the PATH
+
+The bare command (`<tool>`) runs live or an installed release. Beside it,
+`<tool>-next` runs the next lane, so a release candidate is used for real work
+before it is promoted. Side by side, never a switch: the lane that runs is
+always in the command's name. There is no `<tool>-dev`; develop in the lane.
+
+```json
+"cli": { "name": "mytool", "entry": "src/cli.ts", "run": "bun",
+         "nextChangesData": "optional: what next migrates in data live shares" }
+```
+
+`factory-link.sh --factory .` writes `~/.local/bin/<name>-next` (a generated
+wrapper; it never overwrites a file it did not make). Lanes share the user's
+config and data: a next lane that migrates them sets `nextChangesData`, and the
+wrapper says so on every run. `factory-doctor.sh` notes a missing or stale
+wrapper and fails on an entry the next lane does not have. A factory without a
+command (an app, a library) leaves `cli` out.
 
 ## Lane placement policy
 
@@ -142,6 +212,7 @@ explicit compatibility state, not an error to fix by copying files.
 - The `live` lane is a release/source baseline; the installed or deployed
   runtime is a separate production artifact.
 - Normal changes flow `dev -> next -> live`. Before testing or promoting, `factory-lane-origin.sh` requires live's HEAD to be reachable from next and next's HEAD from dev. A next-only commit must reach dev; a live-only hotfix must reach next **and** dev. This checks ancestry, not where a human originally typed the change.
+- A live lane may be a separate repository (a published copy) only with `"lanePolicy": {"live": "separate-repo"}`. The deploy must record the dev commit it copied with `git -C <live> config factory.sourceCommit <sha>` and refuse a dirty dev tree. `factory-lane-origin.sh` then requires that commit to be reachable from next and every file live tracks to match it; files the deploy leaves out may be missing.
 
 Example:
 

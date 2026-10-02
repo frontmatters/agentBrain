@@ -4,7 +4,7 @@
 # type-aware threshold. On-demand report (NOT doctor-wired), always exits 0 —
 # staleness is an opportunity to review/archive, not a failure (cf. report-orphans.sh).
 #
-# The "last touched" date is the LATER of the access-index `last` (local/.access-index.json)
+# The "last touched" date is the LATER of the access-index `last` (vault/.access-index.json)
 # and the note's frontmatter `date`. Weight never hides a search hit; this report is the
 # only place usage drives an action, and even here it only *suggests*.
 #

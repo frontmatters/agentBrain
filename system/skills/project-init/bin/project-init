@@ -23,6 +23,15 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
 BRAIN="$(cd "$HERE/../../../.." && pwd)"
+# The vault through the resolver (AGENTBRAIN_VAULT and friends), never the
+# checkout's own folder by assumption; a copy without scripts/lib (a test
+# fixture) falls back to it.
+if [ -f "$BRAIN/scripts/lib/vault.sh" ]; then
+	# shellcheck source=/dev/null
+	. "$BRAIN/scripts/lib/vault.sh"
+else
+	VAULT_DIR="${AGENTBRAIN_VAULT:-$BRAIN/vault}"
+fi
 
 DIR="."; TYPE=""; LIST=0; DO_RND=1; DRY=0
 while [ $# -gt 0 ]; do
@@ -48,9 +57,9 @@ DIR="$(cd "$DIR" && pwd)"
 # vault/preferences is scoped; check-preference-scopes fails on a loose .md
 # directly in it, so a types note lives in a scope or at the vault root.
 CANDIDATES="
-$BRAIN/vault/preferences/personal/author-identity-by-project-type.md
-$BRAIN/vault/preferences/organization/author-identity-by-project-type.md
-$BRAIN/vault/project-types.md
+${VAULT_DIR}/preferences/personal/author-identity-by-project-type.md
+${VAULT_DIR}/preferences/organization/author-identity-by-project-type.md
+${VAULT_DIR}/project-types.md
 "
 [ -n "${PROJECT_TYPES_FILE:-}" ] && CANDIDATES="$PROJECT_TYPES_FILE"
 

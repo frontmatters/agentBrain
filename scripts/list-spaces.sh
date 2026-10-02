@@ -4,7 +4,7 @@
 #
 # A space slug is deliberately opaque: it is the identifier that travels into
 # commits, reports and shared notes, so it must not carry the owner's name. The
-# name lives in exactly one place — the passport at local/spaces/<slug>/index.md
+# name lives in exactly one place — the passport at vault/spaces/<slug>/index.md
 # — and this listing is the route to it.
 #
 # By default the owner is NOT printed. Terminal output ends up in transcripts,
@@ -15,7 +15,11 @@
 set -uo pipefail
 
 BRAIN="${BRAIN_DIR:-$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"
-SPACES="$BRAIN/vault/spaces"
+# The lib sits beside this script; $BRAIN is overridable to a fixture and would
+# not have it. The vault follows $BRAIN.
+# shellcheck source=scripts/lib/vault.sh
+. "$(cd -P "$(dirname "${BASH_SOURCE[0]}")/lib" && pwd -P)/vault.sh"
+SPACES="$(vault_dir "$BRAIN")/spaces"
 SHOW_OWNER=0; AS_JSON=0
 for a in "$@"; do
   case "$a" in
@@ -36,15 +40,9 @@ for d in "$SPACES"/*/; do
   slug="$(basename "$d")"
   idx="$d/index.md"
   rel="$(field "$idx" relation)"
-  # A readable name, but only where there is nothing to hide. `display` is
-  # refused on a confidential space by check-space-boundary, so pairing it with
-  # the slug here can never leak an owner: a space that has one has already
-  # declared it is not confidential.
-  disp="$(field "$idx" display)"
-  conf="$(field "$idx" confidential)"
-  [ "$conf" = "true" ] && disp=""
+  # Passport display names are not part of the public space schema; always
+  # print the opaque slug and reveal owner only when explicitly requested.
   label="$slug"
-  [ -n "$disp" ] && label="$disp ($slug)"
   sid="$(field "$idx" space-id)"
   notes="$(find "$d" -name '*.md' -not -path '*/.git/*' | wc -l | tr -d ' ')"
   # Ahead of its own remote = confidential work that exists in one place only.

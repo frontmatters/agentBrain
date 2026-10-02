@@ -12,7 +12,7 @@ Gemini CLI reads hierarchical context from `GEMINI.md` files. The global user co
 ## Gemini-specific rules
 
 - Follow `system/agent-config/shared.md` and `system/rules.md`.
-- `scripts/setup/setup.sh` appends a thin agentBrain pointer to `~/.gemini/GEMINI.md` when Gemini CLI is detected or when `~/.gemini/` already exists.
+- `scripts/setup/setup.sh` refreshes a marked agentBrain pointer (migrating legacy blocks and preserving surrounding user text) to `~/.gemini/GEMINI.md` when Gemini CLI is detected or when `~/.gemini/` already exists.
 - Keep `~/.gemini/GEMINI.md` as a pointer file; detailed shared behaviour belongs in `shared.md`.
 - Preference scopes live under:
   - `vault/preferences/organization/`

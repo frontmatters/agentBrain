@@ -3,7 +3,7 @@
 # check-shorthand.sh — doctor drift-guard for the shorthand addon.
 #
 # Invariant (only when the addon is enabled): the generated targets — the glossary
-# note (local/preferences/personal/shorthand.md) and the ~/.zshrc alias block — must
+# note (vault/preferences/personal/shorthand.md) and the ~/.zshrc alias block — must
 # match a fresh `apply` of the merged system+local sources. Catches "edited a source
 # but forgot to run apply". Mirrors check-skill-links' enabled-gated style.
 #

@@ -9,7 +9,7 @@ id: e9826d18-9b5d-5310-9683-7778418b0c80
 
 Use this checklist when onboarding Pi + agentBrain in a corporate environment.
 Keep this file public-safe: it defines the process only. Real company names, domains,
-policies, endpoints, and credential details belong in `local/`.
+policies, endpoints, and credential details belong in `vault/`.
 
 ## Goals
 
@@ -36,18 +36,18 @@ A corporate-ready setup should answer these before agents start writing code:
 
 ### 1. Policy capture
 
-Create private local notes from the local starter templates:
+Create private notes in your vault (no starter template ships for these; write them with `scripts/new-note.sh` so the frontmatter is correct):
 
 ```text
-local/security/corporate-onboarding.md
-local/integrations/corporate-agent-policy.md
+vault/security/corporate-onboarding.md
+vault/integrations/corporate-agent-policy.md
 ```
 
 Record only references to policies and helpers. Do not paste secrets.
 
 ### 2. Network and package access
 
-Document private details in `local/integrations/corporate-agent-policy.md`:
+Document private details in `vault/integrations/corporate-agent-policy.md`:
 
 - Corporate proxy requirements (`HTTPS_PROXY`, certificate trust, VPN state).
 - Approved package managers and registries.
@@ -59,8 +59,8 @@ Document private details in `local/integrations/corporate-agent-policy.md`:
 Before asking a user for a token, agents must check:
 
 ```text
-local/integrations/
-local/security/
+vault/integrations/
+vault/security/
 ```
 
 Preferred corporate patterns:
@@ -95,17 +95,19 @@ For each repo or project:
 Run:
 
 ```text
-/onboard corporate
+/onboard organization
 ```
 
-The agent should ask only for policy choices and references, not secrets.
+This captures the organization scope (`vault/preferences/organization/`); run
+`/onboard team` for team conventions. The agent should ask only for policy choices and
+references, not secrets.
 
 ### 7. Validation gate
 
 Run:
 
 ```bash
-bash scripts/checks/doctor.sh
+brain doctor
 bash scripts/privacy-scan.sh
 PI_AUTO_UPDATE=0 pi --offline --list-models
 ```

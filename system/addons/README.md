@@ -56,12 +56,13 @@ Unlike `system/skills/` and `vault/skills/`, an addon's skill is **only**
 linked while the addon is enabled (`vault/addons/<id>/enabled` present) — the
 link is created/removed automatically by:
 
-- `bash scripts/addons.sh enable|disable <id>` — syncs just that addon's link
-  for every agent (`sync_addons_for_agent` in `scripts/setup/setup-skills.sh`).
+- `bash scripts/addons.sh enable|disable <id>` — syncs addon links for detected
+  Claude Code, Copilot CLI and Pi installations (`sync-addons` in
+  `scripts/setup/setup-skills.sh`), without reconfiguring Pi's extensions.
 - `bash system/skills/skills/bin/skills sync` — full re-wire pass (also
   checks `system/skills.md` index parity).
-- Pi specifically is wired by `configure-pi.sh` (own skills dir + ignore
-  list), sharing the same linking logic via `scripts/lib/skills.sh`.
+- Initial/full Pi configuration remains in `configure-pi.sh` (own skills dir +
+  ignore list). Both paths share the linker in `scripts/lib/skills.sh`.
 
 So: scaffold a skill-bearing addon with **/addon-create**, `enable` it, then
 it is a first-class agentBrain skill indistinguishable in wiring from a
@@ -99,6 +100,33 @@ bash scripts/addons.sh registry add <name> <url>      # add a named registry
 bash scripts/addons.sh registry remove <name>         # remove a named one
 bash scripts/addons.sh registry default [<url>|reset] # per-machine default (devs: point at a private mirror)
 ```
+
+### A private registry
+
+A registry that needs a token, such as a private Gitea or GitHub repository,
+names where the token lives, never the token itself:
+
+```bash
+# store the token once, in the macOS keychain
+security add-generic-password -a "$USER" -s MY_REGISTRY_TOKEN -w
+bash scripts/addons.sh registry add private <url-of-index.json> --token-from keychain:MY_REGISTRY_TOKEN
+# or from an environment variable (Linux, CI)
+bash scripts/addons.sh registry add private <url> --token-from env:MY_REGISTRY_TOKEN
+# the default registry takes the same option
+bash scripts/addons.sh registry default <url> --token-from keychain:MY_REGISTRY_TOKEN
+```
+
+- `registries.json` (or `default-token-from`, beside `default-url`) stores only
+  the reference. `registry list` shows it in the TOKEN column.
+- The token reaches `curl` through a temporary mode-600 config file, never the
+  command line, so it does not show up in a process list.
+- It is sent as `Authorization: token <token>`, and only to the registry's own
+  origin (scheme, host and port). An add-on zip hosted on another host is
+  downloaded without it.
+- `registry add` and `registry default` refuse a URL with credentials in it
+  (`user:pass@host`, or a `token=` query parameter).
+- A reference that does not resolve (keychain entry or variable missing) makes
+  that registry "unreachable"; it is never fetched without the token instead.
 
 Named registries live in `vault/addons/registries.json`. The **default** is
 always resolved dynamically (precedence: `ADDONS_DEFAULT_URL` env >
@@ -169,6 +197,12 @@ bash scripts/checks/check-addons.sh <id>     # static manifest validation only
 enabled, and is static-only (still PASS) when the tool is not installed — so a manifest
 can be validated without installing anything.
 
+An add-on may include `doctor-tests.txt` beside its manifest: one relative
+`tests/test-*.sh` path per line. The full framework doctor runs every declared
+suite in every present add-on, whether enabled or not. Static manifest validation
+rejects missing or out-of-add-on test paths. Keep the regular `test:` field for
+`addons.sh test`.
+
 When a manifest declares a `test:` field, `addons.sh test` also runs that suite from the
 add-on directory — but only if its runtime (the first word of the command, e.g. `bun`) is
 on `PATH`; otherwise it falls back to static validation. Example: `test: bun test`,
@@ -184,13 +218,18 @@ on `PATH`; otherwise it falls back to static validation. Example: `test: bun tes
 | `command` | for health check | binary checked via `command -v` |
 | `privacy` | yes | `local` \| `local-only` \| `sends-docs` \| `sends-all` |
 | `install_method` | yes | `self` \| `ai-driven` \| `config-entry` |
+| `kind` | yes | `framework` \| `adapter` \| `vendored`: where the code comes from. Each kind requires its own fields; see **Add-on kinds** below |
 | `os` | optional | space/comma-separated `macos` \| `linux` \| `windows` \| `any`; **absent = cross-platform (any)** |
 | `test` | optional | shell command run from the add-on dir (its own test suite) |
 | `support.<client>` | optional | `full` \| `rules` \| `none` \| `unknown` (agent axis; use `os` for the platform axis) |
 | `outputs` | optional | list of produced artifacts |
 | `author` | optional | attribution handle; **absent = the vault maintainer** (brain.json `maintainer`). Stamp it only when adopting someone else's addon |
-| `upstream` | optional | source URL of an adopted addon (repo/gist), for provenance |
-| `license` | optional | SPDX id (`Apache-2.0`, `MIT`, `PolyForm-Noncommercial-1.0.0`, …); **absent = the framework default (`Apache-2.0`)**. Stamp it when adopting an addon under a different license |
+| `upstream` | `vendored` | source URL of the third-party content (repo/gist), for provenance |
+| `upstream_version` | `vendored` | tag, commit or date of the copy (or `unknown` when it follows upstream `latest`) |
+| `wraps` | `adapter` | name of the standalone tool the add-on wraps |
+| `wraps_source` | `adapter` | the tool's factory or repository, as a path or URL **without credentials** (user info in a URL is a FAIL) |
+| `wraps_version` | `adapter`, when it depends on one | pinned or minimum version of the wrapped tool (e.g. `">=0.22,<0.30"`) |
+| `license` | optional; required for `vendored` | SPDX id (`Apache-2.0`, `MIT`, `PolyForm-Noncommercial-1.0.0`, …); **absent = the framework default (`Apache-2.0`)**. Stamp it when adopting an addon under a different license |
 | `requires` | optional | space/comma-separated addon ids this addon depends on; each must be a known addon (check-addons enforces). Runtime is **soft**: `addons.sh check` warns when a required addon isn't enabled — install is never blocked |
 | `runtime_requires` | optional | space/comma-separated external runtime capabilities (`ollama`, `uv`, `devbox`, …); each must be a known `platform_has` capability (check-addons enforces). `addons.sh check` warns when missing; enabling an add-on offers to install them (opt-in). |
 | `shorthand` | optional | lowercase handle; while the addon is **enabled**, surfaces as a glossary term (`<short>` → the addon's name). Precedence: user-local > core (`ab`,`moc`) > addon-derived |
@@ -261,6 +300,29 @@ and add a **Credits** line to its README. Example: `chatgpt-import` →
 Static validation: `scripts/checks/check-addons.sh` (doctor-wired). Doctor never fails on a
 missing add-on; `addons.sh check` fails only when an *enabled* add-on is broken.
 
+## Add-on kinds
+
+`kind:` records where an add-on's code comes from. It is a separate axis from
+the structural types below: a `tool` can be `framework` (event-bus) or `adapter`
+(graphify). Decide it from the add-on's files (README, install script, provenance
+notes), not from its name. The classification of every add-on, with the reason
+and the file that shows it, is in [`KINDS.md`](KINDS.md).
+
+| Kind | Meaning | Required fields |
+| --- | --- | --- |
+| `framework` | Code written for agentBrain that runs only inside it, with no separate repository or factory | `test:` naming a suite that exists. A named path must resolve; a runner that finds its own tests (`bun test`) needs a test file in the add-on |
+| `adapter` | A thin agentBrain layer around a standalone tool that has its own repository or factory, such as a CLI the owner also uses on its own | `wraps:` (the tool's name), `wraps_source:` (factory or repository, path or URL, no credentials), and `wraps_version:` (pin or minimum) when the add-on depends on one |
+| `vendored` | The main content is written and owned by a third party (copied or wrapped upstream skills or code) | `upstream:` (URL), `license:` (SPDX id or `see upstream`), `upstream_version:` (tag, commit or date of the copy) |
+
+Where two kinds could fit, a third-party **program** the add-on installs or
+calls makes it an `adapter`, and third-party **content** that *is* the add-on
+(skills, rulesets, a copied script) makes it `vendored`.
+
+When a required value cannot be found, write `unknown` rather than guessing.
+`check-addons.sh` prints a `WARN <id>: <field> is 'unknown'` line for it, so
+the gap stays visible. An `unknown` is a warning, not a pass. A missing field,
+an empty field or a kind outside the three is a FAIL.
+
 ## Add-on types and structure contract
 
 Every add-on is one of four types. The type determines what MUST exist in its
@@ -290,6 +352,27 @@ Universal rules (all types):
 - Errors must be loud: a missing dependency prints the install command and
   exits non-zero (or, for hooks, exits 0 but logs what it skipped). Never
   `|| true` away a failure without writing a line to stderr.
+
+### Python in add-ons
+
+Pick the case; never run pip against the system Python, in any form
+(`pip3 install`, `python3 -m pip`, `--break-system-packages`).
+
+| Case | How |
+| --- | --- |
+| 0. Bash or existing tooling fits | No Python. Match the language of the neighbouring code. |
+| 1. Standard library only | `python3 script.py`. No uv needed; runs where uv is absent (Pi, NAS). |
+| 2. Script with third-party packages | PEP 723 block in the script: pinned versions (`~=`), `requires-python`, `[tool.uv] exclude-newer`. Call it from the wrapper with an explicit `uv run --script <path>` (do not rely on an `env -S` shebang). No uv: fail loudly with the install command, never fall back to `python3`. Declare `runtime_requires: uv`. Sensitive or published scripts also commit a lockfile (`uv lock --script`) and run with `--locked`. |
+| 3. Global CLI tool | `uv tool install <pkg>` / `uvx <tool>`. |
+| 4. Long-running service or project | Its own uv venv or `uv init` + `pyproject.toml`; devbox + uv only as a pilot. |
+
+Reference implementations, all registry add-ons (`addons.sh install <id>`):
+`session-map` (`lib/encrypt_vault.py`, case 2 with a lockfile),
+`brain-infographic` (`lib/shoot.py`, case 2), `graphify` (case 3) and
+`headroom-proxy` (case 4). A PEP 723 script downloads its packages on first
+run, not at install time: an add-on that relies on it should resolve once in
+`install.sh` and must not be on by default. Browser binaries (Playwright's
+Chromium) are not Python packages: install them with the same pinned version.
 
 ## Maturity rubric (target: every add-on ≥ 8.0)
 

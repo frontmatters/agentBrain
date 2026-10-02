@@ -22,8 +22,17 @@
 set -uo pipefail
 
 AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../../.." && pwd)}"
-EVENTS="$AGENTBRAIN_DIR/vault/events"
-CLAIMS_DIR="$AGENTBRAIN_DIR/vault/claims"
+# The vault through the resolver (AGENTBRAIN_VAULT and friends), never the
+# checkout's own folder by assumption; a copy without scripts/lib (a test
+# fixture) falls back to it.
+if [ -f "$AGENTBRAIN_DIR/scripts/lib/vault.sh" ]; then
+	# shellcheck source=/dev/null
+	. "$AGENTBRAIN_DIR/scripts/lib/vault.sh"
+else
+	VAULT_DIR="${AGENTBRAIN_VAULT:-$AGENTBRAIN_DIR/vault}"
+fi
+EVENTS="${VAULT_DIR}/events"
+CLAIMS_DIR="${VAULT_DIR}/claims"
 
 die() { echo "brain-chat: $1" >&2; exit "${2:-2}"; }
 command -v jq >/dev/null 2>&1 || die "jq is required"

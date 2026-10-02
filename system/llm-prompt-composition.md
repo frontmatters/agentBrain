@@ -34,7 +34,7 @@ prompts):
 
 ## Validation
 
-`scripts/checks/check-prompt-cache-hygiene.sh` lints framework-owned prompt sources
-for high-confidence volatile placeholders outside fenced and inline code. It is
-a narrow policy check, not runtime cache detection. Run its fixture suite with
-`scripts/tests/test-prompt-cache-hygiene.sh`; the checker is also wired into doctor.
+In a source checkout, `scripts/checks/check-prompt-cache-hygiene.sh` lints
+framework-owned prompt sources for high-confidence volatile placeholders outside
+fenced and inline code, as part of the doctor. It is a narrow policy check, not
+runtime cache detection.

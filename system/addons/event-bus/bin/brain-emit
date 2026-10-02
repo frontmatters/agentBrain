@@ -22,7 +22,8 @@ Optional:
   --to-hosts=<h1,h2>       restrict targets to specific hosts (default: all)
   --reply-to=<agent>       where replies should go (default: --from)
   --ref=<vault-path>       reference to a vault file
-  --correlation-id=<id>    thread initiator (default: this event_id = new thread)
+  --correlation-id=<id>    thread initiator's full event_id (default: this event_id = new thread);
+                           a unique prefix of 8+ hex characters is expanded, anything else refused
   --in-reply-to=<id>       this is a direct reply to event <id>
   --causation-ids=<i1,i2>  events that caused this one (fan-in)
 
@@ -47,6 +48,15 @@ EOF
 
 # Defaults
 AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../../.." && pwd)}"
+# The vault through the resolver (AGENTBRAIN_VAULT and friends), never the
+# checkout's own folder by assumption; a copy without scripts/lib (a test
+# fixture) falls back to it.
+if [ -f "$AGENTBRAIN_DIR/scripts/lib/vault.sh" ]; then
+	# shellcheck source=/dev/null
+	. "$AGENTBRAIN_DIR/scripts/lib/vault.sh"
+else
+	VAULT_DIR="${AGENTBRAIN_VAULT:-$AGENTBRAIN_DIR/vault}"
+fi
 HOST_NAME="$(hostname -s)"
 # instance_id: prefer UUID (survives PID-recycling). Fallback pid-$$ if uuidgen unavailable.
 INSTANCE_ID="${BRAIN_INSTANCE_ID:-$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' || echo "pid-$$")}"
@@ -131,6 +141,38 @@ EVENT_ID_INPUT="${TYPE}:${TIMESTAMP}:${FROM_AGENT}:${HOST_NAME}:${INSTANCE_ID}:$
 EVENT_ID="$(python3 -c 'import sys,uuid; print(uuid.uuid5(uuid.UUID(sys.argv[1]), sys.argv[2]))' "$NAMESPACE" "$EVENT_ID_INPUT")"
 ID8="${EVENT_ID:0:8}"
 
+# A thread or reply id must be a full event id: brain-poll and check-events
+# match it exactly, so a short id would put the event on no thread at all.
+# A unique prefix of at
+# least 8 hex characters is expanded from the stored events, like git does with
+# a short commit; an unknown or ambiguous one is refused.
+UUID_RE='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+full_event_id() { # full_event_id <flag> <id> -> prints the full id or fails
+    local flag="$1" id="$2" hits
+    if [[ "$id" =~ $UUID_RE ]]; then printf '%s' "$id"; return 0; fi
+    if ! [[ "$id" =~ ^[0-9a-f][0-9a-f-]{7,35}$ ]]; then
+        echo "brain-emit: $flag=$id is not an event id (a full UUID, or a prefix of at least 8 hex characters)" >&2
+        return 1
+    fi
+    hits="$(grep -rhoE "\"event_id\": ?\"${id}[0-9a-f-]*\"" "$VAULT_DIR/events/inbox" "$VAULT_DIR/events/archive" 2>/dev/null \
+        | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | sort -u)"
+    case "$(printf '%s' "$hits" | grep -c .)" in
+        1) echo "brain-emit: $flag=$id expanded to $hits" >&2; printf '%s' "$hits" ;;
+        0) echo "brain-emit: $flag=$id matches no stored event; pass the full id" >&2; return 1 ;;
+        *) echo "brain-emit: $flag=$id matches more than one event; pass the full id" >&2; return 1 ;;
+    esac
+}
+if [ -n "$CORRELATION_ID" ]; then CORRELATION_ID="$(full_event_id --correlation-id "$CORRELATION_ID")" || exit 2; fi
+if [ -n "$IN_REPLY_TO" ]; then IN_REPLY_TO="$(full_event_id --in-reply-to "$IN_REPLY_TO")" || exit 2; fi
+if [ -n "$CAUSATION_IDS" ]; then
+    _ids=""
+    for _c in ${CAUSATION_IDS//,/ }; do
+        _c="$(full_event_id --causation-ids "$_c")" || exit 2
+        _ids="${_ids:+$_ids,}$_c"
+    done
+    CAUSATION_IDS="$_ids"
+fi
+
 # Default correlation_id = event_id (new thread initiator)
 [ -z "$CORRELATION_ID" ] && CORRELATION_ID="$EVENT_ID"
 
@@ -177,8 +219,8 @@ ENVELOPE="$(jq -n \
 TOPIC_SLUG="$(echo "$TYPE" | tr '.' '-')"
 FILENAME="${TS_SAFE}-${TOPIC_SLUG}-${ID8}.json"
 
-INBOX="$AGENTBRAIN_DIR/vault/events/inbox"
-AUDIT_DIR="$AGENTBRAIN_DIR/vault/events/audit/$HOST_NAME/$FROM_AGENT"
+INBOX="${VAULT_DIR}/events/inbox"
+AUDIT_DIR="${VAULT_DIR}/events/audit/$HOST_NAME/$FROM_AGENT"
 mkdir -p "$INBOX" "$AUDIT_DIR" || { echo "brain-emit: mkdir failed" >&2; exit 5; }
 
 # Atomic write: .tmp → mv

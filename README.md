@@ -8,14 +8,14 @@
 
 ## Why
 
-AI coding agents forget. Claude Code resets each session; Copilot's memory expires after ~28 days; a fresh Cursor or Windsurf chat starts from zero. So you re-explain your stack, your conventions, and the decisions you already made — every single time. The context lives *inside* the agent, and the agent is ephemeral.
+AI coding agents forget. Claude Code resets each session; Copilot's memory expires after ~28 days; a fresh Cursor or Devin Desktop (formerly Windsurf) chat starts from zero. So you re-explain your stack, your conventions, and the decisions you already made — every single time. The context lives *inside* the agent, and the agent is ephemeral.
 
 agentBrain flips that around. Your knowledge lives in **one Markdown brain on your own disk**, and every agent reads from it. Switch agents, switch projects, start a new session — the brain is still there.
 
 ## What it is
 
 - **One brain, many agents.** A single install that every agent in every project points at — not a plugin for one tool, but a shared memory layer underneath all of them.
-- **Plain Markdown, local-first.** Your knowledge is human-readable files under your control. It works offline and makes no network calls of its own.
+- **Plain Markdown, local-first.** Your knowledge is human-readable files under your control. It works offline; its only network calls are git syncs with remotes you configured (the update check and, if your vault has a remote, the vault sync).
 - **Two layers.** A **public framework** (`system/`) defines *how and where* knowledge is organised — rules, skills, templates, guardrails. **Your vault** holds *what you actually learned*: patterns, troubleshooting fixes, project notes, preferences. It is mounted at `vault/` and gitignored, so it never ships with the framework.
 - **Self-improving.** Agents don't just read the brain; they write back to it — capturing learnings, decisions, and fixes as they work, so it sharpens over time.
 - **Sealed spaces for client work.** Confidential employer/client knowledge lives in per-owner compartments (`vault/spaces/<slug>/`) that stay out of your personal sync and out of default recall — with a boundary guard that fails the build on leaks.
@@ -23,7 +23,7 @@ agentBrain flips that around. Your knowledge lives in **one Markdown brain on yo
 
 agentBrain is **not a harness or an agent** — it's the memory layer. The harness (Claude Code, Pi, Copilot, …) chooses to read it. And it is deliberately **not** a RAG stack: no database, no embeddings, no cloud account — just files, git, and conventions that agents follow.
 
-Under the hood that adds up to real surface: ~40 shared skills, 23 opt-in add-ons, integrations for 11 agents/editors, and a doctor with 50+ checks guarding both the framework and your knowledge.
+Under the hood that adds up to real surface: dozens of shared skills (indexed in [`system/skills.md`](./system/skills.md)), opt-in add-ons, integrations for the agents and editors listed below, and a doctor (`brain doctor`) that checks your install and your knowledge.
 
 ## How it works
 
@@ -116,6 +116,9 @@ Day-2 life runs through one CLI — installed as `brain` (and the `agentbrain`
 alias): `brain status`, `brain update`, `brain channel set edge`, `brain wire`,
 `brain doctor`, `brain onboard`, `brain addons`. Every subcommand proxies a
 standalone script in `scripts/`, so nothing hides behind the CLI.
+`brain doctor` checks your install: skill links, anchors, the vault, events and
+add-ons. `brain doctor --dev` runs the full doctor, including the framework's
+own tests, for working on agentBrain itself.
 
 ## Quick Start
 
@@ -157,11 +160,16 @@ Transparency first — exactly what agentBrain touches on your machine:
   directories as symlinks into the brain (e.g. `~/.claude/skills/`, `~/.pi/agent/skills/`);
   and — only if you opt in during `/onboard` — one `export AGENTBRAIN_LOCALE=…` line in
   your shell rc.
-- **Network:** day-to-day the core reads/writes local Markdown and makes **no network calls
-  of its own**. Setup and `bootstrap-macos.sh` do fetch dependencies (the `git clone`, and on
+- **Network:** day-to-day the core reads/writes local Markdown. Its only network calls are
+  git syncs with remotes you configured: the session-start update check fetches this
+  checkout's own remote (at most every 12 hours; `auto_update: off` in
+  `vault/update/config.json` turns it off), and, only when your vault has a remote, the vault
+  is synced with it (`scripts/sync/pull-vault.sh` pulls at session start; the vault's
+  post-commit hook pushes). Setup and the macOS bootstrap (`scripts/installer/bootstrap/macos.sh`) do fetch dependencies (the `git clone`, and on
   macOS Node/bun via Homebrew) — visible in the scripts. Add-ons are opt-in and each declares a
   `privacy:` level (`local` / `sends-docs` / `sends-all`) shown and confirmed before it is
-  enabled — nothing leaves your machine unless you turn on an add-on that says so.
+  enabled — apart from the git syncs with your own remotes above, nothing leaves your machine
+  unless you turn on an add-on that says so.
 - **Credentials:** the core never reads or stores secrets; that is confined to opt-in
   add-ons (e.g. `secrets-helper`). See [SECURITY.md](./SECURITY.md).
 - **Removal:** `scripts/uninstall.sh` reverses what setup added and leaves your vault/data intact.
@@ -240,7 +248,8 @@ optional sync remote):
 
 - Excluded from the personal vault sync and from default recall
   (`brain_search`/`brain_recent` skip spaces unless asked).
-- Write into one with `new-note.sh --space <slug>` (or set it active);
+- Write into one with `new-note.sh --space <slug>` (or let the context be
+  inferred per write, e.g. from the project you work in; `AGENTBRAIN_CONTEXT=<slug>` forces it);
   view with `list-learnings` / `list-projects --space <slug>`.
 - Deliver a whole space as a stamped, portable package with
   `brain-extract --space <slug>`, re-import with `brain-restore`.
@@ -255,7 +264,7 @@ optional sync remote):
 | **Claude Code**     | `scripts/setup/setup.sh` — adds pointer to `~/.claude/CLAUDE.md`                                                      |
 | **VS Code Copilot** | Manual — add `.github/copilot-instructions.md` in VS Code settings; see `system/agent-config/vscode-copilot.md` |
 | **GitHub Copilot CLI** | `scripts/setup/setup.sh` — writes a pointer to `~/.copilot/copilot-instructions.md`                                  |
-| **Windsurf**        | `scripts/setup/setup.sh` — adds pointer to `global_rules.md`                                                          |
+| **Devin Desktop** | `scripts/setup/setup.sh` — Devin Local `~/.config/devin/AGENTS.md` (unless Claude import supplies it); keeps Cascade's existing `global_rules.md` current |
 | **OpenCode**        | `scripts/setup/setup.sh` — writes `~/.config/opencode/agentbrain-pointer.md` and registers it in the `instructions` array of `~/.config/opencode/opencode.json` |
 | **Gemini CLI**      | `scripts/setup/setup.sh` — adds pointer to `~/.gemini/GEMINI.md`                                                      |
 | **Cline**           | `scripts/setup/setup.sh` — creates `~/Documents/Cline/Rules/agentBrain.md`                                            |
@@ -267,16 +276,13 @@ See `system/agent-config/` for per-agent details.
 
 ## Pi Setup (bootstrap)
 
-`scripts/installer/bootstrap/macos.sh` does the full macOS setup in one command:
-
-Bootstrap orchestrates four steps:
+`scripts/installer/bootstrap/macos.sh` does the full macOS setup in one command,
+in two steps:
 
 | Step              | Script                             | What                                                 |
 | ----------------- | ---------------------------------- | ---------------------------------------------------- |
 | 1 — Prerequisites | `scripts/tools/install-prerequisites.sh` | nvm-managed Node (LTS via nvm, never Homebrew Node), Homebrew tools, Pi, opensrc |
-| 2 — agentBrain    | `scripts/setup/setup.sh`                 | `vault/` structure, agent pointers for all clients   |
-| 3 — Pi config     | `scripts/configure-pi.sh`          | Extensions, skills, tsconfig, API check, credentials |
-| 4 — Validation    | `scripts/checks/doctor.sh`                | Full health audit                                    |
+| 2 — agentBrain    | `scripts/setup/setup.sh`                 | `vault/` structure, agent pointers for all clients, Pi configuration (`scripts/configure-pi.sh`: extensions, skills, tsconfig, API check, credentials), then validation with the user doctor (`doctor.sh --user`) |
 
 **Idempotent** — safe to re-run after a Pi update or on a new machine.
 
@@ -396,9 +402,8 @@ framework improvement lands in `system/`. The full protocol — including when
 ```
 ~/Developer/agentBrain/
 ├── system/             ← shared framework (rules, agent configs, Pi config)
-├── learnings/          ← public placeholders/examples only
-├── templates/          ← shared templates + local starter files
-├── templates/vault/preferences/personal/   ← public examples/templates only
+├── templates/          ← shared note templates
+├── templates/vault/    ← seeds for your vault (READMEs, examples, preference templates)
 ├── scripts/            ← helper scripts
 └── vault/              ← PERSONAL (gitignored, never pushed)
     ├── projects/       ← your project notes
@@ -412,11 +417,11 @@ framework improvement lands in `system/`. The full protocol — including when
 
 ## Obsidian Vault
 
-agentBrain is an Obsidian vault. `.obsidian/` config is tracked in git (minimal); cache and workspace files are gitignored.
+agentBrain is an Obsidian vault. Setup seeds a minimal `.obsidian/` config into your vault from `templates/vault/.obsidian/`; Obsidian's cache and workspace files are gitignored.
 
 - Wiki-links (`[[note-name]]`) in Related sections
 - Graph view shows connections between notes
-- UUID5 IDs in frontmatter — generate with `scripts/uuid5-gen.sh "path/to/note"`
+- UUID5 IDs in frontmatter — generate with `scripts/uuid5-gen.sh "vault/path/to/note"` (the path includes `vault/`), or let `scripts/new-note.sh` write it
 
 ## Lifecycle
 
@@ -438,9 +443,9 @@ First‑time installation for all agents. Idempotent (safe to re‑run).
 cd ~/Developer/agentBrain && ./setup.sh
 ```
 
-Modular orchestrator — each step is a subscript that also runs standalone. Creates the `vault/` structure, **optionally offers to install agent CLIs you don't have yet** (opt-in, agnostic — never auto-installs; `scripts/tools/install-agent-clis.sh`), writes a pointer (connector) + skills + behaviors for each detected AI tool — Claude Code, Gemini CLI, Copilot CLI, Cline, OpenCode, Windsurf (VS Code Copilot and Cursor print manual steps) — ensures a daily note exists, and validates.
+Modular orchestrator — each step is a subscript that also runs standalone. Creates the `vault/` structure, **optionally offers to install agent CLIs you don't have yet** (opt-in, agnostic — never auto-installs; `scripts/tools/install-agent-clis.sh`), writes a pointer (connector) + skills + behaviors for each detected AI tool — Claude Code, Gemini CLI, Copilot CLI, Cline, OpenCode, Devin Desktop (VS Code Copilot and Cursor print manual steps) — ensures a daily note exists, and validates.
 
-Flags (`./setup.sh --help` for all): `--yes` (non-interactive), `--home=PATH` (advanced — install base for tool configs, default `$HOME`; for sandbox/CI/alternate profiles), `--move-to PATH` (relocate the checkout). `AGENTBRAIN_HOME` and `AGENTBRAIN_SKIP_PI=1` are the env equivalents.
+Flags (`./setup.sh --help` for all): `--yes` (non-interactive), `--home=PATH` (advanced — install base for tool configs, default `$HOME`; for sandbox/CI/alternate profiles), `--move-to PATH` (relocate the checkout). `AGENTBRAIN_HOME` and `AGENTBRAIN_SKIP_PI=1` are the env equivalents. Setup configures Pi once before the doctor gate; a Pi configuration failure stops setup. `AGENTBRAIN_SKIP_PI=1` deliberately omits Pi (for headless/CI installs); if Pi is already installed, the doctor still checks its existing links.
 
 ### Onboarding — `/onboard`
 
@@ -448,7 +453,7 @@ Personalize the install: preference scopes, addons (essential addons recommended
 
 ### Bootstrap — `scripts/installer/bootstrap/macos.sh`
 
-Full macOS setup: developer tools + agentBrain + Pi. Orchestrates `install-prerequisites.sh` → `setup.sh` → `configure-pi.sh` → `doctor.sh`. macOS only. Includes everything `./setup.sh` does.
+Full macOS setup: developer tools + agentBrain + Pi. Runs `install-prerequisites.sh`, then `setup.sh` (which configures Pi via `configure-pi.sh` and validates with `doctor.sh --user`). macOS only. Includes everything `./setup.sh` does.
 
 ### Postinstall — `system/pi-config/bin/pi`
 
@@ -496,7 +501,7 @@ Ensures a daily note exists for today. Called automatically by setup.sh. Agent�
 
 | Command                       | What it does                                                     |
 | ----------------------------- | ----------------------------------------------------------------- |
-| `bash scripts/checks/doctor.sh`      | Full health audit (framework + your vault)                        |
+| `brain doctor`                | Health check of your install and vault (`doctor.sh --user`)       |
 | `bash scripts/selftest.sh`    | Verify the integration per detected agent                         |
 | `bash scripts/addons.sh status` | See, install, enable or disable add-ons                         |
 | `bash scripts/brain-update.sh --check` | Check for framework updates on your release channel      |

@@ -8,7 +8,9 @@
 # `<cmd> <url> <output.png>` and should capture the top 1000x720 of the page.
 # Unset, the Playwright CLI is used when it is on PATH.
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)"
+# shellcheck source=scripts/lib/vault.sh
+. "$ROOT/scripts/lib/vault.sh"
 PORT="${1:-8794}"
 SHOT_CMD="${AGENTBRAIN_SCREENSHOT_CMD:-}"
 command -v "${SHOT_CMD:-playwright}" >/dev/null 2>&1 || { echo "${SHOT_CMD:-playwright} not found (set AGENTBRAIN_SCREENSHOT_CMD)"; exit 1; }
@@ -22,7 +24,7 @@ capture() {
 	fi
 }
 
-cd "$ROOT/vault"
+cd "$VAULT_DIR"
 python3 -m http.server "$PORT" --bind 127.0.0.1 >/dev/null 2>&1 &
 SRV=$!
 trap 'kill "$SRV" 2>/dev/null || true' EXIT
@@ -33,7 +35,7 @@ while IFS= read -r md; do
 	grep -q '^type: explainer' "$md" 2>/dev/null || continue
 	html="${md%.md}.html"
 	[ -f "$html" ] || { skip=$((skip+1)); continue; }
-	out="$ROOT/vault/$(dirname "$md")/preview.png"
+	out="$VAULT_DIR/$(dirname "$md")/preview.png"
 	if capture "http://127.0.0.1:${PORT}/${html}" "$out" >/dev/null 2>&1; then
 		n=$((n+1))
 	else

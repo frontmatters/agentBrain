@@ -11,7 +11,6 @@
 #   Agent CLIs and tools (optional, opt-in — agentBrain Harness first, Pi second)
 #   Connecting your AI tools (pointers + skills + behaviors for detected agents)
 #   AgentBrain Harness integration and autostart (optional, when installed)
-#   Local AI runtime (optional)
 #   Git hooks
 #   Git identity
 #   Health check
@@ -19,6 +18,7 @@
 #   Validation (doctor)
 #   Daily self-improving loop (optional, macOS)
 #   Default add-ons
+#   Optional add-ons (none ticked; each brings its own tools)
 #   Developer tools by intent (optional)
 #   Personalize (optional)
 # Run once after cloning. Safe to re-run (idempotent).
@@ -229,22 +229,9 @@ else
 	[ -d "$AGENTBRAIN_HOME/bin" ] && BRAIN_BIN_DIR="$AGENTBRAIN_HOME/bin"
 fi
 if [ -n "$BRAIN_BIN_DIR" ]; then
-	# Two names, one CLI: `brain` (daily driver) + `agentbrain` (discoverable alias).
-	for _cli_name in brain agentbrain; do
-		BRAIN_BIN="$BRAIN_BIN_DIR/$_cli_name"
-		# Never hijack an unrelated command: only (re)link when the target is
-		# absent or already an agentBrain link (a symlink to some checkout's brain.sh).
-		if [ -e "$BRAIN_BIN" ] || [ -L "$BRAIN_BIN" ]; then
-			if [ -L "$BRAIN_BIN" ] && [ "$(basename "$(readlink "$BRAIN_BIN")")" = "brain.sh" ]; then
-				ln -sfn "$VAULT/scripts/brain.sh" "$BRAIN_BIN"
-			else
-				echo "Note: ${BRAIN_BIN} exists and is not an agentBrain link — left untouched."
-				echo "  Symlink $VAULT/scripts/brain.sh onto your PATH yourself to use the '$_cli_name' command."
-			fi
-		else
-			ln -sfn "$VAULT/scripts/brain.sh" "$BRAIN_BIN"
-		fi
-	done
+	# shellcheck source=scripts/lib/cli-links.sh
+	. "$VAULT/scripts/lib/cli-links.sh"
+	brain_cli_setup "$BRAIN_BIN_DIR" "$VAULT"
 else
 	echo "Note: symlink $VAULT/scripts/brain.sh onto your PATH to use the 'brain' command."
 fi
@@ -410,12 +397,9 @@ if command -v abh >/dev/null 2>&1 && [ "${AGENTBRAIN_SKIP_ABH:-}" != 1 ]; then
 	fi
 fi
 
-# Optional local AI runtime. The capability helper owns platform-specific
-# recipes; Open WebUI is intentionally not offered here because ABH Web already
-# provides the primary local interface.
-log "Local AI runtime (optional)"
-# Always offers: absent -> install (No default); present -> keep/update/skip (Skip default).
-offer_install ollama || echo "Ollama optional — install or update later via the platform-specific command above."
+# No separate local-AI step: ollama comes with the add-on that needs it
+# (runtime_requires, offered when you enable it) or with the devtools intent
+# local-ai. Offering it here as well asked the same question twice.
 
 log "Git hooks"
 bash "${SETUP_DIR}/setup-git-hooks.sh"
@@ -446,18 +430,6 @@ fi
 log "Health check"
 bash "${SETUP_DIR}/setup-validation.sh"
 
-# ── Detect Pi and guide to next step ─────────────────────────────
-
-PI_INSTALLED=false
-PI_VERSION=""
-if command -v pi &>/dev/null; then
-	PI_INSTALLED=true
-	# pi --version output varies (and can be empty); only show it if non-empty.
-	# `| head -1` can SIGPIPE `pi`, which under `set -o pipefail` would abort
-	# setup — guard with `|| true` so a version probe never kills the install.
-	PI_VERSION=$(pi --version 2>/dev/null | head -1 | tr -d '[:space:]' || true)
-fi
-
 # ── Pi configuration (owned here; the platform bootstraps call setup.sh for it) ──
 # configure-pi installs/updates Pi, links extension skills, generates the
 # extension tsconfig and validates. Its macOS-only pieces (keychain,
@@ -465,8 +437,10 @@ fi
 if [ "${AGENTBRAIN_SKIP_PI:-}" = 1 ]; then
 	echo "  Skipped by AGENTBRAIN_SKIP_PI=1. Later: bash scripts/configure-pi.sh"
 elif confirm "Configure Pi now? (install/update, skills, extensions config)" "Later: bash scripts/configure-pi.sh" Y; then
-	bash "${SCRIPTS}/configure-pi.sh" || \
-		echo -e "${YELLOW}!${NC} Pi configuration had issues. Later: bash scripts/configure-pi.sh"
+	if ! bash "${SCRIPTS}/configure-pi.sh"; then
+		echo -e "${YELLOW}!${NC} Pi configuration failed. Fix it with: bash scripts/configure-pi.sh" >&2
+		exit 1
+	fi
 else
 	echo "  Skipped. Later: bash scripts/configure-pi.sh"
 fi
@@ -476,40 +450,17 @@ fi
 # onboarding check reports "pending" instead of failing the fresh install.
 if [ "${AGENTBRAIN_SKIP_DOCTOR:-}" = 1 ]; then
 	echo "  Skipped by AGENTBRAIN_SKIP_DOCTOR=1. Run doctor separately after setup."
-elif [ "${AGENTBRAIN_DOCTOR_FAST:-}" = 1 ]; then
-	AGENTBRAIN_SETUP_PHASE=1 bash "${SCRIPTS}/doctor.sh" --fast --summary
 else
-	AGENTBRAIN_SETUP_PHASE=1 bash "${SCRIPTS}/doctor.sh" --summary
+	# --user: setup validates this install. A release carries no framework
+	# tests (P9), so the full doctor cannot run on one; on a source checkout
+	# run it separately with `brain doctor --dev`.
+	AGENTBRAIN_SETUP_PHASE=1 bash "${SCRIPTS}/doctor.sh" --user --summary
 fi
 
 # ── Setup complete ─────────────────────────────────────────
 
 echo ""
 echo "Setup complete."
-
-# If Pi is installed, offer the deep integration (extensions + skills) right away.
-# Skippable for headless/CI via AGENTBRAIN_SKIP_PI=1.
-if [ "${AGENTBRAIN_SKIP_PI:-}" = 1 ]; then
-	[ "${AGENTBRAIN_BOOTSTRAP:-}" = 1 ] || echo "Pi configuration skipped (AGENTBRAIN_SKIP_PI=1); run: brain wire --pi"
-elif [ "$PI_INSTALLED" = true ]; then
-	pi_label="Pi detected"
-	[ -n "$PI_VERSION" ] && pi_label="Pi detected (${PI_VERSION})"
-	echo -e "${BLUE}${pi_label}${NC} — the deep integration symlinks Pi's extensions + skills and points Pi at this brain."
-	if confirm "Configure Pi now?" "Pi is installed; this is the deep agentBrain integration." Y; then
-		# The user just confirmed the Pi step; pass that consent down so
-		# configure-pi.sh's own install prompts (opensrc) don't re-ask.
-		# Runs via the one wiring primitive (`brain wire`, brain.sh).
-		if AGENTBRAIN_ASSUME_YES=1 bash "${SCRIPTS}/brain.sh" wire --pi; then
-			echo -e "${GREEN}✓${NC} Pi configured."
-		else
-			echo -e "${YELLOW}!${NC} Pi configuration had issues. Run manually: bash scripts/configure-pi.sh"
-		fi
-	else
-		echo "Skipped. Run later: bash scripts/configure-pi.sh"
-	fi
-else
-	echo "Using Pi? Install it, then run: bash scripts/configure-pi.sh"
-fi
 
 # ── Optional: daily self-improving loop (macOS only) ─────────────────────────
 # The loop runs loop-tick.sh once a day: captures findings, renders the triage
@@ -540,6 +491,16 @@ fi
 if [ "${AGENTBRAIN_INSTALLER:-0}" != "1" ] && [ -x "${SETUP_DIR}/setup-default-addons.sh" ]; then
 	bash "${SETUP_DIR}/setup-default-addons.sh" || \
 		echo -e "${YELLOW}!${NC} Default add-ons step had issues. Later: brain addons"
+fi
+
+# ── Optional add-ons ─────────────────────────────────────────────────────────
+# The registry add-ons a fresh install does not carry, none ticked. Picking one
+# installs it, asks its privacy question and offers the tools it declares
+# (runtime_requires); nothing is installed for an add-on nobody picked.
+log "Optional add-ons"
+if [ -x "${SETUP_DIR}/setup-optional-addons.sh" ]; then
+	bash "${SETUP_DIR}/setup-optional-addons.sh" || \
+		echo -e "${YELLOW}!${NC} Optional add-ons step had issues. Later: brain addons"
 fi
 
 # ── Optional: developer tools, by intent ─────────────────────────────────────

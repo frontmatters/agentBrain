@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# bootstrap-macos.sh — Bootstrap agentBrain + developer tools + Pi on macOS.
+# installer/bootstrap/macos.sh — Bootstrap agentBrain + developer tools + Pi on macOS.
 # Orchestrates the full setup in two steps:
 #   1. Developer tools  (nvm, Node LTS, Homebrew, bun, uv)
 #   2. agentBrain       (setup.sh: vault and structure, agent pointers for all

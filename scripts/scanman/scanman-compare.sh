@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 
-AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)}"
+# shellcheck source=scripts/lib/vault.sh
+. "$AGENTBRAIN_DIR/scripts/lib/vault.sh"
 
 usage() {
   echo "Usage: bash scripts/scanman/scanman-compare.sh <current-slug> <previous-slug>" >&2
-  echo "Example: bash scripts/scanman/scanman-compare.sh babysitter babysitter-pass1" >&2
+  echo "Example: bash scripts/scanman/scanman-compare.sh example-repo example-repo-pass1" >&2
 }
 
 if [[ $# -lt 2 ]]; then
@@ -16,7 +18,7 @@ fi
 
 CURRENT_SLUG="$1"
 PREV_SLUG="$2"
-BASE="$AGENTBRAIN_DIR/vault/research/repo-distill"
+BASE="$VAULT_DIR/research/repo-distill"
 CURRENT_DIR="$BASE/$CURRENT_SLUG"
 PREV_DIR="$BASE/$PREV_SLUG"
 OUT_FILE="$CURRENT_DIR/99-compare-vs-$PREV_SLUG.md"

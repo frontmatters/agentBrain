@@ -9,7 +9,6 @@ VAULT="${VAULT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 AGENT_HOME="${AGENTBRAIN_HOME:-$HOME}"
 
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # shellcheck source=scripts/agentbrain-pointer.sh
@@ -26,14 +25,6 @@ if ! command -v gemini &>/dev/null && [ ! -d "${GEMINI_DIR}" ]; then
 fi
 mkdir -p "${GEMINI_DIR}"
 
-# Anchored block heading (Hermes pattern): the bare word "agentBrain" anywhere in
-# the file would false-positive on a user's own mention of it.
-MARKER="## agentBrain"
-if [ -f "${GEMINI_MD}" ] && grep -q "^${MARKER}" "${GEMINI_MD}" 2>/dev/null; then
-	echo -e "${YELLOW}Skip${NC}    Gemini CLI (already configured)"
-elif ! agentbrain_pointer_target_ok "${GEMINI_MD}" "$VAULT"; then
-	echo -e "${YELLOW}Skip${NC}    Gemini CLI (config file resolves into the agentBrain checkout)"
-else
-	agentbrain_pointer_block "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "gemini.md" >>"${GEMINI_MD}"
-	echo -e "${GREEN}✓${NC} Gemini CLI"
-fi
+# Refresh the managed block without changing the user's surrounding text.
+state="$(agentbrain_pointer_sync "$GEMINI_MD" "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "gemini.md" embed)"
+echo -e "${GREEN}✓${NC} Gemini CLI (pointer $state)"

@@ -28,7 +28,7 @@ _EDITOR_TABLE='vscode:Visual Studio Code:code:Visual Studio Code:microsoft
 vscode-insiders:VS Code Insiders:code-insiders:Visual Studio Code - Insiders:microsoft
 vscodium:VSCodium:codium:VSCodium:openvsx
 cursor:Cursor:cursor:Cursor:microsoft
-windsurf:Windsurf:windsurf:Windsurf:microsoft'
+devin:Devin Desktop:devin:Devin:microsoft'
 
 # Editors outside the VS Code family. They take no extensions through this
 # menu, so they carry no marketplace: they exist here only so that "which
@@ -45,14 +45,14 @@ neovim:Neovim / Vim:nvim:'
 # beats an installed-but-unlinked editor.
 editor_detect_preferred() {
 	local id label cli app _mk
-	for id in cursor vscode zed neovim vscodium vscode-insiders windsurf; do
+	for id in cursor vscode zed neovim vscodium vscode-insiders devin; do
 		if label="$(editor_label "$id" 2>/dev/null)"; then
 			cli="$(_editor_cli_name "$id")"
 			[ -n "$cli" ] && command -v "$cli" >/dev/null 2>&1 && { printf '%s\n' "$label"; return 0; }
 		fi
 	done
 	# No CLI anywhere: fall back to an installed app bundle, same order.
-	for id in cursor vscode zed vscodium vscode-insiders windsurf; do
+	for id in cursor vscode zed vscodium vscode-insiders devin; do
 		if editor_cli "$id" >/dev/null 2>&1; then
 			editor_label "$id"
 			return 0
@@ -78,6 +78,13 @@ editor_cli() {
 	local want="$1" id label cli app _mk
 	while IFS=: read -r id label cli app _mk; do
 		[ "$id" = "$want" ] || continue
+		if [ "$id" = devin ]; then
+			if [ -d /Applications/Devin.app ]; then printf '%s\n' /Applications/Devin.app; return 0; fi
+			if [ -d "${AGENTBRAIN_HOME:-$HOME}/.config/devin" ] || [ -d "${AGENTBRAIN_HOME:-$HOME}/.devin" ]; then
+				printf '%s\n' "${AGENTBRAIN_HOME:-$HOME}/.config/devin"; return 0
+			fi
+			return 1
+		fi
 		if command -v "$cli" >/dev/null 2>&1; then
 			command -v "$cli"
 			return 0

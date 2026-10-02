@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# brain-purge — PERMANENTLY delete forget-batches from local/.trash/forget/.
+# brain-purge — PERMANENTLY delete forget-batches from vault/.trash/forget/.
 # No undo: not recoverable via /brain-recall. Default run is a preview only;
 # deletion requires restating the batch-id via --confirm (structural confirmation).
 
@@ -27,7 +27,16 @@ resolve_brain_dir() {
 }
 
 BRAIN_DIR="$(resolve_brain_dir)"
-TRASH_ROOT="$BRAIN_DIR/vault/.trash/forget"
+# The vault through the resolver (AGENTBRAIN_VAULT and friends), never the
+# checkout's own folder by assumption; a copy without scripts/lib (a test
+# fixture) falls back to it.
+if [ -f "$BRAIN_DIR/scripts/lib/vault.sh" ]; then
+	# shellcheck source=/dev/null
+	. "$BRAIN_DIR/scripts/lib/vault.sh"
+else
+	VAULT_DIR="${AGENTBRAIN_VAULT:-$BRAIN_DIR/vault}"
+fi
+TRASH_ROOT="${VAULT_DIR}/.trash/forget"
 
 usage() {
     cat <<EOF
@@ -86,7 +95,7 @@ for b in $BATCHES; do
 done
 echo ""
 echo "Total: $TOTAL note(s) in $(echo "$BATCHES" | wc -l | tr -d ' ') batch(es)."
-if [ -e "$BRAIN_DIR/vault/.git" ]; then
+if [ -e "${VAULT_DIR}/.git" ]; then
     echo "Note: purge only removes the trash copies — content may still exist in the vault's git history."
 fi
 

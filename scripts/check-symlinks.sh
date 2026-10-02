@@ -1,1 +1,0 @@
-checks/check-symlinks.sh

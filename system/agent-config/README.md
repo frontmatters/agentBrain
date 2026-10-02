@@ -16,7 +16,7 @@ Uniform public configuration layer for agent entrypoints.
 - `copilot.md` — GitHub Copilot-specific instructions.
 - `vscode-copilot.md` — VS Code Copilot setup notes.
 - `claude.md` — Claude/Claude Code-specific instructions.
-- `windsurf.md` — Windsurf-specific setup notes.
+- `devin.md` — Devin Desktop-specific setup notes.
 - `opencode.md` — OpenCode-specific setup notes.
 - `gemini.md` — Gemini CLI-specific setup notes.
 - `cline.md` — Cline-specific setup notes.
@@ -30,7 +30,7 @@ Tool-required entrypoint files stay in their conventional locations and point he
 - Pi: `system/pi-config/agents.md`
 - Copilot: `.github/copilot-instructions.md`
 - Claude: `CLAUDE.md`
-- Windsurf: `~/.codeium/windsurf/memories/global_rules.md` pointer installed by `scripts/setup/setup-windsurf.sh`
+- Devin Desktop (formerly Windsurf): `~/.config/devin/AGENTS.md` for Devin Local and existing `~/.codeium/windsurf/memories/global_rules.md` for Cascade, via `scripts/setup/setup-devin.sh`
 - OpenCode: `~/.config/opencode/opencode.json` instructions installed by `scripts/setup/setup-opencode.sh`
 - Gemini CLI: `~/.gemini/GEMINI.md` pointer installed by `scripts/setup/setup-gemini-cli.sh`
 - Cline: `~/Documents/Cline/Rules/agentBrain.md` pointer installed by `scripts/setup/setup-cline.sh`

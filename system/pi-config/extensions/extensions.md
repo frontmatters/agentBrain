@@ -8,7 +8,7 @@ id: 30e91b2f-dfe9-5e95-9674-c3eadda6409e
 # Pi Extensions
 
 Custom Pi extensions stored in `system/pi-config/extensions/`.  
-Symlinked to `~/.pi/agent/extensions/` by `scripts/bootstrap-macos.sh`.
+Symlinked to `~/.pi/agent/extensions/` by `scripts/installer/bootstrap/macos.sh`.
 
 ## Setup
 
@@ -16,10 +16,10 @@ Run the bootstrap once per machine to:
 
 - Symlink extensions into `~/.pi/agent/extensions/`
 - Generate the machine-specific `tsconfig.json` for editor type-checking
-- Verify that the Pi API symbols these extensions depend on still exist
+- Verify that the Pi API symbols these extensions depend on still exist (advisory if Pi modules cannot be located)
 
 ```bash
-bash scripts/bootstrap-macos.sh
+bash scripts/installer/bootstrap/macos.sh
 ```
 
 > `tsconfig.json` is **gitignored** (machine-specific paths).  
@@ -29,7 +29,7 @@ bash scripts/bootstrap-macos.sh
 
 | File                    | What it does                                                            | Pi events / methods used                                                                                  |
 | ----------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `agentbrain.ts`         | Injects agentBrain project context into every agent session             | `session_start`, `before_agent_start`, `registerTool`                                                     |
+| `agentbrain.ts`         | Injects agentBrain project context and refreshes due reminders in startup context before each agent turn             | `session_start`, `before_agent_start`, `registerTool`                                                     |
 | `session-continuity.ts` | Archives/starts the session journal on Pi session start                 | `session_start`                                                                                           |
 | `extract-learnings.ts`  | Auto-extracts learnings from sessions before compaction                 | `session_before_compact`, `session_shutdown`, `ctx.getModel()`, `ctx.modelRegistry.getApiKeyAndHeaders()` |
 | `youtube-transcript.ts` | `youtube_transcript_info` + `youtube_transcript_download` tools         | `registerTool`                                                                                            |
@@ -45,14 +45,18 @@ bash scripts/bootstrap-macos.sh
 | `usage.ts`              | `/usage` command — Pi session usage report                              | `registerCommand`                                                                                         |
 | `goal.ts`               | `/goal` command — persists a session goal, verifies it against transcript evidence, and continues until met | `registerCommand`, `registerTool`, `before_agent_start`, `agent_settled`, `appendEntry`, `sendMessage` |
 | `git-interceptor.ts`    | Blocks `--no-verify`, injects `GIT_EDITOR=true` to prevent editor hangs | `tool_call`, `isToolCallEventType`                                                                        |
-| `incognito-guard.ts`    | Blocks Write/Edit/MultiEdit to `local/` knowledge while incognito is on | `tool_call`                                                                                              |
+| `incognito-guard.ts`    | Blocks Write/Edit/MultiEdit to `vault/` knowledge while incognito is on | `tool_call`                                                                                              |
+| `secret-guard.ts`       | Opt-in scanner for secret-shaped tool input; ignored by Pi setup until owner approval | `tool_call`                                                                          |
 | `note-id-validator.ts`  | Pre-write BLOCK of a Write carrying a mismatched note-`id:` (tool_call); post-write advisory net for Edit/MultiEdit (tool_result). Shells out to `scripts/hooks/validate-note-id.sh` | `tool_call`, `tool_result`                                                 |
 | `zsh-user-bash.ts`      | Runs user bash via zsh login shell (fixes PATH on macOS)                | `registerTool`                                                                                            |
 
 > **Addon-provided extensions** are not listed above and do not live in this
-> directory. Example: `voice.ts` (the `/voice` command) is symlinked into
-> `~/.pi/agent/extensions/` by the **voice addon**'s own install step — see
-> that addon's docs; this directory's bootstrap does not manage it.
+> directory. Each add-on manages its own Pi extension installation; this
+> directory's bootstrap does not manage those extensions.
+
+`secret-guard.ts` lives here for shared Pi setup but is listed in `.pi-ignore` until
+explicitly enabled; remove that ignore line and run the normal Pi setup only
+with the owner's go.
 
 ## Pi API compatibility
 
@@ -74,7 +78,7 @@ If a Pi update breaks an extension, check these first:
 | `pi.sendMessage()`                          | `goal.ts`                                                    | `ExtensionAPI.sendMessage`          |
 | `pi.on("session_before_compact", ...)`    | `extract-learnings.ts`                                       | `ExtensionAPI.on`                   |
 | `pi.on("tool_result", ...)`               | `pi-cloak/index.ts`, `note-id-validator.ts`                  | `ExtensionAPI.on`                   |
-| `pi.on("tool_call", ...)`                 | `git-interceptor.ts`, `incognito-guard.ts`, `note-id-validator.ts` | `ExtensionAPI.on`             |
+| `pi.on("tool_call", ...)`                 | `git-interceptor.ts`, `incognito-guard.ts`, `secret-guard.ts`, `note-id-validator.ts` | `ExtensionAPI.on`             |
 | `isToolCallEventType()`                   | `git-interceptor.ts`                                         | exported from `pi-coding-agent`     |
 
 The bootstrap script checks these symbols automatically after every Pi install/update:
@@ -89,7 +93,7 @@ grep -q "getModel" \
 ## Adding an extension
 
 1. Add `myext.ts` to `system/pi-config/extensions/`
-2. Run `bash scripts/bootstrap-macos.sh` (or symlink manually)
+2. Run `bash scripts/installer/bootstrap/macos.sh` (or symlink manually)
 3. Update the table above with the Pi API methods used
 4. Add the critical symbols to the `required_symbols` list in `scripts/configure-pi.sh`
 

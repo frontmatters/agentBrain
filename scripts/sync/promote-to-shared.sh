@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# promote-to-shared.sh — move a local/ note (or folder) to shared/, regenerate its
+# promote-to-shared.sh — move a vault/ note (or folder) to shared/, regenerate its
 # path-derived UUID5, log an old->new id map, and run the secret-gate.
 set -euo pipefail
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)"
 # shellcheck source=scripts/lib/vault.sh
 . "$ROOT_DIR/scripts/lib/vault.sh"
 LOCAL_DIR="$VAULT_DIR"

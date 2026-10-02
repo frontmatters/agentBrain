@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# Sync the private agentBrain local/ repository to its private Gitea remote.
-# Safe for public repo: this script contains no secrets and reads tokens from the documented Gitea helper.
+# Sync the private agentBrain vault repository to its configured remote.
+# HTTP remotes use a token helper; SSH and local remotes do not need one.
 
 set -euo pipefail
 
@@ -9,7 +9,7 @@ usage() {
 	cat <<EOF
 Usage: $0 [--dry-run] [commit-message]
 
-Sync the private local vault and nested sealed-space repositories.
+Sync the private vault and nested sealed-space repositories.
 
 Options:
   --dry-run   show pending vault/space changes without checking, committing, or pushing
@@ -34,9 +34,11 @@ case "${1:-}" in
 		;;
 esac
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)"
 # shellcheck source=scripts/lib/vault.sh
 . "$ROOT_DIR/scripts/lib/vault.sh"
+# shellcheck source=scripts/lib/git-token.sh
+. "$ROOT_DIR/scripts/lib/git-token.sh"
 LOCAL_DIR="$VAULT_DIR"
 CHECK_SCRIPT="${AGENTBRAIN_LOCAL_CHECK_SCRIPT:-$ROOT_DIR/scripts/checks/check-vault-private.sh}"
 
@@ -49,7 +51,7 @@ echo ""
 HELPER_PATH="${GITEA_HELPER_PATH:-$HOME/bin/gitea-helper.sh}"
 REMOTE="${AGENTBRAIN_LOCAL_REMOTE:-origin}"
 BRANCH="${AGENTBRAIN_LOCAL_BRANCH:-main}"
-MESSAGE="${1:-Update private agentBrain local notes}"
+MESSAGE="${1:-Update private agentBrain vault notes}"
 
 log() { printf '\n==> %s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
@@ -57,6 +59,15 @@ warn() { printf 'WARN: %s\n' "$*" >&2; }
 # Fetch the Gitea token from the keychain helper and export it for the git
 # pushes below. Sets an EXIT trap so the token is cleared even on early exit.
 ensure_gitea_token() {
+	# Only an http(s) remote needs a token; with ssh remotes (the vault and every
+	# space) nothing is fetched and gitea-helper is not even loaded.
+	local need=false d
+	if remote_needs_token "$VAULT_DIR" "$REMOTE"; then need=true; fi
+	for d in "$VAULT_DIR"/spaces/*/; do
+		[ -e "$d/.git" ] || continue
+		if remote_needs_token "$d" origin; then need=true; fi
+	done
+	if [ "$need" != true ]; then GITEA_PRIVATE_TOKEN=""; return 0; fi
 	# shellcheck source=/dev/null
 	source "$HELPER_PATH" >/dev/null 2>&1
 	GITEA_PRIVATE_TOKEN="$(get_gitea_token)"
@@ -89,7 +100,7 @@ sync_spaces() {
 				|| { warn "space $name: commit failed"; continue; }
 		fi
 		branch="$(git -C "$d" rev-parse --abbrev-ref HEAD 2>/dev/null || echo master)"
-		if git -C "$d" -c http.extraHeader="Authorization: token ${GITEA_PRIVATE_TOKEN}" push origin "$branch"; then
+		if git_with_token "$GITEA_PRIVATE_TOKEN" -C "$d" push origin "$branch"; then
 			log "space $name pushed ($branch)"
 		else
 			warn "space $name: push failed"
@@ -115,12 +126,20 @@ if [[ "$DRY_RUN" = "1" ]]; then
 	exit 0
 fi
 
-if [[ ! -f "$HELPER_PATH" ]]; then
+# Check the helper only when authentication is actually needed. A vault or
+# nested space using SSH must work on a machine without an HTTP token helper.
+needs_helper=false
+if remote_needs_token "$LOCAL_DIR" "$REMOTE"; then needs_helper=true; fi
+for _space in "$LOCAL_DIR"/spaces/*/; do
+	[[ -e "${_space}.git" ]] || continue
+	if remote_needs_token "$_space" origin; then needs_helper=true; fi
+done
+if [[ "$needs_helper" = true && ! -f "$HELPER_PATH" ]]; then
 	warn "Gitea helper not found: $HELPER_PATH"
 	exit 1
 fi
 
-log "Checking private local repo"
+log "Checking private vault repo"
 cd "$LOCAL_DIR"
 
 # Ensure the vault's commit gates are installed in THIS vault repo. Idempotent
@@ -175,7 +194,7 @@ git commit -m "$MESSAGE"
 log "Pushing to private Gitea remote: $REMOTE $BRANCH"
 ensure_gitea_token
 
-git -c http.extraHeader="Authorization: token ${GITEA_PRIVATE_TOKEN}" push "$REMOTE" "$BRANCH"
+git_with_token "$GITEA_PRIVATE_TOKEN" push "$REMOTE" "$BRANCH"
 
 # Also sync nested owned-space repos to their own remotes (same token).
 sync_spaces || warn "one or more space repos failed to sync"

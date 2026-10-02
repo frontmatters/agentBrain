@@ -1,1 +1,0 @@
-checks/check-path-naming.sh

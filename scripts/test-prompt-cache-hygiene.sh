@@ -1,1 +1,0 @@
-tests/test-prompt-cache-hygiene.sh

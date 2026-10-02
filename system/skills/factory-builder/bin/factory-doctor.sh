@@ -44,6 +44,23 @@ check_file(){ [ -f "$1" ] || fail "missing file: $2 ($1)"; }
 check_dir "$FACTORY/R&D" 'R&D'
 [ -n "$RELEASES" ] && check_dir "$RELEASES" releases || fail "factory.json has no releases root"
 check_file "$FACTORY/README.md" README.md
+# A factory directory is named <tool>.factory (layout.json factorySuffix), so a
+# factory reads as one in any listing and the registry finds it at any depth.
+# An existing factory keeps another name only with "legacyName": "<reason>".
+NAME_CHECK="$(python3 - "$FACTORY" "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../layout.json" <<'NAMEPY'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1]); suffix = json.load(open(sys.argv[2]))["factorySuffix"]
+if root.name.endswith(suffix):
+    raise SystemExit(0)
+want = root.name.removesuffix("-factory").removesuffix("_factory") + suffix
+reason = json.load(open(root / "factory.json")).get("legacyName")
+if isinstance(reason, str) and reason.strip():
+    print(f"NOTE factory directory '{root.name}' is not '{want}' (legacyName: {reason.strip()})")
+else:
+    print(f"FAIL factory directory '{root.name}' must be named '{want}' (a factory is <tool>{suffix}); an existing factory may keep its name with \"legacyName\": \"<reason>\" in factory.json")
+NAMEPY
+)"
+case "$NAME_CHECK" in "FAIL "*) fail "${NAME_CHECK#FAIL }" ;; "NOTE "*) note "${NAME_CHECK#NOTE }" ;; esac
 for lane in dev next live; do
   case "$lane" in
     dev) raw="${DEV:-}" ;;
@@ -76,7 +93,8 @@ for p in root.glob('*/package.json'):
 raise SystemExit(0 if found else 1)
 PY
   then
-    note "no version file or package version found"
+    # A version of record is required for repeatable releases.
+    fail "no version file or package version found; every tool carries a version"
   fi
 fi
 if [ "$PROFILE" = standard ]; then
@@ -146,6 +164,22 @@ else:
         print(f'andon: {a["undated"]} cord(s) without a since-date')
 PY
 )
+fi
+# Where the tool keeps its state: one variable, declared in factory.json (factory-paths.sh).
+while IFS= read -r _line; do
+  case "$_line" in FAIL\ *) fail "${_line#FAIL }" ;; NOTE\ *) note "${_line#NOTE }" ;; esac
+done < <(bash "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/factory-paths.sh" --check --factory "$FACTORY" 2>&1 || true)
+# <tool>-next: the next lane on the PATH beside the live command (factory-link.sh).
+while IFS= read -r _line; do
+  case "$_line" in FAIL\ *) fail "${_line#FAIL }" ;; NOTE\ *) note "${_line#NOTE }" ;; INFO\ *) echo "$_line" ;; esac
+done < <(bash "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/factory-link.sh" --factory "$FACTORY" --check 2>&1 || true)
+# Scan every declared lane; a leak is a hard failure even without --strict.
+if leak_out="$(bash "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/factory-leakscan.sh" --factory "$FACTORY")"; then
+  echo "$leak_out"
+else
+  while IFS= read -r _line; do
+    case "$_line" in FAIL\ *) fail "${_line#FAIL }" ;; esac
+  done <<< "$leak_out"
 fi
 if [ "$STRICT" = true ] && [ "$warnings" -gt 0 ]; then errors=$((errors+warnings)); fi
 if [ "$errors" -gt 0 ]; then echo "factory-doctor: FAIL ($errors error(s), $warnings warning(s))"; exit 1; fi

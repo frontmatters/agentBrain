@@ -38,12 +38,6 @@ cannot fast-forward). Your vault is not part of the public checkout.
 defaults into a served copy under /tmp, and starts the HTTP server. One command to
 refresh what a second machine installs.
 
-`sandbox.sh` — dev helper: a disposable install-testbed in the browser. Serves a
-real terminal (ttyd) where every connection spawns a fresh non-root Debian
-container; paste the install curl and walk the real installer + wizard as a human
-on a brand-new machine. `start | stop | status`; a wrapper page adds a reset
-button. Composes with serve-lan.sh (run that first). Needs docker + ttyd.
-
 ## The installer is one versioned unit
 
 The unit = this orchestrator (`install.sh`) + the sub-installers it calls

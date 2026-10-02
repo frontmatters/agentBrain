@@ -7,9 +7,11 @@ id: 8327e9b7-eddb-50cd-924b-58ff4328842d
 
 # scripts/selftest/ — agent-agnostic selftest modules
 
-The dispatcher (`scripts/selftest.sh`) sources every `*.sh` file in this directory
-and runs the agent-specific check sections only for agents detected on the
-current machine. The generic section always runs.
+The dispatcher (`scripts/selftest.sh`) sources `_lib.sh` and `generic.sh`, then
+the module of each agent listed in its `AGENT_MODULES` array, and runs the
+agent-specific check sections only for agents detected on the current machine.
+The generic section always runs. A file in this directory that is not registered
+in `AGENT_MODULES` is ignored.
 
 ## File layout
 
@@ -39,9 +41,9 @@ run_<agent>() {
 }
 ```
 
-The dispatcher discovers modules by name, not by listing — to add a new agent,
-drop a `scripts/selftest/<agent>.sh` file and register the agent id in
-`scripts/selftest.sh`'s `AGENT_MODULES` array.
+The dispatcher finds a module by the agent id registered in `AGENT_MODULES`
+(`<id>` loads `scripts/selftest/<id>.sh`) — to add a new agent, drop a
+`scripts/selftest/<agent>.sh` file and register the agent id in that array.
 
 ## i18n
 
@@ -56,4 +58,4 @@ Selftest modules MUST be safe to re-run:
 - Read configuration, do not mutate it
 - One write/delete cycle is acceptable for end-to-end checks (e.g. the
   `claude-memory-redirect` write-through test) — clean up after yourself
-- Never edit `~/.claude/settings.json`, agent config files, or `local/`
+- Never edit `~/.claude/settings.json`, agent config files, or `vault/`

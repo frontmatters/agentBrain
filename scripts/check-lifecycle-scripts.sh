@@ -1,1 +1,0 @@
-checks/check-lifecycle-scripts.sh

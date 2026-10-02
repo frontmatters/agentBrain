@@ -13,9 +13,18 @@ set -euo pipefail
 # ── Resolve paths ──
 # Subshell groups the fallback chain so $() captures one line, not two.
 AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(realpath ~/agentBrain 2>/dev/null || (cd ~/agentBrain && pwd))}"
+# The vault through the resolver (AGENTBRAIN_VAULT and friends), never the
+# checkout's own folder by assumption; a copy without scripts/lib (a test
+# fixture) falls back to it.
+if [ -f "$AGENTBRAIN_DIR/scripts/lib/vault.sh" ]; then
+	# shellcheck source=/dev/null
+	. "$AGENTBRAIN_DIR/scripts/lib/vault.sh"
+else
+	VAULT_DIR="${AGENTBRAIN_VAULT:-$AGENTBRAIN_DIR/vault}"
+fi
 EMIT="$AGENTBRAIN_DIR/system/addons/event-bus/bin/brain-emit"
 POLL="$AGENTBRAIN_DIR/system/addons/event-bus/bin/brain-poll"
-REVIEWS_DIR="$AGENTBRAIN_DIR/vault/reviews"
+REVIEWS_DIR="${VAULT_DIR}/reviews"
 
 # Sanity: event-bus addon must exist
 [ -x "$EMIT" ] || { echo "peer-review: event-bus addon not found at $EMIT" >&2; exit 4; }
@@ -85,14 +94,14 @@ EOF
 
 # ── Cascaded config resolve (system/security-policy.md) ──
 # Explicit --llm wins, then the PEER_REVIEW_DEFAULT_LLM pin, then the user-wide
-# local/config/llm.json (mapped to ollama:<model>, OLLAMA_HOST for remote hosts),
+# vault/config/llm.json (mapped to ollama:<model>, OLLAMA_HOST for remote hosts),
 # then the first genuinely local ollama model. :cloud models are refused here:
 # they route to ollama's cloud while looking local. No shipped cloud default.
 resolve_default_llm() {
     [ -n "$LLM" ] && return 0
     LLM="${PEER_REVIEW_DEFAULT_LLM:-}"
     [ -n "$LLM" ] && return 0
-    local f="$AGENTBRAIN_DIR/vault/config/llm.json"
+    local f="${VAULT_DIR}/config/llm.json"
     if [ -f "$f" ] && command -v jq >/dev/null 2>&1; then
         local endpoint model host
         endpoint="$(jq -r '.endpoint // empty' "$f")"
@@ -679,7 +688,7 @@ show_bus_path_mode() {
     [ -n "$SHOW_PATH_ID" ] || { echo "peer-review: <event_id> required for --show-bus-path" >&2; exit 1; }
 
     local dir found
-    for dir in "$AGENTBRAIN_DIR/vault/events/inbox" "$AGENTBRAIN_DIR/vault/events/archive"; do
+    for dir in "${VAULT_DIR}/events/inbox" "${VAULT_DIR}/events/archive"; do
         [ -d "$dir" ] || continue
         # grep -l exits 1 when no match → || true prevents set-e abort.
         found="$( { grep -l "\"event_id\": \"$SHOW_PATH_ID\"" "$dir"/*.json 2>/dev/null | head -1 ; } || true)"

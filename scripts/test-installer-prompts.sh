@@ -1,1 +1,0 @@
-tests/test-installer-prompts.sh

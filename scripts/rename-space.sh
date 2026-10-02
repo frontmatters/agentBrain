@@ -10,7 +10,7 @@
 # in the path itself.
 #
 # What a rename touches, in order:
-#   1. the directory            local/spaces/<old>/ -> local/spaces/<new>/
+#   1. the directory            vault/spaces/<old>/ -> vault/spaces/<new>/
 #   2. the passport             slug:, and the slug inside tags:
 #   3. every note id            UUID5 is derived from the path, so all change
 #   4. slug tokens in the space `space: <old>` fields, `--space <old>` commands
@@ -30,10 +30,12 @@
 set -euo pipefail
 
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-# Physical path on purpose. local/ is a symlink to the vault, and BSD grep does
+# Physical path on purpose. The vault is often a symlink, and BSD grep does
 # not follow a symlink handed to it as an argument: every recursive search
 # below would report zero matches and the rename would quietly skip the vault.
-VAULT="$(cd -P "$ROOT/vault" && pwd -P)"
+# shellcheck source=scripts/lib/vault.sh
+. "$ROOT/scripts/lib/vault.sh"
+VAULT="$(cd -P "$VAULT_DIR" && pwd -P)"
 OLD=""; NEW=""; DRY=0
 while [ $# -gt 0 ]; do
 	case "$1" in

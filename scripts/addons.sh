@@ -17,18 +17,28 @@
 #   bash scripts/addons.sh update <id>                    # fetch newer version from registries (explicit)
 #   bash scripts/addons.sh new <id> [name]                # scaffold own addon into vault/addons/<id>/
 #   bash scripts/addons.sh registry list|add <n> <url>|remove <n>   # manage registries (default built-in)
-#   bash scripts/addons.sh registry default [<url>|reset]  # per-machine default registry (dev: point at Gitea)
+#   bash scripts/addons.sh registry add <n> <url> --token-from keychain:<service>|env:<VAR>
+#                                                         # a private registry; only the reference is stored
+#   bash scripts/addons.sh registry default [<url> [--token-from <ref>]|reset]  # per-machine default registry
 #   bash scripts/addons.sh status --remote                # adds UPDATE column (fetches indexes)
 # Env: ADDONS_REGISTRY, ADDONS_STATE (override roots, used by tests),
 #      ADDONS_DRY_RUN=1 (echo install cmd), ADDONS_ASSUME_YES=1 (non-TTY enable),
 #      ADDONS_PURGE=1 (uninstall also removes vault/addons/<id>/ config dir),
-#      ADDONS_REGISTRIES_FILE, ADDONS_DEFAULT_URL, ADDONS_FETCH_TIMEOUT.
+#      ADDONS_REGISTRIES_FILE, ADDONS_DEFAULT_URL, ADDONS_DEFAULT_TOKEN_FROM,
+#      ADDONS_FETCH_TIMEOUT.
 set -euo pipefail
 # shellcheck disable=SC1091
 . "$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)/installer/prompt-helper.sh"
 
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.." && pwd)"
+# The vault (enabled-state, vault-installed add-ons, registries, default-url) is
+# NOT assumed to sit at <checkout>/vault: a worktree has no vault/, and a vault
+# may live outside the checkout. It comes from the resolver, as in
+# check-skill-links.sh (AGENTBRAIN_VAULT first, then <checkout>/vault), so what
+# `enable` writes is what the check reads. ADDONS_STATE overrides the state dir.
+# shellcheck source=scripts/lib/vault.sh
+. "$ROOT_DIR/scripts/lib/vault.sh"
 cd "$ROOT_DIR"
 
 # shellcheck source=scripts/lib/platform.sh
@@ -37,7 +47,7 @@ cd "$ROOT_DIR"
 . "$ROOT_DIR/scripts/lib/capability-install.sh" 2>/dev/null || . "$(dirname "$0")/../lib/capability-install.sh"
 
 REGISTRY="${ADDONS_REGISTRY:-system/addons}"
-STATE="${ADDONS_STATE:-vault/addons}"
+STATE="${ADDONS_STATE:-$VAULT_DIR/addons}"
 # Default author for addons without an explicit `author:` — the vault maintainer,
 # read from brain.json (never hardcoded, so a rebrand/other owner is one config edit).
 brain_maintainer() {
@@ -45,7 +55,7 @@ brain_maintainer() {
 		"$ROOT_DIR/brain.json" 2>/dev/null || echo unknown
 }
 DEFAULT_MAINTAINER="$(brain_maintainer)"
-REGISTRIES_FILE="${ADDONS_REGISTRIES_FILE:-vault/addons/registries.json}"
+REGISTRIES_FILE="${ADDONS_REGISTRIES_FILE:-$VAULT_DIR/addons/registries.json}"
 DEFAULT_REGISTRY_NAME="default"
 # Which registry is "default" on THIS machine. Precedence:
 #   1. ADDONS_DEFAULT_URL env (one-shot override)
@@ -53,8 +63,18 @@ DEFAULT_REGISTRY_NAME="default"
 #      vault is excluded from releases, so this never changes the default for others)
 #   3. the baked-in public GitHub default (what ships to everyone)
 # Devs point this at their Gitea registry; the shipped default stays GitHub.
-DEFAULT_URL_FILE="${ADDONS_DEFAULT_URL_FILE:-vault/addons/default-url}"
+DEFAULT_URL_FILE="${ADDONS_DEFAULT_URL_FILE:-$VAULT_DIR/addons/default-url}"
 BAKED_DEFAULT_URL="https://raw.githubusercontent.com/frontmatters/agentbrain-registry/main/index.json"
+# A private default registry names where its token lives (keychain:<service> or
+# env:<VAR>), never the token. Stored beside default-url; the env wins.
+DEFAULT_TOKEN_FROM_FILE="${ADDONS_DEFAULT_TOKEN_FROM_FILE:-$VAULT_DIR/addons/default-token-from}"
+if [ -n "${ADDONS_DEFAULT_TOKEN_FROM:-}" ]; then
+	DEFAULT_TOKEN_FROM="$ADDONS_DEFAULT_TOKEN_FROM"
+elif [ -s "$DEFAULT_TOKEN_FROM_FILE" ]; then
+	DEFAULT_TOKEN_FROM="$(tr -d '[:space:]' <"$DEFAULT_TOKEN_FROM_FILE")"
+else
+	DEFAULT_TOKEN_FROM=""
+fi
 if [ -n "${ADDONS_DEFAULT_URL:-}" ]; then
 	DEFAULT_REGISTRY_URL="$ADDONS_DEFAULT_URL"
 elif [ -s "$DEFAULT_URL_FILE" ]; then
@@ -300,7 +320,12 @@ run_install_cmd() {
 	if [ "${ADDONS_DRY_RUN:-0}" = "1" ]; then
 		echo "[dry-run] $cmd"
 	else
-		bash -c "$cmd"
+		# VAULT_DIR: an install step that writes into the vault asks the resolver,
+		# never a path relative to where the add-on happens to live.
+		# ADDONS_LIFECYCLE_ID + ADDONS_STATE: the step knows addons.sh runs it
+		# (and enables right after), and reads the same enabled-state; run on its
+		# own, an installer can then say how to enable (crew/install.sh).
+		ADDONS_LIFECYCLE_ID="$id" ADDONS_STATE="$STATE" VAULT_DIR="$VAULT_DIR" bash -c "$cmd"
 	fi
 }
 
@@ -348,10 +373,10 @@ install_local() {
 
 # Download a packaged addon zip, verify sha256, unpack into vault/addons/<id>/.
 download_addon() {
-	local id="$1" ver="$2" url="$3" sha="$4"
+	local id="$1" ver="$2" url="$3" sha="$4" reg="${5:-}"
 	local tmp; tmp="$(mktemp -d)"
 	local zip="$tmp/addon.zip"
-	if ! curl -fsSL --max-time "${ADDONS_FETCH_TIMEOUT:-60}" -o "$zip" "$url"; then
+	if ! registry_curl "$reg" "$url" -fsSL --max-time "${ADDONS_FETCH_TIMEOUT:-60}" -o "$zip" "$url"; then
 		echo "Download failed: $url" >&2
 		rm -rf "$tmp"; return 1
 	fi
@@ -422,7 +447,7 @@ install_from_registry() {
 $chosen
 EOF2
 	echo "Installing $id $ver from registry '$reg'"
-	download_addon "$id" "$ver" "$url" "$sha"
+	download_addon "$id" "$ver" "$url" "$sha" "$reg"
 }
 
 # Explicitly fetch a newer version from the registries. Never automatic.
@@ -449,7 +474,7 @@ EOF2
 		return 0
 	fi
 	echo "Updating $id $cur -> $ver (registry '$reg')"
-	download_addon "$id" "$ver" "$url" "$sha"
+	download_addon "$id" "$ver" "$url" "$sha" "$reg"
 	# New files alone can leave install hooks/config stale and the skill links
 	# pointing at the old version — re-run the new version's install step
 	# (idempotent by contract) and restore enabled state (re-enable resyncs skills).
@@ -803,6 +828,10 @@ cmd_clients() {
 		for m in "$REGISTRY"/*/manifest.md; do
 			[ -f "$m" ] || continue
 			[ "$(basename "$(dirname "$m")")" = "_template" ] && continue
+			# A private addon never ships publicly, so this public matrix does not
+			# list it (check-addon-distribution rule 3); same output in a checkout
+			# and in a release, which never contains it.
+			grep -Eq '^distribution:[[:space:]]*private([[:space:]]|$)' "$m" && continue
 			id="$(_field "$m" id)"
 			[ -n "$id" ] || continue
 			row="| $id"
@@ -817,7 +846,7 @@ cmd_clients() {
 		printf '\n'
 		printf 'Legend: `full` = skill + hooks · `rules` = mention in rules/shared config ·\n'
 		printf '`none` = unsupported · `unknown` = untested.\n\n'
-		printf 'Windsurf and Cline have no skill mechanism, so they are always `rules`.\n'
+		printf 'Devin Desktop and Cline have no skill mechanism, so they are always `rules`.\n'
 	} > "$CLIENTS_TMP"
 
 	if [ "$write" -eq 1 ]; then
@@ -841,7 +870,8 @@ cmd_uninstall() {
 	# Run the addon's own uninstall script if it exists.
 	if [ -f "$addon_dir/uninstall.sh" ]; then
 		echo "Running $id/uninstall.sh…"
-		bash "$addon_dir/uninstall.sh" || echo "WARN: $id/uninstall.sh exited non-zero (continuing)" >&2
+		ADDONS_LIFECYCLE_ID="$id" ADDONS_STATE="$STATE" bash "$addon_dir/uninstall.sh" \
+			|| echo "WARN: $id/uninstall.sh exited non-zero (continuing)" >&2
 	fi
 
 	# Tear down launchd job on macOS when the addon declares a schedule.
@@ -962,16 +992,99 @@ _registries_init() {
 	jq -n '{registries: []}' > "$REGISTRIES_FILE"
 }
 
-# Print "name<TAB>url" per registry: the dynamic default FIRST, then the named
-# registries from the file (excluding any legacy "default" entry). Default is
-# always present (it has env/file/default fallbacks), so this never yields zero.
+# Print "name<TAB>url<TAB>token_from" per registry: the dynamic default FIRST,
+# then the named registries from the file (excluding any legacy "default"
+# entry). token_from is empty for a public registry. Default is always present
+# (it has env/file/default fallbacks), so this never yields zero.
 registries_list() {
-	printf '%s\t%s\n' "$DEFAULT_REGISTRY_NAME" "$DEFAULT_REGISTRY_URL"
+	printf '%s\t%s\t%s\n' "$DEFAULT_REGISTRY_NAME" "$DEFAULT_REGISTRY_URL" "$DEFAULT_TOKEN_FROM"
 	if [ -s "$REGISTRIES_FILE" ] && jq -e '.registries | type == "array"' "$REGISTRIES_FILE" >/dev/null 2>&1; then
 		jq -r --arg off "$DEFAULT_REGISTRY_NAME" \
-			'.registries[] | select(.name != $off) | "\(.name)\t\(.url)"' "$REGISTRIES_FILE"
+			'.registries[] | select(.name != $off) | "\(.name)\t\(.url)\t\(.token_from // "")"' "$REGISTRIES_FILE"
 	elif [ -f "$REGISTRIES_FILE" ]; then
 		echo "WARN: $REGISTRIES_FILE is empty/invalid — ignoring (using default only)" >&2
+	fi
+}
+
+# ---- registry auth ----
+# A private registry needs a token. The Gitea token leaked twice before: once in
+# a remote URL, once in a process argument list. So the rules here are:
+#   - the config stores a reference (keychain:<service> or env:<VAR>), never a token;
+#   - a URL with credentials in it is refused;
+#   - the token reaches curl through a mode-600 config file (curl -K), never argv;
+#   - it is sent only to the registry's own origin, so a zip hosted elsewhere
+#     (a public mirror, a CDN) never sees it.
+valid_token_ref() {
+	printf '%s' "$1" | grep -qE '^(keychain|env):[A-Za-z0-9_.-]+$'
+}
+
+# Refuse user:pass@host and token-like query parameters.
+url_has_credentials() {
+	printf '%s' "$1" | grep -qE '^[A-Za-z][A-Za-z0-9+.-]*://[^/?#]*@' && return 0
+	printf '%s' "$1" | grep -qiE '[?&](token|access_token|private_token|api_key|apikey)='
+}
+
+# scheme://host[:port] in lower case; empty for file:// and anything unparsable.
+url_origin() {
+	printf '%s' "$1" | sed -nE 's#^([Hh][Tt][Tt][Pp][Ss]?://[^/?#@]+).*#\1#p' | tr '[:upper:]' '[:lower:]'
+}
+
+resolve_token() {
+	local ref="$1"
+	case "$ref" in
+		keychain:*)
+			command -v security >/dev/null 2>&1 || { echo "token $ref: no macOS keychain here (use env:<VAR>)" >&2; return 1; }
+			security find-generic-password -s "${ref#keychain:}" -w 2>/dev/null \
+				|| { echo "token $ref: not found in the keychain" >&2; return 1; } ;;
+		env:*)
+			local v="${ref#env:}"
+			[ -n "${!v:-}" ] || { echo "token $ref: variable is empty or unset" >&2; return 1; }
+			printf '%s' "${!v}" ;;
+		*) echo "token reference not understood: $ref" >&2; return 1 ;;
+	esac
+}
+
+# registry_curl <registry-name> <target-url> <curl args...>
+# Runs curl, adding the registry's token only when the target has the same
+# origin as the registry's own URL.
+registry_curl() {
+	local reg="$1" target="$2"; shift 2
+	local rname rurl ref="" line
+	while IFS="$TAB" read -r rname rurl line; do
+		if [ "$rname" = "$reg" ]; then ref="$line"; break; fi
+	done < <(registries_list)
+	if [ -z "$ref" ] || [ -z "$(url_origin "$target")" ] || [ "$(url_origin "$target")" != "$(url_origin "$rurl")" ]; then
+		curl "$@"; return
+	fi
+	local token cfg rc
+	token="$(resolve_token "$ref")" || return 1
+	cfg="$(mktemp)" || return 1
+	chmod 600 "$cfg"
+	printf 'header = "Authorization: token %s"\n' "$token" > "$cfg"
+	curl -K "$cfg" "$@"; rc=$?
+	rm -f "$cfg"
+	return "$rc"
+}
+
+# Parse "--token-from <ref>" out of the remaining args into REG_TOKEN_FROM.
+_parse_token_from() {
+	REG_TOKEN_FROM=""
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			--token-from) REG_TOKEN_FROM="${2:-}"; shift 2 || true
+				valid_token_ref "$REG_TOKEN_FROM" || { echo "--token-from needs keychain:<service> or env:<VAR>" >&2; return 1; } ;;
+			--token-from=*) REG_TOKEN_FROM="${1#--token-from=}"; shift
+				valid_token_ref "$REG_TOKEN_FROM" || { echo "--token-from needs keychain:<service> or env:<VAR>" >&2; return 1; } ;;
+			*) echo "unknown option: $1" >&2; return 1 ;;
+		esac
+	done
+}
+
+_refuse_credential_url() {
+	if url_has_credentials "$1"; then
+		echo "Refusing a registry URL with credentials in it. Store the token in the keychain" >&2
+		echo "  and pass --token-from keychain:<service> (or env:<VAR>) instead." >&2
+		return 1
 	fi
 }
 
@@ -981,12 +1094,15 @@ cmd_registry() {
 	local tmp
 	case "$sub" in
 		list)
-			printf '%-16s %s\n' "NAME" "URL"
-			registries_list | awk -F'\t' '{ printf "%-16s %s\n", $1, $2 }'
+			printf '%-16s %-26s %s\n' "NAME" "TOKEN" "URL"
+			registries_list | awk -F'\t' '{ printf "%-16s %-26s %s\n", $1, ($3 == "" ? "-" : $3), $2 }'
 			;;
 		add)
-			local name="${1:?usage: registry add <name> <url>}"
-			local url="${2:?usage: registry add <name> <url>}"
+			local name="${1:?usage: registry add <name> <url> [--token-from <ref>]}"
+			local url="${2:?usage: registry add <name> <url> [--token-from <ref>]}"
+			shift 2
+			_parse_token_from "$@" || return 1
+			_refuse_credential_url "$url" || return 1
 			if [ "$name" = "$DEFAULT_REGISTRY_NAME" ]; then
 				echo "'$DEFAULT_REGISTRY_NAME' is managed separately — use 'registry default <url>'." >&2
 				return 1
@@ -1001,9 +1117,10 @@ cmd_registry() {
 				return 1
 			fi
 			tmp="$(mktemp)"
-			jq --arg n "$name" --arg u "$url" '.registries += [{name: $n, url: $u}]' \
+			jq --arg n "$name" --arg u "$url" --arg t "$REG_TOKEN_FROM" \
+				'.registries += [{name: $n, url: $u} + (if $t == "" then {} else {token_from: $t} end)]' \
 				"$REGISTRIES_FILE" > "$tmp" && mv "$tmp" "$REGISTRIES_FILE"
-			echo "Added registry $name -> $url"
+			echo "Added registry $name -> $url${REG_TOKEN_FROM:+ (token from $REG_TOKEN_FROM)}"
 			;;
 		remove)
 			local name="${1:?usage: registry remove <name>}"
@@ -1027,27 +1144,37 @@ cmd_registry() {
 				[ -n "${ADDONS_DEFAULT_URL:-}" ] && origin="ADDONS_DEFAULT_URL env"
 				echo "default: $DEFAULT_REGISTRY_URL"
 				echo "  source: $origin"
+				[ -n "$DEFAULT_TOKEN_FROM" ] && echo "  token from: $DEFAULT_TOKEN_FROM"
 				return 0
 			fi
 			if [ "$1" = "reset" ]; then
-				rm -f "$DEFAULT_URL_FILE"
+				rm -f "$DEFAULT_URL_FILE" "$DEFAULT_TOKEN_FROM_FILE"
 				echo "Reset default registry to the baked default: $BAKED_DEFAULT_URL"
 				return 0
 			fi
+			local durl="$1"; shift
+			_parse_token_from "$@" || return 1
+			_refuse_credential_url "$durl" || return 1
 			mkdir -p "$(dirname "$DEFAULT_URL_FILE")"
-			printf '%s\n' "$1" > "$DEFAULT_URL_FILE"
-			echo "Set default registry (this machine) -> $1"
+			printf '%s\n' "$durl" > "$DEFAULT_URL_FILE"
+			# a new default URL never inherits the old one's token reference
+			if [ -n "$REG_TOKEN_FROM" ]; then
+				printf '%s\n' "$REG_TOKEN_FROM" > "$DEFAULT_TOKEN_FROM_FILE"
+			else
+				rm -f "$DEFAULT_TOKEN_FROM_FILE"
+			fi
+			echo "Set default registry (this machine) -> $durl${REG_TOKEN_FROM:+ (token from $REG_TOKEN_FROM)}"
 			echo "  stored in $DEFAULT_URL_FILE (per-machine; the shipped default stays GitHub)"
 			;;
-		*) echo "usage: registry list | add <name> <url> | remove <name> | default [<url>|reset]" >&2; return 2 ;;
+		*) echo "usage: registry list | add <name> <url> [--token-from <ref>] | remove <name> | default [<url> [--token-from <ref>]|reset]" >&2; return 2 ;;
 	esac
 }
 
 # Fetch a registry index over https:// or file:// (curl handles both).
-fetch_index() {
+fetch_index() { # fetch_index <url> [registry-name]
 	# raw.githubusercontent.com caches for 300 s; without this header an install
 	# in the five minutes after a publish still sees the previous index.
-	curl -fsSL --max-time "${ADDONS_FETCH_TIMEOUT:-10}" -H "Cache-Control: no-cache" "$1"
+	registry_curl "${2:-}" "$1" -fsSL --max-time "${ADDONS_FETCH_TIMEOUT:-10}" -H "Cache-Control: no-cache" "$1"
 }
 
 # Emit candidates across all configured registries, one line per match:
@@ -1055,22 +1182,51 @@ fetch_index() {
 # $1: addon id filter ("" = all). Unreachable registries warn and are skipped.
 registry_candidates() {
 	local want="${1:-}"
-	local name url idx
-	while IFS="$TAB" read -r name url; do
+	local name url idx _ref
+	while IFS="$TAB" read -r name url _ref; do
 		[ -n "$name" ] || continue
-		if ! idx="$(fetch_index "$url" 2>/dev/null)"; then
+		if ! idx="$(fetch_index "$url" "$name" 2>/dev/null)"; then
 			echo "WARN: registry '$name' unreachable: $url" >&2
 			continue
 		fi
 		printf '%s' "$idx" | jq -r --arg reg "$name" --arg want "$want" '
 			.addons[] | select($want == "" or .id == $want) |
-			[$reg, .id, .version, .name, .url, .sha256, (.author // "")] | @tsv' 2>/dev/null \
+			[$reg, .id, .version, .name, .url, .sha256, (.author // ""), (.privacy // ""), (.runtime_requires // "")] | @tsv' 2>/dev/null \
 			|| echo "WARN: registry '$name' has a malformed index" >&2
 	done < <(registries_list)
 }
 
 # Merged view: local + bundled addons first, then registry hits.
 # Dupes across registries sort newest-first; the newest of a dupe group is marked.
+# What setup's optional add-ons step offers, one per line:
+# id<TAB>name<TAB>privacy<TAB>runtime_requires, "-" for an empty field (bash
+# `read` with a tab IFS collapses empty fields, which would shift columns).
+# Two sources: add-ons already on this machine that are neither enabled nor
+# default_enabled (shipped but off, like an opt-in bundled add-on), and registry
+# add-ons not on this machine yet, newest version per id. A local add-on whose
+# `os:` names another platform is left out; registry entries carry no os: yet
+# (factory backlog P15), so they are not filtered by platform. Installing one goes through `install`,
+# which asks the privacy question and offers the declared runtimes.
+cmd_offerable() {
+	need_jq || return 1
+	local id m os here
+	case "$(uname -s)" in Darwin) here=macos ;; Linux) here=linux ;; *) here=other ;; esac
+	for id in $(all_addon_ids); do
+		[ "$id" = "_template" ] && continue
+		is_enabled "$id" && continue
+		m="$(manifest_path "$id")"
+		grep -qE '^default_enabled:[[:space:]]*(true|yes)[[:space:]]*$' "$m" 2>/dev/null && continue
+		os="$(_field "$m" os)"
+		case "${os:-any}" in any|"$here") ;; *) continue ;; esac
+		printf '%s\t%s\t%s\t%s\n' "$id" "$(_field "$m" name)" "$(_field "$m" privacy)" "$(_field "$m" runtime_requires)"
+	done | awk -F'\t' -v OFS='\t' '{ for (i = 1; i <= 4; i++) if ($i == "") $i = "-"; print }'
+	local have; have=" $(all_addon_ids | tr '\n' ' ') "
+	registry_candidates "" | sort -t"$TAB" -k2,2 -k3,3rV | awk -F'\t' -v OFS='\t' -v have="$have" '
+		!seen[$2]++ && index(have, " " $2 " ") == 0 {
+			n = ($4 == "" ? "-" : $4); p = ($8 == "" ? "-" : $8); r = ($9 == "" ? "-" : $9)
+			print $2, n, p, r }'
+}
+
 cmd_search() {
 	need_jq || return 1
 	local term="${1:-}"
@@ -1116,6 +1272,7 @@ main() {
 		promote)   cmd_promote "$@" ;;
 		registry)  cmd_registry "$@" ;;
 		search)    cmd_search "$@" ;;
+		offerable) cmd_offerable "$@" ;;
 		configure) cmd_configure "$@" ;;
 		onboard)   cmd_onboard "$@" ;;
 		check)     cmd_check "$@" ;;

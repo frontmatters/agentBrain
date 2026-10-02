@@ -4,11 +4,10 @@
 # (which space, if any) for a note from PATH-based and explicit signals only.
 #
 # Never content-based: tech-stack (Lit, PocketBase, …) is shared across projects,
-# so content inference produces false positives. See the spaces-context-model
-# design note. Signals, in priority order:
+# so content inference produces false positives. Signals, in priority order:
 #
 #   6  env AGENTBRAIN_CONTEXT / AGENTBRAIN_SPACE   — explicit override, wins
-#   1/2 the FILE being written: its path under local/spaces/<slug>/, or its
+#   1/2 the FILE being written: its path under vault/spaces/<slug>/, or its
 #      frontmatter `space:`  — positional signals DOMINATE the CWD, so a
 #      mid-session `cd` never switches context
 #   5  CWD under a known code-root (longest-prefix match, from .space-map.json)
@@ -20,7 +19,7 @@
 #               space Y (a misfiled note) — caller should refuse, not guess
 #   unknown     no space signal — caller decides (personal/main-vault, ask, refuse)
 #
-# The reverse-map (local/.space-map.json) is built by scripts/reports/build-space-map.sh;
+# The reverse-map (vault/.space-map.json) is built by scripts/reports/build-space-map.sh;
 # a missing or stale map degrades gracefully (map-dependent signals simply drop
 # out, biasing toward "unknown" rather than a wrong space).
 #
@@ -34,6 +33,8 @@
 # function called from a bare command line (→ dirname "" = ".", wrong root). CDPATH=''
 # so a relative source path never resolves against the user's CDPATH.
 _CONTEXT_ROOT="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/lib/vault.sh
+. "$_CONTEXT_ROOT/scripts/lib/vault.sh"
 _context_root() { printf '%s\n' "$_CONTEXT_ROOT"; }
 
 infer_context() {
@@ -42,17 +43,17 @@ infer_context() {
 	# Auto-regen the reverse-map when missing or stale (a passport changed since it
 	# was built), so code-root inference stays correct without a manual step.
 	# Best-effort + gitignored; a partial checkout (no generator) just skips it.
-	if [ -d "$root/vault/spaces" ] && [ -x "$root/scripts/reports/build-space-map.sh" ]; then
-		if [ ! -f "$root/vault/.space-map.json" ] ||
-			[ -n "$(find "$root/vault/spaces" -name index.md -newer "$root/vault/.space-map.json" 2>/dev/null | head -n1)" ]; then
+	if [ -d "$VAULT_DIR/spaces" ] && [ -x "$root/scripts/reports/build-space-map.sh" ]; then
+		if [ ! -f "$VAULT_DIR/.space-map.json" ] ||
+			[ -n "$(find "$VAULT_DIR/spaces" -name index.md -newer "$VAULT_DIR/.space-map.json" 2>/dev/null | head -n1)" ]; then
 			bash "$root/scripts/reports/build-space-map.sh" >/dev/null 2>&1 || true
 		fi
 	fi
-	python3 - "$root" "$file" "$workdir" "$HOME" "${AGENTBRAIN_CONTEXT:-${AGENTBRAIN_SPACE:-}}" <<'PY'
+	python3 - "$VAULT_DIR" "$file" "$workdir" "$HOME" "${AGENTBRAIN_CONTEXT:-${AGENTBRAIN_SPACE:-}}" <<'PY'
 import json, os, re, sys
 
-root, file, pwd, home, env = sys.argv[1:6]
-map_path = os.path.join(root, 'local', '.space-map.json')
+vault, file, pwd, home, env = sys.argv[1:6]
+map_path = os.path.join(vault, '.space-map.json')
 
 try:
     m = json.load(open(map_path, encoding='utf-8'))
@@ -72,8 +73,12 @@ if env:
 # 1/2 — the file being written. Positional signals dominate the CWD.
 if file:
     absf = os.path.normpath(file if os.path.isabs(file) else os.path.join(pwd, file))
-    mo = re.search(r'/(?:local|vault)/spaces/([^/]+)/', absf.replace(os.sep, '/') + '/')  # vault/ is the link, local/ the alias
-    path_slug = mo.group(1) if mo else None
+    # Prefer the configured vault root; its directory can have any name.
+    space_root = os.path.join(os.path.abspath(vault), 'spaces') + os.sep
+    path_slug = absf[len(space_root):].split(os.sep, 1)[0] if absf.startswith(space_root) else None
+    if not path_slug:
+        mo = re.search(r'/(?:local|vault)/spaces/([^/]+)/', absf.replace(os.sep, '/') + '/')
+        path_slug = mo.group(1) if mo else None
     fm_slug = None
     try:
         head = open(absf, encoding='utf-8', errors='replace').read(4000)

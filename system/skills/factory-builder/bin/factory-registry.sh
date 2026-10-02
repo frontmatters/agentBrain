@@ -16,7 +16,13 @@ import datetime, json, os, pathlib, subprocess, sys
 root, out, obeya_bin, profile_bin = map(pathlib.Path, sys.argv[1:])
 root = root.expanduser().resolve(); out = out.expanduser().resolve()
 rows=[]
-for config in sorted(root.glob('*/factory.json')):
+layout=json.loads((obeya_bin.parent.parent/'layout.json').read_text())
+import importlib.util
+_spec = importlib.util.spec_from_file_location("factory_discover", obeya_bin.parent / "factory-discover.py")
+_disc = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_disc)
+def factories():
+    return _disc.factories(root)
+for config in factories():
     factory=config.parent
     normalized=subprocess.run(['python3',str(profile_bin),str(factory)],capture_output=True,text=True)
     if normalized.returncode:

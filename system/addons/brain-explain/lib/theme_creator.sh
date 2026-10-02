@@ -6,17 +6,25 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../../../.." && pwd)"
-LOCAL_THEMES="${EXPLAINERS_LOCAL_THEMES:-$ROOT/vault/explainers/themes}"
+# shellcheck source=scripts/lib/vault.sh
+. "$ROOT/scripts/lib/vault.sh"
+LOCAL_THEMES="${EXPLAINERS_LOCAL_THEMES:-$VAULT_DIR/explainers/themes}"
 
 [ "${1:-}" = "new" ] || { echo "usage: brain-explain theme new <name> --prompt \"...\"" >&2; exit 2; }
 name="${2:?theme name required}"; shift 2
 prompt=""; [ "${1:-}" = "--prompt" ] && prompt="${2:-}"
+# A theme description may be private. Require an explicit backend choice before
+# sending it to any model; never infer cloud routing from an installed model.
+if [ -z "${BRAIN_EXPLAIN_LLM:-}" ]; then
+	echo "theme_creator: choose BRAIN_EXPLAIN_LLM explicitly (e.g. ollama:<local-model>) before generating a theme" >&2
+	exit 2
+fi
 
 NORM_CONTRACT='OKLCH only (no hex/rgb/hsl), readable body font, script only on headings, no background-clip:text, no border-left/right>1px accents, no em-dash in copy. Define tokens --bg --ink --soft --accent and style body,.kicker,h1,h2,h3,.lead,.layers .layer,.cards .card,.pull,.note,code,footer.'
 
 # Call an LLM backend; emit raw CSS on stdout. Mock backends for tests.
 gen() { # $1 = feedback (violations) or empty
-	case "${BRAIN_EXPLAIN_LLM:-ollama:gpt-oss:20b-cloud}" in
+	case "$BRAIN_EXPLAIN_LLM" in
 		mockok)  printf 'body{color:oklch(0.3 0.01 70)}\n.kicker{}\nh1{}\nh2{font-weight:600}\nh3{}\n.lead{}\n.layers .layer{}\n.cards .card{}\n.pull{}\n.note{}\ncode{}\nfooter{}\n' ;;
 		mockbad) printf 'body{color:#123456}\nh2{}\n' ;;
 		ollama:*|ollama-cloud:*) ollama run "${BRAIN_EXPLAIN_LLM#*:}" <<EOF

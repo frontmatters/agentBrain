@@ -11,8 +11,10 @@
 #
 # Runs INSIDE the vault git repo (cwd = the vault working tree, whose paths are
 # `learnings/x.md`, `projects/foo/index.md`, ...). The vault has no brain.json of
-# its own, so each staged path is mapped to the checkout's `local/` view
-# (`<checkout>/local/<rel>`) where validate-note-id.sh can walk up to brain.json.
+# its own, so each staged path is mapped to the checkout's view of the vault
+# (`<checkout>/vault/<rel>`) where validate-note-id.sh can walk up to brain.json.
+# An install from before the rename has `local/` instead; it is used only when
+# there is no vault/ link. A path that maps to no file is a rename or delete.
 #
 # Invoked by:
 #   - <vault>/.git/hooks/pre-commit (installed by sync-vault.sh)
@@ -22,18 +24,21 @@
 
 set -euo pipefail
 
-CHECKOUT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CHECKOUT_ROOT="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)"
 VALIDATOR="$CHECKOUT_ROOT/scripts/hooks/validate-note-id.sh"
 
 [ -x "$VALIDATOR" ] || exit 0  # no validator (partial checkout) → don't block
+
+vault_link=vault
+[ -e "$CHECKOUT_ROOT/vault" ] || [ ! -e "$CHECKOUT_ROOT/local" ] || vault_link=local
 
 fail=0
 # Staged, added/copied/modified, markdown only. `mapfile` is bash-4 only (macOS
 # ships bash 3.2), so use a while-read loop with process substitution.
 while IFS= read -r rel; do
 	[ -n "$rel" ] || continue
-	view="$CHECKOUT_ROOT/local/$rel"      # vault-relative -> checkout local/ view
-	[ -f "$view" ] || continue            # rename/delete target gone — skip
+	view="$CHECKOUT_ROOT/$vault_link/$rel"   # vault-relative -> the checkout's view
+	[ -f "$view" ] || continue               # rename/delete target gone: skip
 	if ! bash "$VALIDATOR" "$view"; then
 		fail=1
 	fi

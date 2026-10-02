@@ -113,7 +113,6 @@
   ],
   "orientation_policy": {
     "configure-pi:install-pi": "yes (recommended, part of installer step 3)",
-    "configure-pi:install-opensrc": "yes",
-    "prereq:fast-runtime-ollama": "no (optional, large download)"
+    "configure-pi:install-opensrc": "yes"
   }
 }

@@ -17,7 +17,7 @@
 set -euo pipefail
 shopt -s nullglob
 
-# Run from the repo root (as doctor does). Globs are relative to CWD; local/ may
+# Run from the repo root (as doctor does). Globs are relative to CWD; vault/ may
 # be a symlink to the shared vault — that resolves transparently.
 SCAN_GLOBS=(
 	system/addons/*/manifest.md          # addons

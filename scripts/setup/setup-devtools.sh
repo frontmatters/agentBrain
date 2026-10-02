@@ -21,7 +21,7 @@ ROOT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)"
 intent_capabilities() {
 	case "$1" in
 		mail)      echo "mailpit" ;;
-		container) echo "colima ttyd" ;;
+		container) echo "colima" ;;
 		python)    echo "uv" ;;
 		local-ai)  echo "ollama" ;;
 		*)         echo "" ;;

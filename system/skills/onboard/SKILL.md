@@ -188,7 +188,8 @@ tokens for ANY agent or tool live in the macOS Keychain instead of plain
 `.env`/`auth.json` files (Pi credentials and the vault-sync token are just two
 of its users). Skip it on other platforms (the `os:` field
 in each manifest is the gate). Only after the essentials, offer the remaining
-opt-in addons.
+opt-in addons that the registry offers for this platform (the manifest `os:`
+field is the gate). None of them is a core prerequisite.
 
 An addon is **already enabled** when `~/agentBrain/vault/addons/<id>/enabled` exists
 (the `status` output shows `enabled` next to its name). For each addon that is NOT yet

@@ -1,1 +1,0 @@
-tests/test-security-defaults.sh

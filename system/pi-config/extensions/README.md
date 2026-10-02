@@ -13,7 +13,7 @@ Custom Pi coding agent extensions. See `extensions.md` for the full catalog and 
 
 | Extension               | Purpose                                                 |
 | ----------------------- | ------------------------------------------------------- |
-| `agentbrain.ts`         | Injects agentBrain context into every session           |
+| `agentbrain.ts`         | Injects context; refreshes due reminders before each turn |
 | `session-continuity.ts` | Archives/starts the session journal on Pi session start |
 | `extract-learnings.ts`  | Auto-extracts learnings before compaction               |
 | `youtube-transcript.ts` | YouTube transcript download tools                       |

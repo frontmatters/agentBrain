@@ -1,0 +1,13 @@
+{
+  "package": "@earendil-works/pi-coding-agent",
+  "manager": "bun",
+  "symlink": "${HOME}/.bun/bin/pi",
+  "entry": "dist/bundle/cli.js",
+  "process": "pi",
+  "checks": [
+    "--version",
+    "--help"
+  ],
+  "session_export": "--export",
+  "sessions": "${HOME}/.pi/agent/sessions"
+}

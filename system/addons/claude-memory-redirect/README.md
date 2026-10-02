@@ -132,5 +132,5 @@ Strings table: `scripts/lib/_strings.sh`. The CLAUDE.md block templates above ar
 
 ## Related
 
-- `[[session-journal-addon]]` — same pattern, different target (session journal)
-- `vault/preferences/personal/optionality-configurable.md` — the user preference that motivated this design
+- The `session-journal` add-on: same pattern, different target (the session journal).
+- Every behaviour here is a mode in the config rather than a fixed choice, so a user can turn the redirect off without uninstalling.

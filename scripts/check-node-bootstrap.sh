@@ -1,1 +1,0 @@
-checks/check-node-bootstrap.sh

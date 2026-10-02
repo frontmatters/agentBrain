@@ -1,1 +1,0 @@
-checks/check-writing-style.sh

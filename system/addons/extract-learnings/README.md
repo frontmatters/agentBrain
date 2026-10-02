@@ -62,6 +62,9 @@ bash system/addons/extract-learnings/uninstall.sh           # remove the hook, k
 bash system/addons/extract-learnings/uninstall.sh --purge   # also delete vault/learnings/extracted
 ```
 
+The optional purge resolves `vault/learnings/extracted/` through the configured
+vault (`AGENTBRAIN_VAULT` when set), not through the checkout link.
+
 Uninstall is the true inverse of install: it removes only the entry whose command
 contains `extract-learnings/claude-precompact-hook.sh` from `settings.json`, using
 the same python patching. It is idempotent — running it with no hook installed is a

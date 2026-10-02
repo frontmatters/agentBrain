@@ -16,14 +16,16 @@ write-location routing, security, and how-to-write rules stay hot in
 
 ### Public layer (committed)
 
-Public paths are **lowercase/kebab-case** (the historical Title Case names were
-normalized). The public root folders:
+Public paths are **lowercase/kebab-case**. The public root folders of a release:
 
 ```
-system/    scripts/    templates/    docs/    tests/
-learnings/  projects/  sessions/  daily-notes/  backlog/
-templates/vault/preferences/personal/  youtube-digest/
+system/    scripts/    templates/    docs/
 ```
+
+plus the client entry points (`.github/`, `.claude/`, `.githooks/`). The vault's own
+folders (`vault/projects/`, `vault/learnings/`, `vault/sessions/`, `vault/daily-notes/`,
+`vault/backlog/`, …) are seeded from `templates/vault/`; they are not public root folders. A source checkout
+also has `scripts/tests/`, which a release does not ship.
 
 These names are **stable API** — do not rename. They are referenced by agents, scripts,
 skills, and Obsidian configs. Renaming would break links and tooling.
@@ -50,14 +52,13 @@ to lowercase/kebab-case when you touch them.
 
 ### Enforced by
 
-- `scripts/checks/check-path-naming.sh` — reports drift
-- `scripts/checks/doctor.sh` — includes naming audit
-- `scripts/checks/doctor.sh --strict` — fails on active local naming drift
+- `check-path-naming.sh` reports drift; the doctor runs it in a source checkout, and
+  `check-path-naming.sh --strict` makes vault naming drift fatal
 
 ## Maintenance routine
 
 Run `/brain-review` monthly. Also run `/brain-insights` plus
-`bash scripts/checks/doctor.sh --summary` after major Pi or agentBrain updates. Before
+`brain doctor --summary` after major Pi or agentBrain updates. Before
 public commits, run the privacy scan or doctor flow.
 
 The review checks:

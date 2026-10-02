@@ -24,7 +24,11 @@
 set -uo pipefail
 
 BRAIN="${BRAIN_DIR:-$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)}"
-VAULT="$BRAIN/vault"
+# The lib sits beside this script; $BRAIN is overridable to a fixture and would
+# not have it. The vault follows $BRAIN.
+# shellcheck source=scripts/lib/vault.sh
+. "$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/vault.sh"
+VAULT="$(vault_dir "$BRAIN")"
 QUIET=0
 for a in "$@"; do
 	case "$a" in

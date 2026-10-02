@@ -11,10 +11,10 @@ Public Pi config contains generic setup helpers only.
 
 ## Public-safe contents
 
-- `scripts/bootstrap-macos.sh` — generic macOS bootstrap
+- `scripts/installer/bootstrap/macos.sh` — generic macOS bootstrap
 - `agents.md` — Pi-specific entry point that points back to canonical `system/rules.md`
 - `bin/pi` — optional wrapper that prompts for Pi self-update and auto-updates after a timeout
-- docs that explain where local/private config belongs
+- docs that explain where private config belongs
 - templates with placeholder values only
 
 ## Private contents
@@ -22,9 +22,9 @@ Public Pi config contains generic setup helpers only.
 Real Pi provider extensions, model preferences, credentials, integration notes, migration notes, session logs, and machine-specific settings belong in:
 
 ```text
-local/pi-config/
-local/integrations/
-local/security/
+vault/pi-config/
+vault/integrations/
+vault/security/
 ```
 
 `vault/pi-config/models.json` holds the real Pi `models.json` (custom providers, remote hosts, API keys; `local/pi-config/` is the pre-rename alias). `scripts/configure-pi.sh` merges it into `~/.pi/agent/models.json` on install, see [Custom models](#custom-models-modelsjson).
@@ -102,7 +102,7 @@ The bootstrap can optionally install a secrets-helper from a local environment v
 export SECRETS_HELPER_REPO="https://github.com/<owner>/<repo>.git"
 export SECRETS_HELPER_VERSION="vX.Y.Z"
 export SECRETS_HELPER_RUN_SETUP=0
-bash scripts/bootstrap-macos.sh
+bash scripts/installer/bootstrap/macos.sh
 ```
 
 Do not commit the real private repo URL or local credentials to the public layer.

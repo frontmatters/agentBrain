@@ -27,7 +27,7 @@ export async function listMarkdownFiles(
 	results: string[] = [],
 	seen: Set<string> = new Set(),
 ): Promise<string[]> {
-	// Cycle guard: the vault is built from symlinks (e.g. `local/` → the shared
+	// Cycle guard: the vault is built from symlinks (e.g. `vault/` → the shared
 	// vault), which we follow below. Track visited real paths so a symlink loop
 	// can't spin the walker forever.
 	let realDir: string;
@@ -49,7 +49,7 @@ export async function listMarkdownFiles(
 		if (entry.name.startsWith(".")) continue;
 		const full = path.join(dir, entry.name);
 		// A symlinked directory reports isDirectory()===false, so resolve it: the
-		// vault's `local/` is a symlink and must be walked, else the entire private
+		// `vault/` link is a symlink and must be walked, else the entire private
 		// knowledge base is invisible to search.
 		let isDir = entry.isDirectory();
 		if (!isDir && entry.isSymbolicLink()) {

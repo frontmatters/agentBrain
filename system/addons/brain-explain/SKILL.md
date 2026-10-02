@@ -28,8 +28,8 @@ The addon ships at `system/addons/brain-explain/bin/brain-explain`:
 # render a note to stdout, or to <path> with --out (theme: --theme > frontmatter > config > clean-flat)
 bash system/addons/brain-explain/bin/brain-explain render <note.md> [--theme <name>] [--out <path>]
 
-# generate a norm-compliant theme from a style description (needs an LLM backend)
-bash system/addons/brain-explain/bin/brain-explain theme new <name> --prompt "<style>"
+# choose the backend explicitly; the prompt is sent to that backend
+BRAIN_EXPLAIN_LLM=ollama:<local-model> bash system/addons/brain-explain/bin/brain-explain theme new <name> --prompt "<style>"
 
 # first-run theme setup (LLM check, falls back to copy-clean-flat)
 bash system/addons/brain-explain/bin/brain-explain onboard

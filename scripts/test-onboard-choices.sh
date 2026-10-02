@@ -1,1 +1,0 @@
-tests/test-onboard-choices.sh

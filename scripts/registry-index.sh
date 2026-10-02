@@ -48,10 +48,14 @@ for zipf in "$DIR"/addon-*.zip; do
 	manifest="$(unzip -p "$zipf" "$id/manifest.md")"
 	name="$(mani_field "$manifest" name)"
 	privacy="$(mani_field "$manifest" privacy)"
+	runtime_requires="$(mani_field "$manifest" runtime_requires)"
 	# Attribution: explicit `author:` in the manifest, else the first-party default.
 	author="$(mani_field "$manifest" author)"; [ -n "$author" ] || author="$DEFAULT_MAINTAINER"
 	# License: explicit SPDX `license:`, else the framework default (Apache-2.0).
 	license="$(mani_field "$manifest" license)"; [ -n "$license" ] || license="Apache-2.0"
+	# Kind: framework, adapter or vendored (check-addons.sh enforces it). A zip
+	# built before kinds existed publishes an empty kind, never a guessed one.
+	kind="$(mani_field "$manifest" kind)"
 	# Dependencies: `requires:` (space/comma-separated addon ids) -> JSON array.
 	# Empty input must yield `[]`: `jq -R` reads line-by-line and emits nothing for
 	# an empty stream, which would make --argjson choke on an empty string.
@@ -78,9 +82,9 @@ for zipf in "$DIR"/addon-*.zip; do
 		*) echo "ERROR: URL for $id has an unsupported scheme (need http/https/file): $url" >&2; exit 1 ;;
 	esac
 	entries="$(jq --arg id "$id" --arg name "$name" --arg version "$version" \
-		--arg url "$url" --arg sha "$sha" --arg privacy "$privacy" --arg author "$author" \
-		--arg license "$license" --argjson requires "$requires_json" \
-		'. += [{id: $id, name: $name, version: $version, url: $url, sha256: $sha, privacy: $privacy, author: $author, license: $license, requires: $requires}]' \
+		--arg url "$url" --arg sha "$sha" --arg privacy "$privacy" --arg runtime_requires "$runtime_requires" --arg author "$author" \
+		--arg license "$license" --arg kind "$kind" --argjson requires "$requires_json" \
+		'. += [{id: $id, name: $name, version: $version, url: $url, sha256: $sha, privacy: $privacy, runtime_requires: $runtime_requires, author: $author, license: $license, kind: $kind, requires: $requires}]' \
 		<<<"$entries")"
 done
 

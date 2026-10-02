@@ -30,7 +30,8 @@ from pathlib import Path
 
 strict = len(sys.argv) > 1 and sys.argv[-1].lower() == 'true'
 
-roots = [p for p in Path('.').rglob('.pi-lens') if '.git' not in p.parts and 'local' not in p.parts]
+# Exclude only checkout-root vault aliases; a project named "local" is public code.
+roots = [p for p in Path('.').rglob('.pi-lens') if p.parts[0] not in {'.git', 'vault', 'local'}]
 if not roots:
     print('pi-lens check skipped: no .pi-lens state found.')
     raise SystemExit(0)

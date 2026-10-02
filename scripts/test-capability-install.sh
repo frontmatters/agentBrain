@@ -1,1 +1,0 @@
-tests/test-capability-install.sh

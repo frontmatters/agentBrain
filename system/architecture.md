@@ -28,7 +28,7 @@ for the three-knowledge-layers model.
 | --- | --- | --- | --- |
 | **skill** | a capability an agent invokes (`SKILL.md`) | `system/skills/` (public) · `vault/skills/` (private) | create the dir + `SKILL.md`; `setup-skills.sh` links it |
 | **addon** | opt-in, agent-agnostic tool/behavior (manifest + optional install) | `system/addons/` (bundled) · `vault/addons/` (yours/downloaded) | `addons.sh new <id>` |
-| **registry** | a remote catalogue (`index.json`) addons install from | configured in `vault/addons/registries.json` (+ dynamic default) | `addons.sh registry add <name> <url>` |
+| **registry** | a remote catalogue (`index.json`) addons install from | configured in `vault/addons/registries.json` (+ dynamic default) | `addons.sh registry add <name> <url> [--token-from keychain:<svc>\|env:<VAR>]` |
 | **preference** | how you want agents to behave (notes) | `vault/preferences/{personal,team,organization}/` | `/onboard <scope>` |
 | **space** | a sealed per-owner compartment of `vault/` (an employer/client) | `vault/spaces/<slug>/` (private; gitignored, off default recall) | `new-space.sh <slug>` (create) · `sync-space.sh` (seal) · see `docs/spaces.md` |
 
@@ -38,13 +38,13 @@ for the three-knowledge-layers model.
 | --- | --- |
 | install / connect an AI client | `./setup.sh` |
 | change config after setup | `/config` (or `addons.sh`, `/onboard <scope>`) |
-| add/install/publish an addon | `addons.sh` (§6) + `package-addon.sh`/`publish-addon.sh` |
-| check the brain is healthy | `scripts/checks/doctor.sh` (full) · `--fast` (quick pre-push gate) |
+| add/install an addon | `addons.sh` (§6); publication tooling is not included in the public install |
+| check the brain is healthy | `brain doctor` (= `scripts/checks/doctor.sh --user`); in a source checkout `scripts/checks/doctor.sh` is the full doctor · `--fast` (quick pre-push gate) |
 | ship dev → live | the dev→live deploy — see *Development and release model* (dev-only tooling, not shipped) |
 | cut a release | bump version → curate CHANGELOG [Unreleased] → build + publish; see *Development and release model* |
 
 **Scripts by family** (overview: [`scripts/README.md`](../scripts/README.md); each script self-documents in its header): `setup-*`/`configure-*` (install & connect) ·
-`check-*`/`test-*` (validation, run by `doctor.sh`) · `addons.sh` + `*-addon*` +
+`check-*` (validation, run by `doctor.sh`; `test-*` suites are source-checkout only) · `addons.sh` + `*-addon*` +
 `registry-*` (addon/registry lifecycle) · `release.sh`/`bump-version.sh`/
 `publish-*`/`deploy-*`/`dev-sync-*` (dev/release, never shipped) ·
 `brain.sh`/`new-note.sh`/`*-agentbrain-*` (brain ops).
@@ -53,7 +53,7 @@ for the three-knowledge-layers model.
 
 A portable, **agent-agnostic** knowledge system. One repository whose canonical path and
 `namespace` UUID are recorded in `brain.json` (it lives under the user's home directory).
-Any AI client (Claude Code, Pi, Cursor, Copilot, Gemini, OpenCode, Windsurf, Cline) reads
+Any AI client (Claude Code, Pi, Cursor, Copilot, Gemini, OpenCode, Devin Desktop (formerly Windsurf), Cline) reads
 the same brain. Knowledge lives **once**, in agentBrain; each client connects to it.
 
 Core invariant: **one home, many links.** Skills, rules, and preferences are not
@@ -87,11 +87,11 @@ agentBrain/
     copilot-instructions.md, workflows/
   scripts/             setup, validation (check-*.sh), doctor, lifecycle, addons.sh
   templates/           note/project templates with dummy content
-  docs/                public documentation (e.g. the shared/ knowledge layer)
     vault/             seeds for the vault (READMEs, registry, preference templates);
-                       rendered into vault/ once by setup, mirroring its layout
+                       rendered into vault/ once by setup
+  docs/                public documentation (e.g. the shared/ knowledge layer), mirroring its layout
   vault/ -> ~/.agentBrain/vault    YOUR VAULT — WHAT (symlink; gitignored; real knowledge)
-  vault  -> local                  the same directory under its own name (see uuid5-gen.sh)
+  # Note ids retain an internal local/ spelling; there is no local/ directory.
     spaces/<slug>/     sealed per-owner compartment (gitignored; off default recall)
   shared/ -> ~/.agentBrain/shared  optional SHARED knowledge layer (symlink; gitignored)
   brain.json         manifest: namespace UUID + canonical path
@@ -135,9 +135,9 @@ differs per client. `scripts/setup/setup-agent-integrations.sh` orchestrates per
 
 | Client | Mechanism | Set up by |
 | --- | --- | --- |
-| Claude Code | appends an `## agentBrain` pointer block to `~/.claude/CLAUDE.md` (idempotent, marker `# agentBrain`). Skill symlinks (`~/.claude/skills/* → system/skills/*`) are wired by `scripts/setup/setup-skills.sh`; `scripts/checks/check-skill-links.sh` guards against drift. | `setup-claude-code.sh` |
+| Claude Code | appends an `## agentBrain` pointer block to `~/.claude/CLAUDE.md` (idempotent, between `<!-- agentBrain:begin -->` / `<!-- agentBrain:end -->` markers; an older `# agentBrain` heading block is recognised and replaced). Skill symlinks (`~/.claude/skills/* → system/skills/*`) are wired by `scripts/setup/setup-skills.sh`; `scripts/checks/check-skill-links.sh` guards against drift. | `setup-claude-code.sh` |
 | Pi | deep symlinks: `~/.pi/agent/*` → agentBrain (extensions, skills, `AGENTS.md`, `bin/pi`) | `configure-pi.sh` (run via the macOS bootstrap) |
-| Cursor/Copilot/Gemini/OpenCode/Windsurf/Cline | per-client rules/config pointing at agentBrain | `setup-{cursor,copilot,gemini-cli,opencode,windsurf,cline}.sh` |
+| Cursor/Copilot/Gemini/OpenCode/Devin Desktop/Cline | per-client rules/config pointing at agentBrain | `setup-{cursor,copilot,gemini-cli,opencode,devin,cline}.sh` |
 
 **Reading order for an agent at session start**: the canonical list lives in
 `system/rules.md` (Self-Learning Protocol, Step 1) — identical to the pointer block
@@ -158,8 +158,8 @@ system/pi-config/skills/   Pi-specific skills only (e.g. pi-postinstall-patch)
 ```
 
 One source, many links: a skill is authored once under `system/skills/`, and every client
-points at it. `.github/skills/` entries are symlinks, never real files — enforced by
-`scripts/checks/check-architecture.sh` so the source cannot drift back into a vendor directory.
+points at it. `.github/skills/` entries are symlinks, never real files — enforced by the
+source checkout's `check-architecture.sh` so the source cannot drift back into a vendor directory.
 Skills that only make sense for one agent (e.g. Pi's post-install patch) stay in
 `system/pi-config/skills/`. Private or personal skills live under `vault/skills/`;
 they are discovered and linked by `scripts/setup/setup-skills.sh` and guarded by
@@ -188,12 +188,15 @@ agentBrain's extensions and skills.
 
 ## 8. Validation & health (`scripts/`)
 
-`scripts/checks/doctor.sh` orchestrates a suite of `check-*.sh` validators and shellcheck:
+`scripts/checks/doctor.sh` orchestrates a suite of `check-*.sh` validators and shellcheck.
+`brain doctor` (`doctor.sh --user`) runs the checks that test an install; in a source
+checkout `doctor.sh` without `--user` also runs the framework's own checks and tests,
+which a release does not ship. Examples:
 
 - `privacy-scan.sh` — blocks personal/private data from the public layer (also a pre-commit hook)
 - `check-frontmatter.sh` — note schema (`date/type/tags/UUID id`); SKILL.md + addon manifests are exempt (own schemas)
-- `check-readmes.sh` — every public markdown folder has a README (addon subdirs exempt)
-- `check-links.sh`, `check-path-naming.sh`, `check-preference-scopes.sh`, `check-session-schema.sh`, `check-addons.sh`, `check-pi-lens.sh`, …
+- `check-preference-scopes.sh`, `check-session-schema.sh`, `check-addons.sh`, `check-pi-lens.sh`, …
+- source checkout only: `check-readmes.sh` (every public markdown folder has a README), `check-links.sh`, `check-path-naming.sh`, …
 
 `doctor.sh --ci` is CI-safe; `--summary` compact; `--verbose` shows detail incl. add-on
 status. Doctor never fails on a missing add-on. Run doctor green before committing public
@@ -203,7 +206,7 @@ changes; `privacy-scan.sh` must pass.
 
 `setup.sh` orchestrates modular setup: `setup-structure.sh`, `setup-templates.sh`,
 `setup-brain-config.sh`, `setup-agent-integrations.sh` (per-client), `setup-git-hooks.sh`,
-`setup-validation.sh`. Other lifecycle: `bootstrap-macos.sh`, `offboard.sh` /
+`setup-validation.sh`. Other lifecycle: `installer/bootstrap/macos.sh`, `offboard.sh` /
 `import-offboard.sh` (export/import your vault between machines), `move-agentbrain.sh`,
 `uninstall.sh`, `ensure-daily-note.sh`.
 
@@ -212,48 +215,28 @@ changes; `privacy-scan.sh` must pass.
 - Public top-level dirs use canonical names: `system/`, `scripts/`, `templates/`,
   `docs/` (lowercase). The casing was normalized; verify the git-tracked casing,
   not just APFS resolution (case-insensitive locally, case-sensitive on CI/Linux).
-- Public learning category files use PascalCase when they are templates/examples.
+- Public learning category files use PascalCase when they are templates or examples.
 - Private/`vault/` directories and project folders use lowercase kebab-case.
 - Avoid spaces in new directory names; existing historical public dirs may remain for
   compatibility. Root-level project/research files are not allowed; use `vault/research/`.
 
 ## Development and release model
 
-`agentBrain-dev` is the **development environment** and the **release source**. The live
-checkout is what you install and use; fresh installs come from a release archive built in dev.
+Development may happen in a separate worktree. The live checkout is the release
+source; fresh installs come from an archive built from the validated live tree.
 
-### Checkouts, alias, and vault symlinks
+### Checkouts and release boundary
 
-The two checkouts (live and dev) differ **only in framework code** (`system/`, `scripts/`);
-persistence is shared between them:
+The vault is a separate private directory mounted at `vault/` in each checkout;
+`shared/` is an optional separate knowledge layer. Changing the framework
+checkout must not copy or publish either knowledge layer.
 
-- `vault/ -> ~/.agentBrain/vault` — the same vault, symlinked identically into
-  both checkouts (same inode), so notes/projects/learnings live exactly once.
-- `shared/ -> ~/.agentBrain/shared` — the optional shared layer, likewise symlinked
-  identically in both.
-- An alias symlink (e.g. `~/agentBrain`) points at the **active** checkout;
-  `scripts/brain.sh` (`brain use dev|live`) flips the alias. Because the vault is
-  shared, a flip never touches knowledge. `brain status` shows which checkout is active.
-
-Three boundaries — what ships where:
-
-- **Installer** — `release.sh` (a dev-only script) builds `agentBrain-v<VERSION>.zip`: the
-  clean, installable public framework. Excludes `.git/`, `vault/`, `brain.json`, generated
-  caches, **and** the dev/release tooling listed below.
-- **Live sync** — `deploy-dev-to-live.sh` (dev-only) syncs dev's public layer into the live
-  checkout, preserving live's `.git/`, `vault/`, and `brain.json`, and excluding the same
-  dev/release tooling.
-- **Dev-only (never ships)** — release/maintainer tooling only: `VERSION` and
-  `scripts/{release,bump-version,publish-gitea-release,dev-sync-status,deploy-dev-to-live,release-check}.sh`.
-
-What DOES ship: the whole framework (`system/` incl. `system/skills/`, `scripts/setup-*`,
-`templates/`, `.github/skills/` symlinks) — **including all skills**. Skills are framework, not dev-only:
-`capture-tool-info` and `refactor-brain` ship to live and the installer. `vault/` is
-private and never ships.
-
-Acceptance for a clean source of truth:
-- `deploy-dev-to-live.sh --dry-run` reproduces the current live public layer (no unintended drift).
-- `release.sh` produces an archive with no `vault/`, no `brain.json`, and no dev/release tooling.
+A release is prepared from the validated live public tree. Its installable
+archive excludes `.git/`, `vault/`, `shared/`, `brain.json`, generated caches,
+maintainer tests, and release tooling. Installed checks and setup scripts remain
+available; source-only tests are not guaranteed in an installed archive.
+Before publishing, validate that the archive contains only intended public
+framework files and that private knowledge is absent.
 
 ## 11. Build order (the four layers)
 

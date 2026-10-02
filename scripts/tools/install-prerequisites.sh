@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 # install-prerequisites.sh — Install developer tools for agentBrain.
-# Platform-aware: nvm, Node LTS (via nvm), bun and uv install everywhere
+# Platform-aware: nvm, Node LTS (via nvm) and bun install everywhere
 # (portable curl installers); Homebrew + Brewfile tools are macOS-only and
 # skip themselves elsewhere: the linux-arms for these tools live in the
 # capability pattern (scripts/lib/capability-install.sh + scripts/setup/setup-devtools.sh).
@@ -23,12 +23,11 @@ PI_CONFIG_SOURCE="${PI_CONFIG_SOURCE:-$AGENTBRAIN_DIR/system/pi-config}"
 # shellcheck source=scripts/lib/capability-install.sh
 . "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../lib/capability-install.sh"
 
-# Version policy: install the LATEST bun/uv by default (like Node LTS) so a fresh
+# Version policy: install the LATEST bun by default (like Node LTS) so a fresh
 # install never ships stale tools; check-prerequisites.sh guards a minimum floor.
-# Set AGENTBRAIN_BUN_VERSION / AGENTBRAIN_UV_VERSION to PIN an exact version for
+# Set AGENTBRAIN_BUN_VERSION to PIN an exact version for
 # reproducible/CI installs.
 BUN_VERSION="${AGENTBRAIN_BUN_VERSION:-}"
-UV_VERSION="${AGENTBRAIN_UV_VERSION:-}"
 
 export AGENTBRAIN_DIR PI_CONFIG_SOURCE
 
@@ -133,7 +132,7 @@ install_nvm() {
 		return 0
 	fi
 
-	# Plug into the shared decision tree, like Homebrew/bun/uv further down.
+	# Plug into the shared decision tree, like Homebrew/bun further down.
 	# ab_prompt_confirm does not know AGENTBRAIN_ASSUME_YES and goes straight to
 	# read: with a TTY that hangs forever, without a TTY this function fell through
 	# to the fatal "return 1" below. decide_tool does honour the flag and
@@ -325,29 +324,6 @@ ensure_bun() {
 	fi
 }
 
-# ── uv ────────────────────────────────────────────────────────────────────────
-
-ensure_uv() {
-	explain "uv: fast Python runner — only needed for optional addons (graphify); skipping is fine."
-	local det=no ver=""
-	command -v uv >/dev/null 2>&1 && { det=yes; ver="$(uv --version 2>/dev/null | awk '{print $2}')"; }
-	case "$(decide_tool uv "$det" "$ver")" in
-		keep) ok "uv kept (${ver})"; return ;;
-		skip) warn "uv skipped — addons needing uv may not work"; return ;;
-	esac
-	if true; then
-		# Latest by default; pin only when AGENTBRAIN_UV_VERSION is set (astral.sh
-		# serves a versioned installer path for reproducible/CI installs).
-		if [ -n "$UV_VERSION" ]; then
-			log "Installing uv ${UV_VERSION} (pinned)"; curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh
-		else
-			log "Installing uv (latest)"; curl -LsSf https://astral.sh/uv/install.sh | sh
-		fi
-		case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac
-		ok "uv installed (PATH loaded for this run)"
-	fi
-}
-
 # ── main ──────────────────────────────────────────────────────────────────────
 
 main() {
@@ -359,7 +335,6 @@ main() {
 	ensure_pnpm
 	ensure_core_tools
 	ensure_bun
-	ensure_uv
 	echo ""
 	ok "Developer tools done"
 }

@@ -9,6 +9,21 @@ id: fd188d7f-8371-52d8-8323-84c4b1e1d17e
 
 ## [Unreleased]
 
+### Changed
+
+- `factory-release.sh` enforces the rule it was documented with: it refuses unless live is the same commit as next and sits on `vVERSION`. It used to cut an archive from next regardless, so a release chained after a failed promote shipped something live did not have. Test: `bin/test-factory-release.sh`.
+- Where a tool keeps its state: `factory.json` declares one variable (`paths`), `~/.config/factories/paths.env` overrides them centrally, and `factory-paths.sh` shows, initialises, loads (rc block and every `<tool>-next`) and moves them (`set` moves the data and never over existing data). `factory-doctor.sh` notes a command without a paths block. Factory discovery moved to `bin/factory-discover.py`, shared by the registry and `factory-paths.sh`. Test: `bin/test-factory-paths.sh`.
+- Version gate: `factory-doctor.sh` requires a version of record. `factory-link.sh --check` fails if next does not answer `--version` with a version number; when next passes but live does not, it reports INFO. Tests in `bin/test-factory-link.sh`.
+- `<tool>-next` runs a factory's next lane beside the live command (side by side, no switch, no `-dev`). `factory.json` names the command in a `cli` block; `factory-link.sh` writes the wrapper, `factory-doctor.sh` checks it, and a lane that migrates shared data says so on every run (`nextChangesData`). Test: `bin/test-factory-link.sh`.
+- A factory directory is named `<tool>.factory` and lives in its area (`~/Developer/<area>/mytool.factory`). `factory-doctor.sh` now fails on any other name unless `factory.json` records `"legacyName": "<reason>"`, and `factory-registry.sh` finds `<tool>.factory` up to `factoryDepth` levels down. Both values live in `layout.json`.
+
+### Fixed
+
+- `factory-registry.sh` listed a git worktree of a factory (a release or LAN branch checked out beside it, carrying the same `factory.json`) as a second factory. It is skipped now.
+- `factory-obeya.sh --write` compares generated lines while ignoring only dates, so a moved factory updates its andon path.
+- `factory-lane-origin.sh`, `factory-test.sh` and `factory-language-check.sh` read lanes through the shared profile normalizer, so a composite factory is checked by the same dev -> next -> live rule instead of failing on a missing `lanes` block.
+- A live lane that is a separate repository is accepted only with `"lanePolicy": {"live": "separate-repo"}`. The deploy records the dev commit it copied (`git config factory.sourceCommit` in the live checkout); that commit must be reachable from next, and every file live tracks must match it, so a change made only in live still fails. Files the deploy leaves out may be missing. Without the policy, or without a recorded source, a separate repository fails.
+
 ## [0.4.1] - 2026-09-27
 
 ### Fixed

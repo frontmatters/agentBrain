@@ -34,20 +34,21 @@ fi
 REMOTE="${AGENTBRAIN_LOCAL_REMOTE:-origin}"
 git -C "$V" remote get-url "$REMOTE" >/dev/null 2>&1 || exit 0
 
-# The Gitea token, when the documented helper is here; a public or LAN remote
-# without one still works. The header goes to git only, never to stdout.
-HDR=()
+# A token for an HTTP remote, when a token helper is configured
+# (GITEA_HELPER_PATH); an SSH, public or LAN remote works without one. The header goes to git only, never to stdout.
+tok=""
 HELPER="${GITEA_HELPER_PATH:-$HOME/bin/gitea-helper.sh}"
-if [ -f "$HELPER" ]; then
+# shellcheck source=scripts/lib/git-token.sh
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../lib/git-token.sh"
+if [ -f "$HELPER" ] && remote_needs_token "$V" "$REMOTE"; then
 	# shellcheck source=/dev/null
 	tok="$( (source "$HELPER" >/dev/null 2>&1; get_gitea_token 2>/dev/null) || true)"
-	[ -n "$tok" ] && HDR=(-c "http.extraHeader=Authorization: token $tok")
 fi
 
 # Bounded fetch: a session must not hang on an unreachable LAN host.
 budget="${PULL_VAULT_BUDGET:-16}"   # half-seconds
-# ${HDR[@]+"${HDR[@]}"}: bash 3.2 (macOS /bin/bash) treats an empty array as unbound under set -u.
-GIT_TERMINAL_PROMPT=0 git -C "$V" ${HDR[@]+"${HDR[@]}"} fetch --quiet "$REMOTE" 2>/dev/null &
+# The header through the environment, never git's arguments (scripts/lib/git-token.sh).
+GIT_TERMINAL_PROMPT=0 git_with_token "$tok" -C "$V" fetch --quiet "$REMOTE" 2>/dev/null &
 fpid=$!; i=0
 while [ "$i" -lt "$budget" ]; do kill -0 "$fpid" 2>/dev/null || break; sleep 0.5; i=$((i+1)); done
 if kill -0 "$fpid" 2>/dev/null; then kill "$fpid" 2>/dev/null; wait "$fpid" 2>/dev/null; fail; fi

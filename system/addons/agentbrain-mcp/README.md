@@ -7,7 +7,7 @@ id: a9225409-0bce-5679-97cb-905e5d96e24e
 
 # agentBrain MCP server
 
-Direct-file MCP server exposing the brain to Cursor and Windsurf — MCP-capable
+Direct-file MCP server exposing the brain to Cursor and Devin Desktop (formerly Windsurf) — MCP-capable
 agents that lack a global skills directory. It lets them natively search/read the
 brain and save learnings + project notes into `vault/`.
 
@@ -24,10 +24,10 @@ is installed):
 | --- | --- |
 | Claude Code (CLI) | `~/.claude.json` |
 | Cursor | `~/.cursor/mcp.json` |
-| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
+| Devin Desktop (Devin Local) | `~/.config/devin/mcp_config.json` |
 | Claude Desktop (GUI app) | macOS: `~/Library/Application Support/Claude/claude_desktop_config.json` · Linux: `~/.config/Claude/claude_desktop_config.json` · Windows: `%APPDATA%/Claude/claude_desktop_config.json` |
 
-The registration is idempotent (re-running won't duplicate the entry) and merges
+Uninstall also removes a historical agentbrain entry from `~/.codeium/windsurf/mcp_config.json` if present; installation never writes that legacy path. The registration is idempotent (re-running won't duplicate the entry) and merges
 into any existing MCP config rather than clobbering it.
 
 ## Usage
@@ -71,7 +71,7 @@ the same file are left untouched. Idempotent.
 ## Troubleshooting
 
 **The client doesn't see the tools after install.** MCP clients read their config
-once at startup. **Fully restart Cursor/Windsurf/Claude Desktop** (quit the app,
+once at startup. **Fully restart Cursor/Devin Desktop/Claude Desktop** (quit the app,
 not just reload the window) after install or uninstall so it re-reads `mcp.json`.
 Claude Code picks it up on the next `claude` invocation. To confirm the entry
 landed: `grep -A3 agentbrain ~/.cursor/mcp.json` (or any of the paths above).
@@ -83,8 +83,8 @@ trailing comma or stray character is the usual cause) or delete the file, then
 re-run `install.sh`.
 
 **"Client not detected" — nothing registered.** Registration only targets clients
-whose config directory already exists. If you just installed Cursor/Windsurf,
-launch it once (so it creates `~/.cursor/` or `~/.codeium/windsurf/`), then re-run
+whose config directory already exists. If you just installed Cursor/Devin Desktop,
+launch it once (so it creates `~/.cursor/` or `~/.config/devin/`), then re-run
 `install.sh`.
 
 **Server starts but tools error with "brain not found".** The server resolves the
@@ -100,7 +100,7 @@ shell PATH — use an absolute `bun` path in the config or add it to the client'
 ## Other MCP clients (VS Code, ChatGPT, ...)
 
 The server is a standard stdio MCP server — any MCP-capable client can use it;
-`register.ts` only automates Claude Code, Cursor and Windsurf. Manual wiring:
+`register.ts` only automates Claude Code, Cursor and Devin Desktop. Manual wiring:
 
 - **VS Code (Copilot)**: add to the user-level `mcp.json` (Command Palette →
   "MCP: Open User Configuration"). Note VS Code uses a `servers` key, not

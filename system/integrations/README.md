@@ -11,8 +11,9 @@ Third-party tool integrations. Each file describes HOW to use a tool, not projec
 
 ## Files
 
-| File         | Purpose                                                              |
-| ------------ | -------------------------------------------------------------------- |
-| `opensrc.md` | OpenSrc integration: fetch dependency source code for deeper context |
+| File           | Purpose                                                              |
+| -------------- | -------------------------------------------------------------------- |
+| `lightpanda.md` | Lightpanda headless browser for Pi: search, open and extract pages, fill forms |
+| `opensrc.md`   | OpenSrc integration: fetch dependency source code for deeper context |
 
-Private integration config (API endpoints, tokens, bot settings) lives in `local/integrations/`.
+Private integration config (API endpoints, tokens, bot settings) lives in `vault/integrations/`.

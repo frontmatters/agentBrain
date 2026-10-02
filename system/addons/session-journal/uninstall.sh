@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 # uninstall.sh — true inverse of install.sh for session-journal.
-# install.sh seeds local/sessions/journal-config.json and registers two Claude
+# install.sh seeds vault/sessions/journal-config.json and registers two Claude
 # Code hooks (Stop + PostToolUse) in ~/.claude/settings.json. This removes any
 # settings.json hook entry that points at this addon's hook scripts, and (only
 # with --purge) the seeded local config and hook log.

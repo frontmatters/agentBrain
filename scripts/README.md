@@ -16,21 +16,34 @@ for the verb-first conventions.
 
 | Location | Contents |
 | --- | --- |
-| `installer/` | the install unit: orchestrator (`install.sh`), flow-journal, prompts, `bootstrap/{macos,linux}.sh`, dev-helpers, `VERSION` (0.2.0) |
-| `lib/` | sourceable libs (sourced, never run): `platform.sh`, `capability-install.sh`, `skills.sh`, `_toolpaths.sh`, `_strings.sh`, ... |
-| `setup/` | `setup.sh` + 23 component subscripts: brain maintenance (dual-use: an installer step and runnable on its own later) |
-| `tools/` | tool-installers: `install-prerequisites.sh`, `install-agent-clis.sh`, `install-lightpanda.sh` (+wrapper) |
-| `checks/` | 52 state-gates: `check-*`, `doctor.sh`, `smoke-test.sh`, `audit-interactive.sh`, `validate-install.sh` |
-| `tests/` | 38 behavior-suites: `test-*` |
-| `hooks/` | 4 note-id/session hooks (git + Claude session) |
-| `reports/` | build/report scripts: report-orphans, report-stale, render-findings-backlog, build-indexes/previews/maps |
-| `sync/` | vault-sync family: sync-vault/shared/space, promote-to-shared, move-agentbrain, dev-sync-status |
-| `release/` | 10 release/publish scripts: release, release-check, bump-version, channel, deploy-dev-to-live, publish-* , package-addon, mirror-registry |
-| `scanman/` | 10 scanman-family scripts |
-| root (entries) | ±24 top-level entries that agents/users call directly: `brain.sh`, `addons.sh`, `queue.sh`, `new-note.sh`, `new-space.sh`, `new-addon.sh`, `uuid5-gen.sh`, `agentbrain-pointer.sh`, `migrate-v2.sh`, `configure-pi.sh`, `privacy-scan.sh`, `changes.sh`, `fix.sh`, `session-digest.sh`, `capture-findings.sh`, `changelog-draft.sh`, `ensure-daily-note.sh`, `update-daily-note.sh`, `update-startup-context.sh`, `active-space.sh`, `offboard.sh`, `import-offboard.sh`, `onboard-wizard.sh`, `uninstall.sh`, `move-agentbrain.sh`, `selftest*.sh`, `validate-note-id.sh`, + `.py` index-builders |
+| `installer/` | installation entry points and platform bootstrap scripts |
+| `lib/` | sourceable shell libraries |
+| `setup/` | setup entry point and component scripts |
+| `tools/` | optional tool installers |
+| `checks/` | installed checks and `doctor.sh` (selection depends on the package) |
+| `hooks/` | note-id and session hooks |
+| `reports/` | report and index builders |
+| `sync/` | vault, shared and space sync utilities |
+| `scanman/` | repository analysis utilities |
+| root (entries) | user-facing entry points such as `brain.sh`, `addons.sh`, `queue.sh`, `new-note.sh`, and `privacy-scan.sh` |
 
-Compat symlinks at the root point to relocated checks (phase 5 of the
-installer unit removes them; see scripts/installer/README.md).
+Source checkouts may also carry maintainer-only test suites and release tooling;
+these are not guaranteed to be present in an installed archive.
+
+Compat symlinks at the root point to relocated scripts, so older command lines
+keep working.
+
+Runtime shell scripts and the list-* skill entry points route vault reads and
+writes through `scripts/lib/vault.sh`; paths under `vault/` in note ids remain
+logical regardless of the physical vault location. `AGENTBRAIN_VAULT` takes
+precedence over the checkout link. In a source checkout, `scripts/checks/check-vault-config.sh`
+rejects checkout-derived vault paths in `.sh`, `.ts`, `.mjs` and `list-*`
+runtime files; its negative case proves shell and TypeScript violations are
+caught. Extensionless add-on and skill entry points resolve the vault through
+the shared resolver. In a source checkout, the suites
+`scripts/tests/test-vault-runtime-routing.sh` (representative readers and writers
+against a throwaway external vault) and `scripts/tests/test-bins-use-vault-resolver.sh`
+(the resolver contract) cover this; a release does not ship them.
 
 ## Installer script naming scheme
 
@@ -38,12 +51,12 @@ Sub-installers follow one verb-first scheme; stick to it when adding one:
 
 | Pattern | Role | Examples |
 |---|---|---|
-| `installer/bootstrap/<os>.sh` | full machine bootstrap (tools + brain + agent); phase 3 merges this into one flow | `installer/bootstrap/macos.sh` |
+| `installer/bootstrap/<os>.sh` | full machine bootstrap (tools + brain + agent) | `installer/bootstrap/macos.sh` |
 | `setup.sh` / `setup-<component>.sh` | brain setup and per-component configuration | `setup.sh`, `setup-devtools.sh`, `setup-git-hooks.sh` |
 | `install-<what>.sh` | brings in a tool or CLI | `install-prerequisites.sh`, `install-agent-clis.sh`, `install-lightpanda.sh` |
 | `check-prerequisites.sh` | preflight presence/version report | `check-prerequisites.sh` |
-| `lib/capability-install.sh` | sourceable LIB (never run directly): install/start/health arms per capability | sourced by `setup-devtools.sh`, `test-capability-install.sh` |
-| `privacy-scan.sh` | Public-content scan and hard gate against `.private` files/directories under `system/` (staged/tracked) | pre-commit + pre-push doctor; `tests/test-private-skill-boundary.sh` |
+| `lib/capability-install.sh` | sourceable LIB (never run directly): install/start/health arms per capability | sourced by `setup-devtools.sh` (and, in a source checkout, `scripts/tests/test-capability-install.sh`) |
+| `privacy-scan.sh` | Public-content scan and hard gate against `.private` files/directories under `system/` (staged/tracked) | pre-commit + pre-push doctor; in a source checkout also `scripts/tests/test-private-skill-boundary.sh` |
 | `scripts/lib/*.sh` | other sourceable libraries | `_strings.sh`, `_toolpaths.sh` |
 
 Rules: verb-first naming; sourceable libraries are sourced, never executed;
@@ -57,24 +70,14 @@ arms (`capability-install.sh`), not as new standalone installers.
 bash scripts/setup/setup.sh
 
 # Generate a UUID5 for a new note
-bash scripts/uuid5-gen.sh "learnings/My-New-Note"
+bash scripts/uuid5-gen.sh "vault/learnings/my-new-note"
 
-# Run full health audit
-bash scripts/checks/doctor.sh
+# Check the health of your install and vault (= scripts/checks/doctor.sh --user)
+brain doctor
 
-# Validate local structure only
+# Validate the vault structure only
 bash scripts/checks/check-vault-private.sh
-
-# Type-check Pi extensions on machines bootstrapped for Pi
-bash scripts/checks/check-pi-extension-types.sh
-
-# Run Pi extension helper tests
-bash scripts/tests/test-pi-extensions.sh
 ```
-
-`scripts/tests/test-addons.sh` uses a temporary Git-tracked local-addon fixture
-for the factory packager: only tracked files can ship, and a staged fake secret
-must still fail the package privacy gate. The fixture never touches the real vault.
 
 ## Reconfigure reference
 
@@ -82,13 +85,15 @@ What to run when something changes — no need to re-run full setup.
 
 | What changed | Command |
 |---|---|
-| **Vault location** (moved to a new path) | `bash scripts/sync/move-agentbrain.sh <new-path>` |
+| **Vault location** (moved to a new path) | `bash scripts/sync/move-agentbrain.sh <new-path>` (relinks CLI and add-on bin links pointing into the old checkout, without replacing unrelated files) |
+| **Session-start CLI health** | `bash scripts/flow/update-startup-context.sh` reports broken checkout links and a missing `brain` command with repair commands; it does not repair them |
 | **Locale / UI language** | `/config` (agentBrain skill) or `export AGENTBRAIN_LOCALE=nl` in shell rc |
 | **Agent connections** (add/remove Claude, Copilot, Gemini…) | `bash scripts/setup/setup-agent-integrations.sh` |
 | **Add-ons** (install, uninstall, enable, disable) | `bash scripts/addons.sh install <id>` / `bash scripts/addons.sh uninstall <id>` |
 | **Pi agent** (update symlinks, skills, extensions) | `bash scripts/configure-pi.sh` |
 | **Skills** (re-sync brain skills into agent dirs) | `bash scripts/setup/setup-skills.sh` |
 | **Preferences** (personal, team, org) | `/onboard` (agentBrain skill) |
+| **Stale client pointers** | `bash scripts/checks/check-installed-pointers.sh` to inspect; re-run the named `setup-<client>.sh` to refresh |
 | **Hermes SOUL.md pointer** | `bash scripts/setup/setup-hermes.sh` |
-| **Health audit + auto-repair** | `bash scripts/checks/doctor.sh --fix` |
+| **Health audit + auto-repair** | `brain doctor --fix` |
 | **Full uninstall** | `bash scripts/uninstall.sh` (add `--purge` to also wipe addon configs) |

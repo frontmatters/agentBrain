@@ -60,7 +60,7 @@ Don't use it for simple API usage — docs and types are enough for that.
 ## Pi skill
 
 Available as `/skill:opensrc` in Pi.  
-Source: `system/pi-config/skills/opensrc/SKILL.md`  
+Source: `system/skills/opensrc/SKILL.md`  
 Symlinked to `~/.pi/agent/skills/opensrc` by `scripts/configure-pi.sh`.
 
 ## Cache management

@@ -3,6 +3,8 @@ id: hallmark
 name: Hallmark (anti-AI-slop design skill)
 version: 0.1.0
 author: nutlope
+kind: vendored
+upstream_version: v1.1.0
 upstream: https://github.com/nutlope/hallmark
 license: MIT
 install: echo 'hallmark is not bundled - vendor it into vault/skills/hallmark/ with the command in README.md (Update)'

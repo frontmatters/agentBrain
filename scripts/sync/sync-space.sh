@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # sync-space.sh — back up a SINGLE space to ITS OWN non-personal remote.
 #
-# A space (local/spaces/<slug>/) is sealed out of the personal vault sync by
-# local/.gitignore (spaces/), so it never reaches the personal vault remote. To
+# A space (vault/spaces/<slug>/) is sealed out of the personal vault sync by
+# vault/.gitignore (spaces/), so it never reaches the personal vault remote. To
 # still back up confidential client/employer work, each space is versioned as
 # its OWN nested git repo whose origin is the remote named in the passport's
 # `sync:` field. The nested .git lives inside the gitignored spaces/<slug>/, so
@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)"
 # shellcheck source=scripts/lib/vault.sh
 . "$ROOT_DIR/scripts/lib/vault.sh"
 LOCAL_DIR="$VAULT_DIR"
@@ -33,7 +33,7 @@ MESSAGE="${2:-Backup space '$SLUG' ($(date -u +%Y-%m-%dT%H:%M:%SZ))}"
 
 # Slug safety (same rule as new-note.sh --space): an empty slug or one containing
 # '/', '..', a leading dot, or any char outside [a-z0-9._-] could escape
-# local/spaces/<slug>/ and have us operate on the personal vault instead.
+# vault/spaces/<slug>/ and have us operate on the personal vault instead.
 case "$SLUG" in
 	*[!a-z0-9._-]* | "" | .* | *..* )
 		warn "sync-space: invalid space slug: '$SLUG' (allowed: lowercase a-z 0-9 . _ -, no '/' or '..')"
@@ -101,7 +101,7 @@ fi
 
 # --- Version the space as its OWN nested git repo -----------------------------
 # IMPORTANT: test for a literal .git INSIDE the space dir, NOT `git rev-parse`,
-# which would walk UP and find the PERSONAL vault repo (local/.git).
+# which would walk UP and find the PERSONAL vault repo (vault/.git).
 if [ ! -d "$SPACE_DIR/.git" ]; then
 	log "space '$SLUG': initialising nested backup repo"
 	git -C "$SPACE_DIR" init -b main >/dev/null
@@ -112,10 +112,9 @@ fi
 SPACE_REAL="$(cd "$SPACE_DIR" && pwd -P)"
 TOP_REAL="$(cd "$(git -C "$SPACE_DIR" rev-parse --show-toplevel)" && pwd -P)"
 # -ef compares device and inode, so it answers the question the guard is actually
-# asking: is this the same directory? Comparing the strings answered a different
-# one, and on a case-insensitive volume two spellings of one directory made the
-# guard refuse a correct setup on a MacBook Air (.agentbrain vs .agentBrain).
-# This is not a relaxation: a path that names a different directory still fails,
+# asking: is this the same directory? String comparison alone rejects alternate
+# spellings of the same directory on case-insensitive filesystems.
+# A path that names a different directory still fails,
 # and the string comparison is kept as the fallback where -ef is unavailable.
 if ! [ "$SPACE_REAL" -ef "$TOP_REAL" ] 2>/dev/null && [ "$SPACE_REAL" != "$TOP_REAL" ]; then
 	warn "sync-space: REFUSING — git toplevel ($TOP_REAL) is not the space dir ($SPACE_REAL); will not touch the personal vault"

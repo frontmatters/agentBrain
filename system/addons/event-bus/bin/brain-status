@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# brain-status — what happened to one event: sent, read, acknowledged, answered.
+#
+# Everything is derived from what the bus already stores, so there is no second
+# record that could disagree with the first. "Read" comes from the recipient's
+# own cursor (seen-ids.set). A recipient that never commits keeps no cursor, and
+# then the honest answer is "unknown", not "no".
+#
+# Every printed value is untrusted metadata: same-user processes can forge inbox
+# files. Values are shape-checked and replaced by <invalid>, never copied loose.
+# A payload is never read into the output.
+
+set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+brain-status — lifecycle of an event on the agentBrain event-bus
+
+Usage:
+  brain-status <event-id|8+ hex prefix>   sent / read / acked / answered
+  brain-status --open <agent>             requests routed to <agent> it has not answered
+
+Optional:
+  --lookback=<dur>    window for --open (default: 7d). Use Ns/Nm/Nh/Nd
+  --all-types         with --open: every event type, not only *requested
+  --json              one JSON object instead of text
+  --help, -h          show this help
+
+Env:
+  AGENTBRAIN_DIR      brain checkout root (default: script-derived)
+
+Exit codes:
+  0  found (or --open ran)
+  1  missing/invalid arg
+  2  ambiguous prefix (candidates listed on stderr)
+  3  no event with that id
+EOF
+}
+
+AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}"
+ID=""
+OPEN=""
+LOOKBACK="7d"
+JSON="false"
+ALL_TYPES="false"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --open=*)     OPEN="${1#*=}" ;;
+        --open)       shift; OPEN="${1:-}" ;;
+        --lookback=*) LOOKBACK="${1#*=}" ;;
+        --json)       JSON="true" ;;
+        --all-types)  ALL_TYPES="true" ;;
+        --help|-h)    usage; exit 0 ;;
+        -*)           echo "brain-status: unknown arg: $1" >&2; exit 1 ;;
+        *)            ID="$1" ;;
+    esac
+    shift
+done
+
+if [ -n "$OPEN" ]; then
+    [[ "$OPEN" =~ ^[a-z0-9_-]{1,48}$ ]] || { echo "brain-status: invalid agent name" >&2; exit 1; }
+elif [ -n "$ID" ]; then
+    ID="$(printf '%s' "$ID" | tr '[:upper:]' '[:lower:]')"
+    [[ "$ID" =~ ^[0-9a-f]{8}(-[0-9a-f-]{0,28})?$ ]] || { echo "brain-status: need an event id or at least 8 hex characters" >&2; exit 1; }
+else
+    usage >&2; exit 1
+fi
+[[ "$LOOKBACK" =~ ^[1-9][0-9]*[smhd]$ ]] || { echo "brain-status: invalid --lookback: $LOOKBACK" >&2; exit 1; }
+
+exec python3 - "$AGENTBRAIN_DIR" "$ID" "$OPEN" "$LOOKBACK" "$JSON" "$ALL_TYPES" <<'PY'
+import json, os, re, sys
+from datetime import datetime, timedelta, timezone
+
+root, want, open_agent, lookback, as_json, all_types = sys.argv[1:7]
+UUID = re.compile(r"^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
+SHAPES = {
+    "id": (UUID, 36),
+    "type": (re.compile(r"^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2}$"), 96),
+    "agent": (re.compile(r"^[a-z0-9_-]{1,48}$"), 48),
+    "ts": (re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$"), 32),
+}
+
+def safe(kind, v):
+    rx, n = SHAPES[kind]
+    return v if isinstance(v, str) and len(v) <= n and rx.match(v) else "<invalid>"
+
+def load():
+    out = []
+    for sub in ("inbox", "archive"):
+        d = os.path.join(root, "vault", "events", sub)
+        if not os.path.isdir(d):
+            continue
+        for name in sorted(os.listdir(d)):
+            if not name.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(d, name)) as f:
+                    e = json.load(f)
+            except (OSError, ValueError):
+                continue
+            if isinstance(e, dict) and isinstance(e.get("event_id"), str):
+                out.append((name, e))
+    return out
+
+def meta(e):
+    frm = e.get("from") if isinstance(e.get("from"), dict) else {}
+    to = e.get("to") if isinstance(e.get("to"), dict) else {}
+    agents = to.get("agents") if isinstance(to.get("agents"), list) else []
+    return {
+        "event_id": safe("id", e.get("event_id")),
+        "type": safe("type", e.get("type")),
+        "from": safe("agent", frm.get("agent")),
+        "timestamp": safe("ts", e.get("timestamp")),
+        "to": [safe("agent", a) for a in agents],
+        "broadcast": to.get("broadcast") is True,
+    }
+
+def seen_by(agent):
+    """None when the agent keeps no cursor on any host, else the set of seen ids."""
+    base = os.path.join(root, "vault", "events", "cursors")
+    found, ids = False, set()
+    if os.path.isdir(base):
+        for host in os.listdir(base):
+            p = os.path.join(base, host, agent, "seen-ids.set")
+            if os.path.isfile(p):
+                found = True
+                with open(p) as f:
+                    ids.update(l.strip() for l in f)
+    return ids if found else None
+
+events = load()
+replies = {}
+for _, e in events:
+    # A reply names its parent in in_reply_to; a fan-in reply lists the other
+    # events it answers in causation_ids. Both count as answering them.
+    parents = [e.get("in_reply_to")] + (e.get("causation_ids") if isinstance(e.get("causation_ids"), list) else [])
+    for r in {p for p in parents if isinstance(p, str)}:
+        replies.setdefault(r, []).append(e)
+
+if open_agent:
+    unit = {"s": 1, "m": 60, "h": 3600, "d": 86400}[lookback[-1]]
+    start = (datetime.now(timezone.utc) - timedelta(seconds=int(lookback[:-1]) * unit)).strftime("%Y%m%dT%H%M%S")
+    rows = []
+    for name, e in events:
+        m = meta(e)
+        if name.split("-", 1)[0] < start or open_agent not in m["to"] or m["from"] == open_agent:
+            continue
+        # Topics end in a past-tense verb; only a *requested event asks for an
+        # answer. Accepted, completed, responded are answers themselves.
+        if all_types != "true" and not m["type"].endswith("requested"):
+            continue
+        if any(meta(r)["from"] == open_agent for r in replies.get(e["event_id"], [])):
+            continue
+        rows.append(m)
+    if as_json == "true":
+        print(json.dumps({"agent": open_agent, "open": rows}))
+    else:
+        for m in rows:
+            print(f'{m["event_id"][:8]}  {m["timestamp"]}  {m["type"]}  from {m["from"]}')
+        print(f"{len(rows)} open for {open_agent}", file=sys.stderr)
+    sys.exit(0)
+
+hits = [e for _, e in events if e["event_id"].startswith(want)]
+uniq = {e["event_id"]: e for e in hits}
+if not uniq:
+    print(f"brain-status: no event matches {want}", file=sys.stderr)
+    sys.exit(3)
+if len(uniq) > 1:
+    print(f"brain-status: {want} is ambiguous:", file=sys.stderr)
+    for e in uniq.values():
+        m = meta(e)
+        print(f'  {m["event_id"]}  {m["type"]}', file=sys.stderr)
+    sys.exit(2)
+
+e = next(iter(uniq.values()))
+m = meta(e)
+read = {}
+for a in m["to"]:
+    s = seen_by(a) if a != "<invalid>" else None
+    read[a] = "unknown" if s is None else ("yes" if e["event_id"] in s else "no")
+acked, answered = [], []
+for r in replies.get(e["event_id"], []):
+    rm = meta(r)
+    # The sender following up on its own event is not an answer to it.
+    if rm["from"] == m["from"]:
+        continue
+    row = {"event_id": rm["event_id"], "type": rm["type"], "from": rm["from"], "timestamp": rm["timestamp"]}
+    (acked if rm["type"].endswith(".received") else answered).append(row)
+
+if as_json == "true":
+    print(json.dumps({**m, "read": read, "acked": acked, "answered": answered}))
+    sys.exit(0)
+
+to = "broadcast" if m["broadcast"] else ", ".join(m["to"]) or "-"
+print(f'{m["event_id"][:8]}  {m["type"]}')
+print(f'  sent      {m["timestamp"]}  {m["from"]} -> {to}')
+if m["broadcast"]:
+    print("  read      n/a (broadcast)")
+else:
+    for a, v in read.items():
+        note = " (recipient keeps no cursor)" if v == "unknown" else ""
+        print(f"  read      {a}: {v}{note}")
+print("  acked     " + (", ".join(f'{x["event_id"][:8]} by {x["from"]}' for x in acked) or "no"))
+print("  answered  " + (", ".join(f'{x["event_id"][:8]} {x["type"]} by {x["from"]}' for x in answered) or "no"))
+PY

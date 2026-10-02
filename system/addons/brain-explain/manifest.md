@@ -3,6 +3,7 @@ id: brain-explain
 name: brain-explain
 version: 0.1.2
 author: frontmatters
+kind: framework
 install: bash system/addons/brain-explain/install.sh
 # On by default in a fresh install; the user can untick it.
 default_enabled: true

@@ -75,7 +75,7 @@ for pref in "${VAULT}/vault/preferences"/*.md; do
 done
 
 # Seed personal preferences from public templates if missing
-# Seeds for the vault live in templates/vault/<path>, mirroring local/<path>.
+# Seeds for the vault live in templates/vault/<path>, mirroring vault/<path>.
 # Rendered once, never overwritten: the README that explains a directory, the
 # empty project registry, the preference templates. They used to sit as
 # vault-shaped directories in the checkout root (learnings/, projects/, …),

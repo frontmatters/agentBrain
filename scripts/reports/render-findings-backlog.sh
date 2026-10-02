@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 # render-findings-backlog.sh — the ACT bridge of the self-improving loop:
-# turn open findings (local/findings/*.json, written by capture-findings.sh)
+# turn open findings (vault/findings/*.json, written by capture-findings.sh)
 # into ONE standing, regenerated backlog note that any agent can pick up and
 # execute. Closes the gap between "loop-tick counts findings" and "someone
 # actually fixes them".
 #
-# Output: local/backlog/auto-findings-triage.md — AUTO-GENERATED, regenerated
+# Output: vault/backlog/auto-findings-triage.md — AUTO-GENERATED, regenerated
 # on every loop-tick; never edit it, fix the findings (next tick auto-closes
 # them and they disappear from this note).
 #
 # Exit codes: 0 — wrote (or removed when zero open findings); 1 — failure.
 
 set -euo pipefail
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FINDINGS_DIR="$ROOT_DIR/vault/findings"
+ROOT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)"
+# shellcheck source=scripts/lib/vault.sh
+. "$ROOT_DIR/scripts/lib/vault.sh"
+FINDINGS_DIR="$VAULT_DIR/findings"
 OUT_REL="vault/backlog/auto-findings-triage"
-OUT_FILE="$ROOT_DIR/$OUT_REL.md"
+OUT_FILE="$VAULT_DIR/backlog/auto-findings-triage.md"
 TMP_FILE="${OUT_FILE}.tmp.$$"
 
 # Deterministic id: same path -> same UUID5, so regeneration never churns the id.

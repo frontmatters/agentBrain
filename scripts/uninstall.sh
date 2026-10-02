@@ -11,6 +11,8 @@ set -euo pipefail
 # Tools (npm/node/bun) live in user-scoped installs — load them before probing.
 # shellcheck disable=SC1091
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/_toolpaths.sh"
+# shellcheck source=scripts/agentbrain-pointer.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/agentbrain-pointer.sh"
 
 VAULT="${VAULT:-$(cd "$(dirname "$0")/.." && pwd)}"
 # Install base, mirroring setup.sh: pointers live under AGENTBRAIN_HOME (default $HOME).
@@ -23,7 +25,7 @@ NC='\033[0m'
 
 # Flags: --yes auto-confirms the proceed prompts (headless/CI). Deleting the checkout
 # always needs an explicit --delete-checkout (never folded into --yes — too destructive).
-# --purge also removes local/addons/<id>/ config dirs for enabled addons.
+# --purge also removes vault/addons/<id>/ config dirs for enabled addons.
 ASSUME_YES=false
 DELETE_CHECKOUT=false
 PURGE_ADDON_CONFIGS=false
@@ -85,11 +87,15 @@ remove_pointer_block() {
 	local file="$1" backup
 	backup="${file}.agentbrain-uninstall-$(date +%Y%m%d-%H%M%S).bak"
 	cp "$file" "$backup"
-	awk 'BEGIN{skip=0} /^##? agentBrain/{skip=1;next} skip&&/^## /{skip=0} !skip{print}' \
-		"$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
-	# Trim trailing blank lines left where the block was removed.
-	sed -i.sedbak -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$file"
-	rm -f "${file}.sedbak"
+	agentbrain_pointer_strip "$file"
+
+	# Nothing but whitespace left means the file held only our block: setup
+	# created it. Removing it and its backup loses nothing of the user's.
+	if ! grep -q '[^[:space:]]' "$file" 2>/dev/null; then
+		rm -f "$file" "$backup"
+		echo "          (removed: it held only the agentBrain block)"
+		return 0
+	fi
 	echo "          (backup: ${backup})"
 }
 
@@ -102,8 +108,12 @@ echo "This will remove agent pointers, Pi symlinks, and the VAULT env var."
 echo "The checkout itself will NOT be deleted unless you explicitly choose to."
 echo ""
 
-# Suggest offboarding first if local/ has content
-LOCAL_COUNT=$(find "${VAULT}/vault/" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
+# Suggest offboarding first if the vault has content.
+# The vault the resolver names (AGENTBRAIN_VAULT or <checkout>/vault). A missing
+# vault is zero notes, not a failed pipeline that ends the script silently.
+# shellcheck source=scripts/lib/vault.sh
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/lib/vault.sh"
+LOCAL_COUNT=$({ find "${VAULT_DIR}/" -name "*.md" 2>/dev/null || true; } | wc -l | tr -d ' ')
 if [[ "$LOCAL_COUNT" -gt 0 ]]; then
 	echo "⚠️  You have ${LOCAL_COUNT} local files (preferences, projects, learnings)."
 	echo "   Consider running 'bash scripts/offboard.sh' first to export them."
@@ -124,7 +134,7 @@ fi
 # Claude — remove ONLY our block; anything the user wrote below it stays.
 # Detection matches the removal pattern (^##? agentBrain), covering the legacy h1 marker too.
 CLAUDE_MD="$AGENT_HOME/.claude/CLAUDE.md"
-if [[ -f "$CLAUDE_MD" ]] && grep -qE '^##? agentBrain' "$CLAUDE_MD" 2>/dev/null; then
+if [[ -f "$CLAUDE_MD" ]] && grep -qE '^##? agentBrain|^<!-- agentBrain:begin -->' "$CLAUDE_MD" 2>/dev/null; then
 	remove_pointer_block "$CLAUDE_MD"
 	log_removed "Claude pointer (~/.claude/CLAUDE.md)"
 elif [[ -f "$CLAUDE_MD" ]]; then
@@ -184,24 +194,47 @@ done
 
 # Copilot CLI — pointer appended to ~/.copilot/copilot-instructions.md; remove only our block.
 COPILOT_CLI_INSTRUCTIONS="$AGENT_HOME/.copilot/copilot-instructions.md"
-if [[ -f "$COPILOT_CLI_INSTRUCTIONS" ]] && grep -qE '^##? agentBrain' "$COPILOT_CLI_INSTRUCTIONS" 2>/dev/null; then
+if [[ -f "$COPILOT_CLI_INSTRUCTIONS" ]] && grep -qE '^##? agentBrain|^<!-- agentBrain:begin -->' "$COPILOT_CLI_INSTRUCTIONS" 2>/dev/null; then
 	remove_pointer_block "$COPILOT_CLI_INSTRUCTIONS"
 	log_removed "Copilot CLI pointer (~/.copilot/copilot-instructions.md)"
 else
 	log_skip "Copilot CLI pointer"
 fi
 
-# Windsurf — setup writes into the detected config root (~/.codeium/windsurf or
-# ~/.windsurf, see setup-windsurf.sh); clean both candidates, our block only.
-windsurf_removed=false
-for WINDSURF_RULES in "$AGENT_HOME/.codeium/windsurf/memories/global_rules.md" "$AGENT_HOME/.windsurf/memories/global_rules.md"; do
-	if [[ -f "$WINDSURF_RULES" ]] && grep -qE '^##? agentBrain' "$WINDSURF_RULES" 2>/dev/null; then
-		remove_pointer_block "$WINDSURF_RULES"
-		log_removed "Windsurf pointer (${WINDSURF_RULES})"
-		windsurf_removed=true
+# Devin Desktop (formerly Windsurf): Devin Local, Cascade and historical paths.
+for DEVIN_RULES in "$AGENT_HOME/.config/devin/AGENTS.md" \
+  "$AGENT_HOME/.codeium/windsurf/memories/global_rules.md" \
+  "$AGENT_HOME/.windsurf/memories/global_rules.md" \
+  "$AGENT_HOME/.windsurf/global_rules.md"; do
+	if [[ -f "$DEVIN_RULES" ]] && grep -qE '^##? agentBrain|^<!-- agentBrain:begin -->' "$DEVIN_RULES" 2>/dev/null; then
+		remove_pointer_block "$DEVIN_RULES"
+		log_removed "Devin Desktop pointer ($DEVIN_RULES)"
 	fi
 done
-[[ "$windsurf_removed" == true ]] || log_skip "Windsurf pointer"
+
+# Remove our MCP entry from both Devin Local and the historic Windsurf config.
+# Keep unrelated servers and keys; malformed JSON is left untouched with a warning.
+for DEVIN_MCP in "$AGENT_HOME/.config/devin/mcp_config.json" "$AGENT_HOME/.codeium/windsurf/mcp_config.json"; do
+	[[ -f "$DEVIN_MCP" ]] || continue
+	if python3 - "$DEVIN_MCP" <<'PY'
+import json, pathlib, sys
+p = pathlib.Path(sys.argv[1])
+try:
+    cfg = json.loads(p.read_text())
+    servers = cfg.get('mcpServers', {})
+    if not isinstance(servers, dict) or 'agentbrain' not in servers:
+        sys.exit(3)
+    del servers['agentbrain']
+    p.write_text(json.dumps(cfg, indent=2) + '\n')
+except (ValueError, OSError, AttributeError) as e:
+    print(f'Cannot clean MCP config {p}: {e}', file=sys.stderr)
+    sys.exit(1)
+PY
+	then log_removed "Devin Desktop MCP entry ($DEVIN_MCP)"
+	else
+		[[ "$?" == 3 ]] || log_warn "Could not update Devin Desktop MCP config ($DEVIN_MCP)"
+	fi
+done
 
 # Cline — setup writes its OWN rules file (never the user's .clinerules); remove it.
 CLINE_FILE="$AGENT_HOME/Documents/Cline/Rules/agentBrain.md"
@@ -214,7 +247,7 @@ fi
 # Legacy cleanup: an older setup wrote the pointer block into .clinerules itself.
 # Remove only our block (up to the next "## " heading) — never truncate to EOF.
 CLINE_LEGACY="$AGENT_HOME/Documents/Cline/Rules/.clinerules"
-if [[ -f "$CLINE_LEGACY" ]] && grep -qE '^##? agentBrain' "$CLINE_LEGACY" 2>/dev/null; then
+if [[ -f "$CLINE_LEGACY" ]] && grep -qE '^##? agentBrain|^<!-- agentBrain:begin -->' "$CLINE_LEGACY" 2>/dev/null; then
 	remove_pointer_block "$CLINE_LEGACY"
 	# Drop the file if nothing but whitespace remains (the old setup wrote it whole).
 	if [[ -f "$CLINE_LEGACY" ]] && ! grep -q '[^[:space:]]' "$CLINE_LEGACY" 2>/dev/null; then
@@ -234,10 +267,15 @@ if [[ -f "$OPENCODE_POINTER" ]]; then
 	rm -f "$OPENCODE_POINTER"
 	opencode_removed=true
 fi
-if [[ -f "$OPENCODE_JSON" ]] && grep -q "agentbrain-pointer.md" "$OPENCODE_JSON" 2>/dev/null; then
-	if python3 - "$OPENCODE_JSON" <<'PY'
+# The same read grants setup-opencode.sh adds: the brain alias and the vault's
+# real directory, as absolute paths, only while they still say "allow".
+OPENCODE_BRAIN="${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}"
+OPENCODE_VAULT_REAL="$(cd "$OPENCODE_BRAIN/vault" 2>/dev/null && pwd -P || true)"
+if [[ -f "$OPENCODE_JSON" ]] && grep -qE "agentbrain-pointer.md|\"${OPENCODE_BRAIN}/\*\*\"" "$OPENCODE_JSON" 2>/dev/null; then
+	if python3 - "$OPENCODE_JSON" "$OPENCODE_BRAIN" "$OPENCODE_VAULT_REAL" <<'PY'
 import json, sys
 p = sys.argv[1]
+grants = [g.rstrip("/") + "/**" for g in sys.argv[2:4] if g]
 with open(p) as f:
     cfg = json.load(f)
 ins = cfg.get('instructions')
@@ -247,6 +285,21 @@ if isinstance(ins, list):
         cfg['instructions'] = ins
     else:
         cfg.pop('instructions', None)
+perm = cfg.get('permission')
+if isinstance(perm, dict) and isinstance(perm.get('external_directory'), dict):
+    ext = perm['external_directory']
+    for g in grants:
+        if ext.get(g) == "allow":
+            del ext[g]
+    if not ext:
+        perm.pop('external_directory')
+    if not perm:
+        cfg.pop('permission')
+if not cfg:
+    # only our instructions entry was in it: setup created the file
+    import os
+    os.remove(p)
+    sys.exit(0)
 with open(p, 'w') as f:
     json.dump(cfg, f, indent=2)
     f.write('\n')
@@ -292,7 +345,7 @@ fi
 
 # Gemini CLI — remove only our block (same helper as the other pointer files).
 GEMINI_MD="$AGENT_HOME/.gemini/GEMINI.md"
-if [[ -f "$GEMINI_MD" ]] && grep -qE '^##? agentBrain' "$GEMINI_MD" 2>/dev/null; then
+if [[ -f "$GEMINI_MD" ]] && grep -qE '^##? agentBrain|^<!-- agentBrain:begin -->' "$GEMINI_MD" 2>/dev/null; then
 	remove_pointer_block "$GEMINI_MD"
 	log_removed "Gemini CLI pointer (~/.gemini/GEMINI.md)"
 else
@@ -302,9 +355,8 @@ fi
 # Hermes — SOUL.md is the USER'S personality file: remove ONLY our block
 # (from "## agentBrain" up to the next "## " heading or EOF), never the rest.
 HERMES_SOUL="${HERMES_HOME:-$AGENT_HOME/.hermes}/SOUL.md"
-if [[ -f "$HERMES_SOUL" ]] && grep -q "^## agentBrain" "$HERMES_SOUL" 2>/dev/null; then
-	awk 'BEGIN{skip=0} /^## agentBrain/{skip=1;next} skip&&/^## /{skip=0} !skip{print}' \
-		"$HERMES_SOUL" >"${HERMES_SOUL}.tmp" && mv "${HERMES_SOUL}.tmp" "$HERMES_SOUL"
+if [[ -f "$HERMES_SOUL" ]] && grep -qE '^##? agentBrain|^<!-- agentBrain:begin -->' "$HERMES_SOUL" 2>/dev/null; then
+	remove_pointer_block "$HERMES_SOUL"
 	log_removed "Hermes pointer (~/.hermes/SOUL.md, rest of SOUL.md preserved)"
 else
 	log_skip "Hermes pointer"
@@ -322,8 +374,23 @@ PI_LINKS=(
 	"${PI_AGENT}/AGENTS.md"
 	"${PI_AGENT}/bin/pi"
 )
+# _link_is_ours <link> — true when the link points into THIS checkout, directly
+# or through the brain alias. A link of the same name that points elsewhere
+# (the user's own Pi config, another checkout) is not ours to remove.
+VAULT_REAL="$(cd "$VAULT" && pwd -P)"
+_link_is_ours() {
+	local target resolved
+	target="$(readlink "$1")"
+	case "$target" in "$VAULT"/* | "$VAULT_REAL"/*) return 0 ;; esac
+	resolved="$(realpath "$1" 2>/dev/null)" || return 1
+	case "$resolved" in "$VAULT_REAL"/*) return 0 ;; esac
+	return 1
+}
 for link in "${PI_LINKS[@]}"; do
-	if [[ -L "$link" ]]; then
+	if [[ -L "$link" ]] && ! _link_is_ours "$link"; then
+		echo -e "${YELLOW}Skip${NC}    Pi symlink $(basename "$link") points outside this checkout ($(readlink "$link")), left in place"
+		SKIPPED=$((SKIPPED + 1))
+	elif [[ -L "$link" ]]; then
 		rm -f "$link"
 		log_removed "Pi symlink: $(basename "$link")"
 	elif [[ -e "$link" ]]; then
@@ -375,7 +442,7 @@ done
 
 # Brain skills installed into agents' native dirs (setup-skills.sh). Only remove symlinks
 # that point into the brain's skill trees; never touch the user's own skills. The skill
-# content itself lives in the brain (system/skills, local/skills) and is preserved.
+# content itself lives in the brain (system/skills, vault/skills) and is preserved.
 removed_skills=0
 for skills_dir in "$AGENT_HOME/.claude/skills" "$AGENT_HOME/.copilot/skills"; do
 	[[ -d "$skills_dir" ]] || continue
@@ -427,7 +494,7 @@ fi
 
 # ── 4b. Addon teardown ──────────────────────
 # Run each enabled addon's own uninstall.sh (if present) and remove enabled
-# markers. With --purge also deletes local/addons/<id>/ config dirs.
+# markers. With --purge also deletes vault/addons/<id>/ config dirs.
 
 ENABLED_ADDONS=()
 if [ -d "${VAULT}/vault/addons" ]; then
@@ -512,7 +579,7 @@ echo "  Skipped: ${SKIPPED}"
 echo "  Checkout preserved: ${VAULT}"
 echo ""
 echo "  Left in place (uninstall never touches data or shared tooling):"
-echo "    - Private vault:     ~/.agentBrain/vault (your knowledge, when local/ was shared)"
+echo "    - Private vault:     ~/.agentBrain/vault (your knowledge, when vault/ links to it)"
 echo "    - Shared scope:      ~/.agentBrain/shared + its git remote (setup-shared-vault.sh)"
 echo "    - Pi npm package:    @earendil-works/pi-coding-agent (npm uninstall -g to remove)"
 echo "    - Runtimes:          nvm / bun / uv (install-prerequisites.sh)"

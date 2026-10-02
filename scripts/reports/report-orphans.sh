@@ -26,7 +26,7 @@
 #   bash scripts/reports/report-orphans.sh --list          # also print each orphan path
 #   bash scripts/reports/report-orphans.sh --unreachable   # stricter: unreachable from ANY root (transitive)
 #   bash scripts/reports/report-orphans.sh --json          # structured output
-#   bash scripts/reports/report-orphans.sh local/projects  # scope to given folder(s)
+#   bash scripts/reports/report-orphans.sh vault/projects  # scope to given folder(s)
 #
 # Always exits 0 — this is a report, not a gate.
 
@@ -35,7 +35,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-if [ ! -d local ]; then
+# shellcheck source=../lib/vault.sh
+source "$ROOT_DIR/scripts/lib/vault.sh"
+
+if [ ! -d "$VAULT_DIR" ]; then
 	echo "report-orphans: no vault/ — nothing to report (PASS)"
 	exit 0
 fi
@@ -58,7 +61,7 @@ node <<'NODE'
 const fs = require("fs");
 const path = require("path");
 
-const ROOT = path.resolve("local");
+const ROOT = path.resolve(process.env.VAULT_DIR);
 const LIST = process.env.ORPHAN_LIST === "1";
 const JSON_OUT = process.env.ORPHAN_JSON === "1";
 const MODE = process.env.ORPHAN_MODE || "incoming";
@@ -73,8 +76,8 @@ const SKIP_DIRS = new Set([
 	".git", ".trash", "quarantine", "graphify-out", ".obsidian", "node_modules",
 ]);
 
-// Symlink-aware walk (local/ and its children can be symlinks — see
-// vault-walkers-must-follow-local-symlink).
+// Symlink-aware walk: vault/ and its children can be symlinks, and a walker
+// that does not follow them sees an empty vault.
 function walk(dir, out = [], seen = new Set()) {
 	let real;
 	try { real = fs.realpathSync(dir); } catch { return out; }
@@ -104,9 +107,9 @@ function inScope(file) {
 	const top = rel.split(path.sep)[0];
 	if (EXCLUDE_SUBPATH.test("/" + rel.split(path.sep).join("/"))) return false;
 	if (scopeArg) {
-		// scope given as `local/<folder>` paths — match by folder segment
+		// Accept either human-facing vault/ or legacy local/ scope prefixes.
 		return scopeArg.split(/\s+/).some((s) => {
-			const seg = s.replace(/^local\/?/, "").replace(/\/$/, "");
+			const seg = s.replace(/^(?:vault|local)\/?/, "").replace(/\/$/, "");
 			return seg === "" ? CURATED.has(top) : rel === seg || rel.startsWith(seg + path.sep);
 		});
 	}

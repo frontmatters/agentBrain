@@ -11,8 +11,43 @@ Auto-run: invoked by brain-explain after every render.
 """
 import re, json, os, pathlib, html as _html
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-EX = ROOT / "vault/explainers"
+def _find_root(start):
+    # Walk up from this script to the checkout that holds system/ and scripts/.
+    # Unlike a fixed parent depth, this survives moves of script or checkout.
+    # The vault is resolved separately: it may live outside the checkout.
+    for p in (start, *start.parents):
+        if (p / "system").is_dir() and (p / "scripts").is_dir():
+            return p
+    raise SystemExit(f"agentBrain root not found above {start}")
+
+
+ROOT = _find_root(pathlib.Path(__file__).resolve().parent)
+
+
+def _vault_dir(root):
+    # Same precedence as scripts/lib/vault.sh, the one place that says where the
+    # vault is: an explicit override first (tests, a relocated vault), otherwise
+    # the vault/ symlink in this checkout, which `brain use` switches along.
+    # No vault means nothing to index: say so instead of writing elsewhere.
+    for name in ("AGENTBRAIN_VAULT", "AGENTBRAIN_VAULT_DIR", "AGENTBRAIN_LOCAL_DIR"):
+        if os.environ.get(name):
+            return pathlib.Path(os.environ[name]).expanduser()
+    if (root / "vault").is_dir():
+        return root / "vault"
+    raise SystemExit(f"build-explainer-index: no vault at {root / 'vault'} "
+                     "(run setup, or set AGENTBRAIN_VAULT)")
+
+
+def _shown(path):
+    # Report paths relative to the checkout when they are inside it.
+    try:
+        return path.relative_to(ROOT)
+    except ValueError:
+        return path
+
+
+VAULT = _vault_dir(ROOT)
+EX = VAULT / "explainers"
 OUT = EX / "index.html"
 
 def frontmatter(text):
@@ -39,14 +74,14 @@ def title_desc(body):
 
 # Locale detection is config-driven (not hardcoded): stopword sets per locale come
 # from system/explainers/locales.json (framework default) merged with an optional
-# local/explainers/locales.json (per-machine additions). Add a locale = edit config.
+# vault/explainers/locales.json (per-machine additions). Add a locale = edit config.
 # A note's frontmatter `lang:` always overrides this heuristic.
 _LOCALES = None
 def _locales():
     global _LOCALES
     if _LOCALES is None:
         _LOCALES = {}
-        for p in (ROOT / "system/explainers/locales.json", ROOT / "vault/explainers/locales.json"):
+        for p in (ROOT / "system/explainers/locales.json", VAULT / "explainers/locales.json"):
             if p.exists():
                 try:
                     for k, v in json.loads(p.read_text()).items():
@@ -68,6 +103,12 @@ def detect_lang(text):
             best, best_n = loc, n
     return best
 
+def _link(path):
+    # A link in the page, relative to the index. os.path.relpath uses the OS
+    # separator, which on Windows gives demo\\index.html: not a valid URL path.
+    return pathlib.Path(os.path.relpath(path, EX)).as_posix()
+
+
 def scan(base, source):
     out = []
     if not base.exists(): return out
@@ -86,25 +127,25 @@ def scan(base, source):
         out.append({
             "title": title or md.stem,
             "desc": desc,
-            "category": fm.get("category", "overig"),
+            "category": fm.get("category", "reference"),
             "source": source,
             "kind": "deep-dive" if is_dd else "explainer",
             "lang": lang,
-            "href": os.path.relpath(html_file, EX),
-            "preview": os.path.relpath(preview, EX) if preview.exists() else None,
+            "href": _link(html_file),
+            "preview": _link(preview) if preview.exists() else None,
             "rendered": html_file.exists(),
         })
     return out
 
 items = scan(EX, "vault")
-for sp in sorted((ROOT / "vault/spaces").glob("*/explainers")):
+for sp in sorted((VAULT / "spaces").glob("*/explainers")):
     items += scan(sp, "space:" + sp.parent.name)
 
 sources = sorted({it["source"] for it in items})
 n_vault = sum(1 for it in items if it["source"] == "vault")
 n_space = len(items) - n_vault
 
-PAGE = r"""<!doctype html><html lang="nl"><head><meta charset="utf-8">
+PAGE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>agentBrain: Explainers</title>
 <style>
@@ -222,4 +263,4 @@ footer = f"{len(items)} explainers · {n_vault} vault · {n_space} in spaces ({l
 out = (PAGE.replace("__DATA__", json.dumps(items, ensure_ascii=False))
            .replace("__FOOTER__", _html.escape(footer)))
 OUT.write_text(out)
-print(f"explainer-index: {len(items)} items ({n_vault} vault + {n_space} spaces) -> {OUT.relative_to(ROOT)}")
+print(f"explainer-index: {len(items)} items ({n_vault} vault + {n_space} spaces) -> {_shown(OUT)}")

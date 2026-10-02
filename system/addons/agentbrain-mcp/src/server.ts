@@ -41,12 +41,12 @@ const TOOLS = [
   },
   {
     name: "brain_save_learning",
-    description: "Save a durable learning into local/learnings/ (frontmatter + UUID5 added).",
+    description: "Save a durable learning into vault/learnings/ (frontmatter + UUID5 added).",
     inputSchema: { type: "object", properties: { title: { type: "string" }, body: { type: "string" }, tags: { type: "array", items: { type: "string" } } }, required: ["title", "body"] },
   },
   {
     name: "brain_project_update",
-    description: "Create/update a project note under local/projects/<name>/ (index.md or a named section).",
+    description: "Create/update a project note under vault/projects/<name>/ (index.md or a named section).",
     inputSchema: { type: "object", properties: { name: { type: "string" }, section: { type: "string" }, body: { type: "string" } }, required: ["name", "body"] },
   },
   {
@@ -56,7 +56,7 @@ const TOOLS = [
   },
   {
     name: "brain_findings_list",
-    description: "List structured detector findings from local/findings/<detector>.json. Optional filters: detector (e.g. 'check-vault-content'), severity ('error'|'warning'|'info'|'opportunity'), status ('open'|'auto_closed'). No filter = aggregated across all detectors.",
+    description: "List structured detector findings from vault/findings/<detector>.json. Optional filters: detector (e.g. 'check-vault-content'), severity ('error'|'warning'|'info'|'opportunity'), status ('open'|'auto_closed'). No filter = aggregated across all detectors.",
     inputSchema: { type: "object", properties: { detector: { type: "string" }, severity: { type: "string" }, status: { type: "string" } } },
   },
 ];

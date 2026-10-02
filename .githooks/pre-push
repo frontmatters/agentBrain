@@ -10,10 +10,7 @@
 #
 # The doctor runs over the COMMIT BEING PUSHED, in a temporary worktree, not
 # over the working tree of this checkout. The working tree keeps moving while
-# the doctor runs (a commit from another session, an edit, an addon in
-# progress): twice in two days the doctor saw HEAD change under it, blamed the
-# check that was running and refused the push, and what it had validated was
-# not what the push carried. A detached worktree of the pushed sha is exactly
+# the doctor runs (a concurrent commit or edit). A detached worktree of the pushed sha is exactly
 # the push, and nothing else touches it. The vault link and brain.json are
 # not tracked; they are put in place so the checks that read the vault work.
 #
@@ -33,14 +30,25 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
 
 # The sha being pushed: git hands "<local ref> <local sha> <remote ref> <remote sha>"
 # per ref on stdin. A delete pushes the null sha: nothing to validate.
-push_sha=""; refs_seen=0
+# A tag of a commit the remote already has carries no new code: validating it
+# would run today's doctor over an old release (whose tree predates addons and
+# skills installed later), which fails for reasons that are not the push's.
+# Validate the newest commit that is actually new; a tag of a new commit still is.
+push_sha=""; refs_seen=0; old_tags=0
 while read -r _lref lsha _rref _rsha; do
   [[ -n "$lsha" ]] || continue
   refs_seen=1
   [[ "$lsha" != *[!0]* ]] && continue   # the null sha: a ref delete
+  if [[ "$_rref" == refs/tags/* ]] && [[ -n "$(git branch -r --contains "$lsha" 2>/dev/null | grep -E "^[[:space:]]*${1:-origin}/" | head -1)" ]]; then
+    old_tags=$((old_tags + 1)); continue
+  fi
   push_sha="$lsha"
 done
 if [[ -z "$push_sha" ]]; then
+  if [[ "$old_tags" -gt 0 ]]; then
+    echo "pre-push: only tag(s) of commits ${1:-origin} already has ($old_tags); nothing new to validate" >&2
+    exit 0
+  fi
   if [[ "$refs_seen" -eq 1 ]]; then
     echo "pre-push: only ref deletes; nothing to validate" >&2
     exit 0

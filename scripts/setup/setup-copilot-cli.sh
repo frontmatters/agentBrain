@@ -13,7 +13,6 @@ VAULT="${VAULT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 AGENT_HOME="${AGENTBRAIN_HOME:-$HOME}"
 
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # shellcheck source=scripts/agentbrain-pointer.sh
@@ -29,14 +28,6 @@ fi
 
 mkdir -p "$COPILOT_DIR"
 
-# Anchored block heading (Hermes pattern): the bare word "agentBrain" anywhere in
-# the file would false-positive on a user's own mention of it.
-MARKER="## agentBrain"
-if [ -f "$COPILOT_INSTRUCTIONS" ] && grep -q "^${MARKER}" "$COPILOT_INSTRUCTIONS" 2>/dev/null; then
-	echo -e "${YELLOW}Skip${NC}    Copilot CLI (already configured)"
-elif ! agentbrain_pointer_target_ok "$COPILOT_INSTRUCTIONS" "$VAULT"; then
-	echo -e "${YELLOW}Skip${NC}    Copilot CLI (config file resolves into the agentBrain checkout)"
-else
-	agentbrain_pointer_block "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "copilot-cli.md" >>"$COPILOT_INSTRUCTIONS"
-	echo -e "${GREEN}✓${NC} Copilot CLI"
-fi
+# Refresh the managed block without changing the user's surrounding text.
+state="$(agentbrain_pointer_sync "$COPILOT_INSTRUCTIONS" "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "copilot-cli.md" embed)"
+echo -e "${GREEN}✓${NC} Copilot CLI (pointer $state)"

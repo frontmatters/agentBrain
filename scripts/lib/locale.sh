@@ -15,7 +15,7 @@ _locale_brain_default() {
 		| sed -E 's/.*"([^"]*)"[[:space:]]*$/\1/'
 }
 
-# `locale:` from a space passport frontmatter (local/spaces/<slug>/index.md).
+# `locale:` from a space passport frontmatter (vault/spaces/<slug>/index.md).
 _locale_space() {  # $1 root, $2 slug
 	local pp="$1/vault/spaces/$2/index.md"
 	[ -f "$pp" ] || return 1

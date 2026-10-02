@@ -59,8 +59,7 @@ judges each work note against the cutover in `system/ratchets.md` (2026-08-21):
 - `exempt` (no date): skipped.
 
 SHOULD fields are WARN for every note regardless of verdict. The check runs
-standalone; it is not part of `scripts/checks/doctor.sh` (listed as exempt in
-`scripts/checks/check-doctor.sh`), so older notes with MUST gaps never fail the doctor run.
+standalone; it is not part of `scripts/checks/doctor.sh`, so older notes with MUST gaps never fail the doctor run.
 
 ## Scaffold
 

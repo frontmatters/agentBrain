@@ -19,30 +19,37 @@ library or agentBrain addon.
 ## Lane layout
 
 ```text
-<tool>-factory/
+~/Developer/<area>/<tool>.factory/
 ├── <tool>-dev/     # work happens here
 ├── <tool>-next/    # validated candidate
 ├── <tool>/         # the live lane you actually run
 └── releases/       # release evidence
 ```
 
+A factory is named `<tool>.factory` and lives in its area
+(`~/Developer/<area>/mytool.factory`); `factory-doctor.sh` fails on any
+other name unless `factory.json` records `"legacyName": "<reason>"`.
+
 Promotion moves a candidate from next to live only after its checks pass, so the
-live lane never becomes the place where you debug.
+live lane never becomes the place where you debug. `factory-link.sh --check`
+requires next's command to answer `--version`; if live does not yet answer it,
+the check reports INFO rather than failing.
 
 ## Commands
 
 | Script | What it does |
 |---|---|
 | `factory-check.sh` | Validates a factory layout against the expected lanes. |
-| `factory-doctor.sh` | Reports health per lane: branch, cleanliness, drift. |
+| `factory-doctor.sh` | Reports health per lane and fails on command-line secret leaks in any lane. |
 | `factory-inventory.sh` | Lists projects and flags which ones deserve a factory. |
 | `factory-promote.sh` | Moves next to live, refusing detached, unrelated or dev-unmerged lanes. |
 | `factory-registry.sh` | Tracks the known factories. |
-| `factory-release.sh` | Cuts a release and records the evidence. |
+| `factory-release.sh` | Cuts a tracked-files-only release and records the evidence. |
 | `factory-rollback.sh` | Returns live to the previous release. |
 | `factory-test.sh` | Checks lane ancestry and optional language policy, then runs the configured tests. |
 | `factory-lane-origin.sh` | Requires live HEAD in next and next HEAD in dev. |
 | `factory-language-check.sh` | Checks configured product files against per-language word lists (`bash` + `jq`). |
+| `factory-leakscan.sh` | Scans tracked shell, TS, JS and Python files in dev, next and live for variable secrets passed in argv. |
 
 The registry and doctor normalize two layouts: the default `standard` layout
 (`lanes` and `releases/`) and an explicit `"profile": "composite"` layout
@@ -54,6 +61,9 @@ profile contract. Other commands continue to use the standard layout.
 Each script reads `factory.json` for its paths and commands. The generic
 `factory-release.sh` reads the next lane's `VERSION`, then its `package.json`
 version; products with a different version source use their own release script.
+Its manifest records the archive checksum and source, but makes no unverified
+claim that arbitrary bundled content contains no personal data. Only tracked files in the next lane and declared satellite repositories enter
+its archive; untracked files are omitted. Review release contents before publishing.
 
 ## Lane provenance gate
 
@@ -61,7 +71,7 @@ version; products with a different version source use their own release script.
 next HEAD, and next HEAD reachable from dev HEAD**, in one repository. Check
 manually with `bash ~/agentBrain/system/skills/factory-builder/bin/factory-lane-origin.sh .`.
 Next and live must also be clean, attached worktrees. `test.sh` runs the
-language and lane regression suites during the framework doctor; the existing
+language, lane and leakscan regression suites during the framework doctor; the existing
 profile test remains in the doctor's own test list. A live hotfix must
 return to next and then dev before validation or promotion;
 a next-only change must return to dev. This compares Git ancestry, not where a
@@ -99,7 +109,7 @@ fails closed.
 
 The scripts target bash 3.2, the version macOS ships. They therefore read command
 output with a `while read` loop instead of `mapfile`, which bash 4 introduced.
-`scripts/checks/check-bash32.sh` enforces this.
+The source checkout's `check-bash32.sh` enforces this.
 
 See `SKILL.md` for the full workflow, including when a project has earned a
 factory and when it has not.

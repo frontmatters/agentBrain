@@ -12,9 +12,9 @@ channels; only the first is wired automatically by `scripts/setup/setup-hermes.s
 
 ## 1. Global pointer — `~/.hermes/SOUL.md` (automatic)
 
-Hermes injects `SOUL.md` into every session. Setup APPENDS the standard
-agentBrain pointer block there (marker-guarded, idempotent) — SOUL.md is the
-user's personality file and is never overwritten. Honor `HERMES_HOME` when set.
+Hermes injects `SOUL.md` into every session. Setup installs or refreshes the standard agentBrain pointer between begin/end
+markers (migrating a legacy block once). SOUL.md is the user's personality
+file: surrounding text is preserved and a backup precedes changes. Honor `HERMES_HOME` when set.
 
 Per-project: Hermes also loads `AGENTS.md` and `CLAUDE.md` from the working
 directory — projects that already carry an agentBrain pointer in CLAUDE.md get

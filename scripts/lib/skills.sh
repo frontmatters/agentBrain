@@ -5,6 +5,14 @@
 # agents can never diverge on how an enabled addon's SKILL.md becomes a usable
 # skill. Pure helpers: every root is passed in, no globals, no stdout.
 
+# Only when the resolver is not loaded yet: sourcing vault.sh (re)sets and
+# exports VAULT_DIR, which would overwrite the vault a caller resolved itself
+# (setup-skills.sh computes it for the checkout it was pointed at).
+if ! declare -F vault_dir >/dev/null 2>&1; then
+	# shellcheck source=vault.sh
+	source "$(dirname "${BASH_SOURCE[0]}")/vault.sh"
+fi
+
 # A symlink is "ours" when it resolves into the brain's skill trees or an addon.
 skilllib_is_brain_link() {
 	local link="$1" target
@@ -84,8 +92,8 @@ skilllib_sync_addon_skills() {
 
 
 # skilllib_link_standalone_skills <dest_dir> <src_root> <label> <brain_root>
-#   src_root   <brain>/system/skills or <brain>/local/skills
-#   label      "system/skills" or "local/skills" (symlink-target path segment)
+#   src_root   <brain>/system/skills or <brain>/vault/skills
+#   label      "system/skills" or "vault/skills" (symlink-target path segment)
 #   brain_root symlink-target prefix (the stable brain alias)
 #
 # Links every skill dir under <src_root> (that ships a SKILL.md) into
@@ -116,11 +124,10 @@ skilllib_link_standalone_skills() {
 # <vault_root>/system/skills or <vault_root>/local/skills. Addon-skill links live
 # at <dest_dir>/<id>/SKILL.md (a dir, not a top-level symlink) and are pruned by
 # skilllib_sync_addon_skills instead, so they are untouched here. Silent.
-# skilllib_vault_dir <brain_root> — where the vault sits on disk: vault/ in a
-# current checkout, the older name on an install setup has not touched. The
-# one place this library knows about the two names.
+# skilllib_vault_dir <brain_root> — use the shared vault resolver, including
+# the explicit override used by relocated vaults and fixture tests.
 skilllib_vault_dir() {
-	if [ -d "$1/vault" ]; then printf '%s/vault' "$1"; else printf '%s/%s' "$1" "local"; fi
+	vault_dir "$1"
 }
 
 skilllib_prune_orphaned_skills() {

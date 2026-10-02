@@ -171,11 +171,11 @@ whose spec contains `:cloud` gets a data-exit notice when the consumer starts.
 
 ## 9. Limitations
 
-- The reviewer sees only the document, not the requester's session; see
-  [[peer-review-out-of-band-limitation]].
+- The reviewer sees only the document, not the requester's session: context
+  that lives only in the session must be written into the document.
 - `--wait` returns the first completed review. For several reviewers, use
   `--list --correlation=<event_id>` afterwards.
 - No automatic retry: a `FAILED` completion leaves the retry to the caller.
 - Documents over roughly 100 KB can exceed the command-line argument limit.
 - Adding a backend means extending `call_llm`; verify the exact invocation
-  first, see [[cli-help-grep-not-equals-smoke-test]].
+  first by running it (a flag listed in `--help` can still fail).

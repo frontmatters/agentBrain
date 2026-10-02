@@ -10,7 +10,7 @@
 # The workspace exists because the vault holds its notes to a standard that
 # working material cannot meet and should not be asked to. Anything a producer
 # can rebuild, anything cloned from elsewhere, and anything thrown away next
-# week belongs here instead of in local/.
+# week belongs here instead of in vault/.
 #
 # Three lanes, by lifetime rather than by subject:
 #   external/<name>   third-party checkouts   — until you are done with them

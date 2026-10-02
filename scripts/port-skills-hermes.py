@@ -29,8 +29,17 @@ from pathlib import Path
 MARKER = "x-agentbrain-ported"  # frontmatter stamp = brain-ported
 
 def vault_root() -> Path:
-    # scripts/ sits at the checkout root, sibling to system/ and local/.
+    # scripts/ sits at the checkout root, sibling to system/ and vault/.
     return Path(__file__).resolve().parent.parent
+
+def vault_dir(root: Path) -> Path:
+    for name in ("AGENTBRAIN_VAULT", "AGENTBRAIN_VAULT_DIR", "AGENTBRAIN_LOCAL_DIR"):
+        if os.environ.get(name):
+            return Path(os.environ[name]).expanduser()
+    for name in ("vault", "local"):
+        if (root / name).exists():
+            return root / name
+    return root / "vault"
 
 def parse_frontmatter(text: str):
     """Return (frontmatter_dict_ish, body). Only name/description are read."""
@@ -108,7 +117,7 @@ preserved verbatim. Follow it top to bottom.
 """
 
 def discover(root: Path):
-    for base in (root / "system" / "skills", root / "local" / "skills"):
+    for base in (root / "system" / "skills", vault_dir(root) / "skills"):
         if not base.is_dir():
             continue
         for skill_md in sorted(base.glob("*/SKILL.md")):

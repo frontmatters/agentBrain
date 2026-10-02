@@ -9,7 +9,7 @@ id: d8c08d0d-2112-5c7e-a187-270f43e8f2e7
 
 The GitHub Copilot CLI (the `copilot` command) reads personal global instructions from
 `$HOME/.copilot/copilot-instructions.md` — this is where `setup-copilot-cli.sh` writes the
-agentBrain pointer. It is a different product from the VS Code Copilot extension (see
+agentBrain pointer between begin/end markers, refreshing stale blocks without changing surrounding user text. It is a different product from the VS Code Copilot extension (see
 `system/agent-config/copilot.md`), with its own `~/.copilot/` config tree.
 
 ## Recommended pointers

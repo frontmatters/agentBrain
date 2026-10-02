@@ -76,7 +76,7 @@ done
 # ---------------------------------------------------------------------------
 # 3. Dutch in markdown documentation under system/ (the public layer)
 # ---------------------------------------------------------------------------
-# Policy: everything outside local/ must be in English. The locale/comment checks
+# Policy: everything outside vault/ must be in English. The locale/comment checks
 # above only cover .ts/.sh under system/addons + scripts; markdown docs (SKILL.md,
 # READMEs, templates, playbooks) anywhere in system/ are not covered. Flag any
 # Dutch-dominant system/ markdown via the canonical detector (shared with the

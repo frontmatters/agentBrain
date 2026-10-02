@@ -20,7 +20,7 @@ pi
 cursor
 copilot
 codex
-windsurf
+devin
 cline
 hermes
 abh

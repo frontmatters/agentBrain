@@ -26,11 +26,19 @@ resolve_brain_dir() {
 }
 
 BRAIN_DIR="$(resolve_brain_dir)"
+# The resolver is code and belongs to this script's checkout; BRAIN_DIR is data
+# and may be a fixture that holds a vault and nothing else. So the library is
+# found from here first, and the vault is asked for BY the root that was given.
+_VAULT_LIB="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../../.." 2>/dev/null && pwd -P || true)/scripts/lib/vault.sh"
+[ -f "$_VAULT_LIB" ] || _VAULT_LIB="$BRAIN_DIR/scripts/lib/vault.sh"
+# shellcheck source=/dev/null
+. "$_VAULT_LIB"
+VAULT_DIR="$(vault_dir "$BRAIN_DIR")"
 
 # Source visibility helpers (added by brain-hide-forget)
 source "$BRAIN_DIR/system/lib/visibility.sh" 2>/dev/null || true
 
-PROJECTS_DIR="$BRAIN_DIR/vault/projects"
+PROJECTS_DIR="$VAULT_DIR/projects"
 
 FORMAT="table"
 STATUS_FILTER=""
@@ -79,14 +87,14 @@ done
 
 # --space: opt-in view of a single space's own projects. Validate the slug
 # first: an empty slug or one containing '/', '..', a leading dot, or any char
-# outside [a-z0-9._-] could escape local/spaces/<slug>/ (path traversal).
+# outside [a-z0-9._-] could escape vault/spaces/<slug>/ (path traversal).
 if [ "$SPACE_GIVEN" = "1" ]; then
     case "$SPACE_SLUG" in
         *[!a-z0-9._-]* | "" | .* | *..* )
             echo "list-projects: invalid --space slug: '$SPACE_SLUG' (allowed: lowercase a-z 0-9 . _ -, no '/' or '..')" >&2
             exit 2 ;;
     esac
-    PROJECTS_DIR="$BRAIN_DIR/vault/spaces/$SPACE_SLUG/projects"
+    PROJECTS_DIR="$VAULT_DIR/spaces/$SPACE_SLUG/projects"
 fi
 
 if [ ! -d "$PROJECTS_DIR" ]; then
@@ -174,7 +182,7 @@ for index in "$PROJECTS_DIR"/*/index.md; do
     priority="$(read_fm_field "$index" priority)"
     [ -z "$priority" ] && priority="-"
 
-    # LAST TOUCHED — mtime (precieser dan frontmatter date, auto-update)
+    # LAST TOUCHED — mtime (more precise than the frontmatter date).
     if date_str=$(date -r "$index" "+%Y-%m-%d %H:%M" 2>/dev/null); then
         date="$date_str"
     elif date_str=$(stat -c "%y" "$index" 2>/dev/null | awk '{print $1, substr($2,1,5)}'); then

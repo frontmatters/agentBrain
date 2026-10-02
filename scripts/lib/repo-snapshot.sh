@@ -11,6 +11,11 @@
 #   HEAD          a check must not commit here
 #   index         a check must not stage here
 #   local config  a check must not configure here
+#   vault addons  a check must not enable or disable an add-on in the real
+#                 vault (the vault/addons/*/enabled markers). A test that ran
+#                 uninstall.sh against the real checkout deleted 35 of them,
+#                 twice, on 2026-10-01; HEAD, index and config only caught the
+#                 hooksPath half of that.
 #
 # The three are not equally attributable. HEAD and the index belong to this
 # worktree alone, so a change there happened inside the check. `git config
@@ -28,6 +33,12 @@ repo_snapshot() {
 	printf 'BRANCH %s\n' "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
 	git diff --cached --name-only 2>/dev/null | sed 's/^/INDEX /'
 	git config --local --list 2>/dev/null | sort | sed 's/^/CONFIG /'
+	if [ -d vault/addons ]; then
+		for d in vault/addons/*/; do
+			if [ -e "${d}enabled" ]; then d="${d%/}"; printf 'ADDON %s\n' "${d##*/}"; fi
+		done
+	fi
+	return 0
 }
 
 repo_snapshot_diff() { # <before-snapshot>

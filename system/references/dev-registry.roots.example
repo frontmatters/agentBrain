@@ -1,6 +1,6 @@
 # dev-registry roots — TEMPLATE (committed). Copy to the private mirror:
-#     cp system/references/dev-registry.roots.example local/references/dev-registry.roots
-# then edit local/references/dev-registry.roots with YOUR checkout roots.
+#     cp system/references/dev-registry.roots.example vault/references/dev-registry.roots
+# then edit vault/references/dev-registry.roots with YOUR checkout roots.
 #
 # One path per line. `~` and `$HOME` expand. Lines starting with `#` are ignored.
 # List nested roots explicitly (the scan does not descend into `_`-prefixed dirs).

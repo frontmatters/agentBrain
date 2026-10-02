@@ -7,6 +7,9 @@
 # Helper modules (imported by extensions, not extensions themselves)
 youtube-transcript-utils.ts
 
+# Opt-in security addon: remove this line only when owner approves Pi installation.
+secret-guard.ts
+
 # Documentation
 extensions.md
 README.md

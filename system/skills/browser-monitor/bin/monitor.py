@@ -1,4 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.9"
+# dependencies = ["playwright~=1.58.0"]
+# [tool.uv]
+# exclude-newer = "2026-09-27T00:00:00Z"
+# ///
 """Watch the owner work in a browser and record what breaks.
 
 Opens a visible browser, navigates once, and then only listens: failed requests with

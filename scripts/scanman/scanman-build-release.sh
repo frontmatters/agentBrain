@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 
-AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)}"
 SCANMAN_DIR="$AGENTBRAIN_DIR/system/skills/scanman"
 VERSION="$(tr -d '[:space:]' < "$SCANMAN_DIR/VERSION")"
 OUT_DIR="${OUT_DIR:-$HOME/Developer/scanman/releases}"

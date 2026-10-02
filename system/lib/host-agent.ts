@@ -11,7 +11,7 @@
  * specific agent. This file legitimately enumerates agents — it is the agnostic
  * dispatch layer, whitelisted in scripts/checks/check-agnostic.sh for exactly that reason.
  *
- * Verification (per the [[cli-help-grep-not-equals-smoke-test]] learning): each
+ * Verification: a flag that appears in `--help` can still fail when run, so each
  * adapter's `verified` flag records whether its invocation was smoke-tested
  * end-to-end, not merely read from `--help`.
  *   verified: pi, copilot, gemini, ollama  (smoke-tested: returned a completion)

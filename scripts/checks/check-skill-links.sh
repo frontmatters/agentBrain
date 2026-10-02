@@ -4,7 +4,7 @@
 # (symlinked) into each detected agent's native skills dir, and that no
 # orphaned/broken brain symlinks linger there.
 #
-# Closes the drift gap where a skill added to system/skills/ or local/skills/
+# Closes the drift gap where a skill added to system/skills/ or vault/skills/
 # after install never becomes visible to agents because setup-skills.sh was
 # not re-run.
 #
@@ -20,10 +20,16 @@
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)"
-# VAULT/STATE default to the real repo in production; tests override them to point
-# at a temp registry. Keeps this check in lockstep with setup-skills.sh.
+# VAULT is the checkout (system/skills, system/addons); tests point it at a temp
+# registry. The vault (its skills/ and addons/, and the enabled-state) is NOT
+# assumed to sit at $VAULT/vault: a worktree has no vault/ and a vault may live
+# outside the checkout. It comes from the resolver, as everywhere else
+# (AGENTBRAIN_VAULT, then <checkout>/vault). ADDONS_STATE overrides the state dir.
 VAULT="${VAULT:-$ROOT_DIR}"
-STATE="${ADDONS_STATE:-$VAULT/vault/addons}"
+# shellcheck source=scripts/lib/vault.sh
+. "$ROOT_DIR/scripts/lib/vault.sh"
+VAULT_DIR="$(vault_dir "$VAULT")"
+STATE="${ADDONS_STATE:-$VAULT_DIR/addons}"
 AGENT_HOME="${AGENTBRAIN_HOME:-$HOME}"
 
 addon_enabled() { [ -f "$STATE/$1/enabled" ]; }
@@ -53,7 +59,7 @@ check_agent() {
 
 	# 1. Every vault skill must be linked (or shadowed by a user's own skill).
 	local src_root src name target
-	for src_root in "$VAULT/system/skills" "$VAULT/vault/skills"; do
+	for src_root in "$VAULT/system/skills" "$VAULT_DIR/skills"; do
 		[ -d "$src_root" ] || continue
 		for src in "$src_root"/*/; do
 			[ -f "${src}SKILL.md" ] || continue
@@ -67,11 +73,17 @@ check_agent() {
 		done
 	done
 
-	# 1b. Every ENABLED addon that ships a SKILL.md must be linked as well.
-	if [ -d "$VAULT/system/addons" ]; then
-		for src in "$VAULT/system/addons"/*/; do
+	# 1b. Every ENABLED addon that ships a SKILL.md must be linked as well, from
+	# both roots setup-skills.sh links from: a bundled add-on and one installed
+	# into the vault. An id present in both is checked once.
+	local root seen=" "
+	for root in "$VAULT/system/addons" "$VAULT_DIR/addons"; do
+		[ -d "$root" ] || continue
+		for src in "$root"/*/; do
 			[ -f "${src}SKILL.md" ] || continue
 			name="$(basename "$src")"
+			case "$seen" in *" $name "*) continue ;; esac
+			seen="$seen$name "
 			addon_enabled "$name" || continue
 			target="$skills_dir/$name/SKILL.md"
 			if [ -e "$target" ] || [ -L "$target" ]; then
@@ -80,14 +92,14 @@ check_agent() {
 				bad "addon skill $name not installed for ${label} — run: ${fixcmd}"
 			fi
 		done
-	fi
+	done
 
 	# 2. No orphaned or broken brain symlinks left behind.
 	local link
 	for link in "$skills_dir"/*; do
 		is_brain_skill_link "$link" || continue
 		name="$(basename "$link")"
-		if [ ! -f "$VAULT/system/skills/$name/SKILL.md" ] && [ ! -f "$VAULT/vault/skills/$name/SKILL.md" ]; then
+		if [ ! -f "$VAULT/system/skills/$name/SKILL.md" ] && [ ! -f "$VAULT_DIR/skills/$name/SKILL.md" ]; then
 			bad "orphaned brain symlink: $name (source gone) — run: ${fixcmd}"
 		elif [ ! -e "$link" ]; then
 			bad "broken symlink: $name -> $(readlink "$link")"
@@ -96,14 +108,20 @@ check_agent() {
 		fi
 	done
 
-	# 2b. No stale addon-skill links: the addon was disabled or its SKILL.md is gone.
-	local entry skill
+	# 2b. No stale addon-skill links: the addon was disabled or its SKILL.md is gone
+	# from both add-on roots. An addon-skill link is <dir>/<id>/SKILL.md pointing
+	# into system/addons or vault/addons, whichever root setup-skills.sh used.
+	local entry skill found
 	for entry in "$skills_dir"/*/; do
 		skill="${entry}SKILL.md"
 		[ -L "$skill" ] || continue
-		case "$(readlink "$skill")" in *"/system/addons/"*) : ;; *) continue ;; esac
 		name="$(basename "$entry")"
-		if [ ! -f "$VAULT/system/addons/$name/SKILL.md" ] || ! addon_enabled "$name"; then
+		case "$(readlink "$skill")" in *"/system/addons/"* | *"/vault/addons/"*) : ;; *) continue ;; esac
+		found=0
+		for root in "$VAULT/system/addons" "$VAULT_DIR/addons"; do
+			if [ -f "$root/$name/SKILL.md" ]; then found=1; break; fi
+		done
+		if [ "$found" -eq 0 ] || ! addon_enabled "$name"; then
 			bad "stale addon skill link: $name (disabled or removed) — run: ${fixcmd}"
 		elif [ ! -e "$skill" ]; then
 			bad "broken addon skill link: $name -> $(readlink "$skill")"

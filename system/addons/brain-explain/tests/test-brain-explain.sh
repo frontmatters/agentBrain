@@ -89,6 +89,13 @@ rm -rf "$TMP"
 
 # --- Task 6: theme_creator (generate -> validate -> repair -> fail-exit) ---
 TMP=$(mktemp -d)
+mkdir -p "$TMP/bin"
+printf '#!/bin/sh\nprintf "called\\n" >> "$CALL_LOG"\n' > "$TMP/bin/ollama"
+chmod +x "$TMP/bin/ollama"
+no_backend="$(PATH="$TMP/bin:$PATH" CALL_LOG="$TMP/calls" EXPLAINERS_LOCAL_THEMES="$TMP/themes" $BE theme new unspecified --prompt 'private prompt' 2>&1; echo "rc=$?")"
+assert "no backend fails closed" "$(echo "$no_backend" | grep -c 'rc=2')" "1"
+assert "no backend never calls ollama" "$([ -e "$TMP/calls" ] && echo 1 || echo 0)" "0"
+assert "no backend creates no theme" "$([ -e "$TMP/themes/unspecified/theme.css" ] && echo 1 || echo 0)" "0"
 ok="$(BRAIN_EXPLAIN_LLM=mockok EXPLAINERS_LOCAL_THEMES="$TMP/themes" $BE theme new mine --prompt "warm" >/dev/null 2>&1; echo $?)"
 assert "compliant theme written, exit 0" "$ok" "0"
 assert "theme.css exists" "$([ -f "$TMP/themes/mine/theme.css" ] && echo 1 || echo 0)" "1"

@@ -1,1 +1,0 @@
-tests/test-validate-note-id.sh

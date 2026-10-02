@@ -25,20 +25,22 @@ function claudeDesktopConfigPath(home: string): string | null {
   }
 }
 
-// MCP clients whose config path is verified (Cursor/Windsurf docs May 2026;
+// MCP clients whose config path is verified (Cursor and Devin Desktop docs;
 // Claude Code user-scope mcpServers in ~/.claude.json, detected via ~/.claude/;
 // Claude Desktop GUI per `claude_desktop_config.json` docs).
-export function targets(home = homedir()): ClientTarget[] {
+export function targets(home = homedir(), uninstall = false): ClientTarget[] {
   const ts: ClientTarget[] = [
     { id: "claude-code", configPath: join(home, ".claude.json"), detectPath: join(home, ".claude") },
     { id: "cursor", configPath: join(home, ".cursor", "mcp.json") },
-    { id: "windsurf", configPath: join(home, ".codeium", "windsurf", "mcp_config.json") },
+    { id: "devin", configPath: join(home, ".config", "devin", "mcp_config.json") },
     // Pi/Gemini/Kiro all use the same `mcpServers` config shape; detect via the
     // install-marker dir so a machine counts as "installed" before its config exists.
     { id: "pi", configPath: join(home, ".pi", "agent", "mcp.json"), detectPath: join(home, ".pi") },
     { id: "gemini", configPath: join(home, ".gemini", "settings.json") },
     { id: "kiro", configPath: join(home, ".kiro", "settings", "mcp.json"), detectPath: join(home, ".kiro") },
   ];
+  // Historical Windsurf entry is cleanup-only: never create an old config.
+  if (uninstall) ts.push({ id: "windsurf-legacy", configPath: join(home, ".codeium", "windsurf", "mcp_config.json") });
   const cdPath = claudeDesktopConfigPath(home);
   if (cdPath) ts.push({ id: "claude-desktop", configPath: cdPath });
   return ts;
@@ -87,7 +89,7 @@ if (import.meta.main) {
   const brainAlias = process.env.BRAIN_ALIAS ?? join(homedir(), "agentBrain");
   const uninstall = process.argv.includes("--uninstall");
   let hadError = false;
-  for (const t of targets()) {
+  for (const t of targets(homedir(), uninstall)) {
     if (!detected(t)) { console.log(`skip ${t.id}: not detected`); continue; }
     try {
       if (uninstall) {

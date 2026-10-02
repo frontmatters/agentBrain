@@ -1,1 +1,0 @@
-tests/test-report-stale.sh

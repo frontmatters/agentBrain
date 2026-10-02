@@ -3,7 +3,7 @@
 # lock.sh — serialize runs that share mutable state.
 #
 # Four doctor tests create fixtures with fixed names inside the real vault
-# (local/spaces/__astest__ and friends), because note ids are derived from the
+# (vault/spaces/__astest__ and friends), because note ids are derived from the
 # real path and cannot be faked in a temp dir. Two doctor runs at once, say a
 # manual one and the pre-push hook's, therefore trip over each other's
 # fixtures and one fails for no reason in the code.

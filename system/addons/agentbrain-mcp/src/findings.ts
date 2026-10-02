@@ -1,4 +1,4 @@
-// findings.ts — read structured detector findings from local/findings/<detector>.json.
+// findings.ts — read structured detector findings from vault/findings/<detector>.json.
 //
 // Each detector (e.g. check-vault-content, doctor, brain-review) emits a JSON file with shape:
 //   { detector: string, last_run: ISO8601, findings: Finding[] }
@@ -41,7 +41,7 @@ function sanitizeDetectorName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_-]/g, "");
 }
 
-// List findings from local/findings/*.json, optionally filtered by detector / severity / status.
+// List findings from vault/findings/*.json, optionally filtered by detector / severity / status.
 // Returns aggregated findings when no detector specified; empty result if findings dir absent.
 export async function listFindings(opts: ListFindingsOptions = {}): Promise<ListFindingsResult> {
   let findingsDir: string;

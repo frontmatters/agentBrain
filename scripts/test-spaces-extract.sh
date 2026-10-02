@@ -1,1 +1,0 @@
-tests/test-spaces-extract.sh

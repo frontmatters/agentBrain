@@ -34,7 +34,7 @@ case "$state" in
 esac
 command -v jq >/dev/null || { echo 'factory-language-check: jq is required' >&2; exit 2; }
 LANGUAGE="$(jq -r '.languageCheck.language // empty' "$CONFIG")"
-LANE_PATH="$(jq -r --arg lane "$LANE" '.lanes[$lane] // empty' "$CONFIG")"
+LANE_PATH="$(python3 "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/factory-profile.py" "$(dirname "$CONFIG")" | jq -r --arg lane "$LANE" '.lanes[$lane] // empty')"
 [ -n "$LANGUAGE" ] && [ -n "$LANE_PATH" ] || { echo 'factory-language-check: missing language or lane' >&2; exit 2; }
 case "$LANE_PATH" in \~/*) LANE_PATH="$HOME/${LANE_PATH#\~/}" ;; esac
 ROOT="$(cd "$LANE_PATH" && pwd -P)" || exit 2

@@ -3,6 +3,7 @@ id: goal
 name: Goal
 version: 0.1.0
 author: frontmatters
+kind: framework
 install: none
 command: bun
 privacy: local

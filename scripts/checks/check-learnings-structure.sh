@@ -3,10 +3,10 @@
 # check-learnings-structure.sh — Enforce flat learnings.
 # Rule: learnings are flat `<category>.md` files organized by frontmatter `tags` (+ UUID +
 # `[[wiki-links]]`), NOT by folders. Subfolders are the convention for *projects*
-# (local/projects/<name>/), not learnings. The only sanctioned learnings subfolder is
+# (vault/projects/<name>/), not learnings. The only sanctioned learnings subfolder is
 # `extracted/` (machine-generated auto-extraction output, distinct provenance — not a topic).
 # Runs against both the public template layer (learnings/) and the private layer
-# (local/learnings/); local/ is absent in CI, so it is skipped there.
+# (vault/learnings/); vault/ is absent in CI, so it is skipped there.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)"
@@ -27,7 +27,7 @@ for base in learnings vault/learnings; do
 		errors=$((errors + 1))
 	done
 	# (b) every flat learning note has frontmatter (closes the gap that check-frontmatter
-	#     leaves open by exempting local/). The /save-learning schema fields go inside it.
+	#     leaves open by exempting vault/). The /save-learning schema fields go inside it.
 	for f in "$base"/*.md; do
 		[ -f "$f" ] || continue
 		case "$(basename "$f")" in README.md | _example.md) continue ;; esac

@@ -130,7 +130,7 @@ platform_has() {
 		# so a PATH-only probe reports "absent" for an installed editor and
 		# offer_install would offer to install it again. lib/editors.sh knows
 		# both locations; source it lazily so platform.sh stays dependency-free.
-		vscode|vscodium|cursor|windsurf|vscode-insiders)
+		vscode|vscodium|cursor|devin|vscode-insiders)
 			# shellcheck source=./editors.sh
 			. "$_PLATFORM_LIB_DIR/editors.sh"
 			editor_cli "$1" >/dev/null 2>&1 ;;

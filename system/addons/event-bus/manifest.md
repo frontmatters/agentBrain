@@ -3,6 +3,7 @@ id: event-bus
 name: Event Bus (transport)
 version: 0.3.1
 author: frontmatters
+kind: framework
 install: bash system/addons/event-bus/install.sh
 command: bash
 privacy: local
@@ -25,14 +26,14 @@ outputs:
 
 # Event Bus (transport add-on)
 
-Filesystem-based pub/sub for cross-agent + cross-machine communication. Agents
+Filesystem-based pub/sub for cross-agent communication. Agents
 emit JSON envelopes into `vault/events/inbox/`; consumers poll with a sync-safe
 cursor (`seen-ids.set` + lookback window).
 
 - **Use**: `bash system/addons/event-bus/bin/brain-emit --help` (no install
   needed for v1 — scripts run directly from the addon path).
-- **Privacy**: `no-network` — events never leave the filesystem. `vault/events/` is
-  local runtime state; cross-machine transport via git sync is deferred.
+- **Privacy**: emission and polling are filesystem-only. Cross-machine delivery requires
+  separately configured vault sync; the bus itself does not perform network I/O.
 
 Dependencies: `bash` (POSIX), `jq`, `python3`, `openssl`. All available on
 macOS/Linux defaults; on Windows requires git-bash + bundled jq/python.

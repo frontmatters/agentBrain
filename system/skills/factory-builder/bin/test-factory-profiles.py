@@ -14,9 +14,10 @@ class Profiles(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for profile in ("standard", "composite"):
-                factory = root / f"{profile}-factory"
+                factory = root / f"{profile}.factory"
                 factory.mkdir()
                 (factory / "README.md").write_text("# Test\n")
+                (factory / "VERSION").write_text("0.1.0\n")  # every tool has a version (hard rule)
                 (factory / "R&D").mkdir()
                 if profile == "standard":
                     for name in ("dashboards", "decisions", "logs", "experiments", "captures", "renders"):
@@ -44,7 +45,7 @@ class Profiles(unittest.TestCase):
             self.assertEqual([(r["profile"], r["status"], r["issues"]) for r in rows],
                              [("composite", "ok", []), ("standard", "ok", [])])
             self.assertTrue(all(all(v["exists"] for v in r["lanes"].values()) for r in rows))
-            cfg = root / "composite-factory" / "factory.json"
+            cfg = root / "composite.factory" / "factory.json"
             data = json.loads(cfg.read_text()); data["profile"] = "unknown"; cfg.write_text(json.dumps(data))
             bad = subprocess.run(["bash", str(BIN / "factory-doctor.sh"), "--factory", str(cfg.parent)], capture_output=True, text=True)
             self.assertNotEqual(bad.returncode, 0)

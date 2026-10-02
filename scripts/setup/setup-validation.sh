@@ -22,7 +22,7 @@ for tmpl in "${TEMPLATES[@]}"; do
 	fi
 done
 
-# Count the user's real knowledge (local/), not public placeholders/templates. Exclude
+# Count the user's real knowledge (vault/), not public placeholders/templates. Exclude
 # READMEs and anything under an _example/ (or other _*) template dir — find recurses into
 # such dirs, so a name filter alone would count the example project's files.
 count_notes() {

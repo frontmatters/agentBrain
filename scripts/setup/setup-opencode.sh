@@ -31,23 +31,30 @@ if ! command -v opencode &>/dev/null && [ ! -d "$OPENCODE_DIR" ] && [ ! -d "$AGE
 	exit 2
 fi
 
-# Already configured = pointer file exists AND is registered in the instructions array.
-if [ -f "$POINTER_FILE" ] && [ -f "$OPENCODE_JSON" ] && grep -q "agentbrain-pointer.md" "$OPENCODE_JSON" 2>/dev/null; then
-	echo -e "${YELLOW}Skip${NC}    OpenCode (already configured)"
-elif ! agentbrain_pointer_target_ok "$POINTER_FILE" "$VAULT"; then
-	echo -e "${YELLOW}Skip${NC}    OpenCode (config file resolves into the agentBrain checkout)"
-else
-	mkdir -p "$OPENCODE_DIR"
-	agentbrain_pointer_block "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "opencode.md" >"$POINTER_FILE"
-	# Merge the pointer path into the instructions array. Errors stay visible and
-	# fail the script (the runner reports it), so a malformed user config is never
-	# silently skipped or overwritten.
-	python3 - "$OPENCODE_JSON" "$POINTER_FILE" <<'PY'
-import json, sys
+# Refresh only when the canonical block differs; keep JSON registration below.
+mkdir -p "$OPENCODE_DIR"
+state="$(agentbrain_pointer_sync "$POINTER_FILE" "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "opencode.md" own)"
+# Register the pointer, and drop entries an older agentBrain setup wrote that
+# no longer exist (per-file paths into a moved checkout or a test fixture).
+# Only missing absolute paths with an agentBrain file name are removed; globs,
+# URLs and anything that still exists are the user's and stay. Errors stay
+# visible: a malformed user config is never silently skipped or overwritten.
+# OpenCode asks before any tool touches a path outside the project and refuses
+# in a non-interactive run, so without this the agent saw the pointer but could
+# not read one file it names (validated 2026-10-01). Grant the brain alias and
+# the vault's real directory (the vault is usually a symlink and OpenCode may
+# check the resolved path). Absolute paths, so uninstall.sh can remove exactly
+# these; a user's own setting for the same path is never overwritten.
+BRAIN_PATH="${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}"
+VAULT_REAL="$(cd "$BRAIN_PATH/vault" 2>/dev/null && pwd -P || true)"
+result="$(python3 - "$OPENCODE_JSON" "$POINTER_FILE" "$BRAIN_PATH" "$VAULT_REAL" <<'PY'
+import json, os, sys
 from pathlib import Path
 
 config_path = Path(sys.argv[1])
 pointer = sys.argv[2]
+grants = [g.rstrip("/") + "/**" for g in sys.argv[3:5] if g]
+OURS = {"rules.md", "skills.md", "patterns.md", "troubleshooting.md", "shared.md", "opencode.md", "agentbrain-pointer.md"}
 
 config = {}
 if config_path.exists():
@@ -62,15 +69,54 @@ if config_path.exists():
 instructions = config.get('instructions', [])
 if not isinstance(instructions, list):
     sys.stderr.write(
-        f"setup-opencode: 'instructions' in {config_path} is not an array — "
+        f"setup-opencode: 'instructions' in {config_path} is not an array; "
         "fix it manually and re-run.\n")
     sys.exit(1)
 
-if pointer not in instructions:
-    instructions.append(pointer)
-config['instructions'] = instructions
+def dead_ours(entry):
+    return (isinstance(entry, str) and entry.startswith("/") and not any(c in entry for c in "*?[")
+            and os.path.basename(entry).lower() in OURS and not os.path.exists(entry))
 
-config_path.write_text(json.dumps(config, indent=2) + '\n')
+kept = [e for e in instructions if e == pointer or not dead_ours(e)]
+removed = len(instructions) - len(kept)
+if pointer not in kept:
+    kept.append(pointer)
+changed = kept != instructions or not config_path.exists()
+config['instructions'] = kept
+
+granted, note = 0, ""
+perm = config.get('permission')
+if perm is None:
+    perm = config['permission'] = {}
+if not isinstance(perm, dict):
+    note = "permission is not an object; grant read access to the brain manually"
+else:
+    ext = perm.get('external_directory')
+    if ext is None:
+        ext = perm['external_directory'] = {}
+    if isinstance(ext, dict):
+        for g in grants:
+            if g not in ext:
+                ext[g] = "allow"
+                granted += 1
+    elif ext != "allow":
+        note = f"external_directory is '{ext}' for every path; agentBrain files need 'allow'"
+    if not ext:
+        perm.pop('external_directory', None)
+    if not perm:
+        config.pop('permission', None)
+if changed or granted:
+    config_path.write_text(json.dumps(config, indent=2) + '\n')
+print(f"{removed} {granted} {note}")
 PY
-	echo -e "${GREEN}✓${NC} OpenCode"
+)"
+read -r pruned granted note <<<"$result"
+if [ "$state" = current ] && [ "${pruned:-0}" = 0 ] && [ "${granted:-0}" = 0 ]; then
+	echo -e "${YELLOW}Skip${NC}    OpenCode (already current)"
+else
+	msg="pointer $state"
+	if [ "${pruned:-0}" != 0 ]; then msg="$msg, removed $pruned dead agentBrain path(s)"; fi
+	if [ "${granted:-0}" != 0 ]; then msg="$msg, read access to the brain"; fi
+	echo -e "${GREEN}✓${NC} OpenCode ($msg)"
 fi
+if [ -n "${note:-}" ]; then echo -e "${YELLOW}Note${NC}    OpenCode: $note"; fi

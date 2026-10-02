@@ -14,6 +14,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.15.0] - 2026-10-01
+
+### Added
+- Devin Desktop (formerly Windsurf) integration: Devin Local and Cascade rules pointers, MCP registration, detection and uninstall cleanup.
+- `brain tool-update <tool> stage|check|switch|status|finish|prune|rollback` updates an agent CLI (Pi, Claude Code, OpenCode, Gemini) beside the running sessions: the new version is installed next to the old one, a copy of a real session is checked with both, and only the command is switched. Running sessions keep their own files; `finish` and `prune` clean up once nothing runs from the old version.
+- The session start reports a broken `brain` command or a broken agentBrain link in `~/bin` or `~/.local/bin`, with the exact command to fix it. It works without `brain` itself.
+- The secret-guard add-on ships in the release: a pre-tool hook for Claude Code and Pi that blocks a command or file write containing a secret-shaped value (tokens, keys, passwords in URLs) before it runs. Install it with `scripts/addons.sh` and its `install.sh`.
+
+- `brain remind` creates dated queue tasks, lists open reminders by due date, and closes them via queue `done`. Session-start context surfaces due reminders before findings in Claude and Pi, without a scheduler.
+
+### Changed
+- `brain remind` (no arguments) and `brain remind list` show a table with the due date, how far off it is and a short id; `--wide` shows the full text, `--plain` keeps the old lines for scripts. `brain remind done` accepts the first 8 characters of an id.
+- Moving a checkout with `scripts/sync/move-agentbrain.sh` takes the `brain` command and other agentBrain links along.
+
+- Client setup now refreshes stale pointer blocks while preserving user text; the user doctor reports pointer state and dead references.
+
+- The installer asks about each tool once. ollama and uv are no longer offered
+  by the core install and again by a devtools intent: they come with the
+  devtools intent (local-ai, python) or with the add-on that needs them.
+- yt-dlp, ffmpeg and imagemagick are no longer part of the core install. An
+  add-on brings the tools it declares (`runtime_requires`) when you enable it.
+- Setup and the installer offer the optional add-ons from the registry, none
+  ticked. Each one you pick asks its privacy question and offers its own tools.
+- `brain` (the menu) offers add-ons, and the Harness when it is installed.
+- Installer 0.4.0.
+- `brain doctor` checks your install: skill links, anchors, the vault, events
+  and add-ons (`doctor.sh --user`; `doctor.sh --user --list` shows the checks
+  it runs). `brain doctor --dev` runs the full doctor with the framework's own
+  tests in a source checkout. Setup and `brain update` validate with the user
+  doctor.
+- The release archive carries the user's checks, not the framework's gates: no
+  framework tests or negative cases, only the user doctor's checks and the
+  checks that installed scripts, hooks and skills call. The full doctor runs
+  on the source before a release is built; in an installed release `doctor.sh`
+  without `--user` points to `brain doctor`.
+- The doctor skill explains the two doctors; the promote and refactor-brain
+  skills validate with `brain doctor --dev` in a source checkout.
+- `check-links` checks the public layer only. Its vault half had read nothing
+  since the vault became `vault/`; `check-vault-content` checks vault links.
+- Add-on registries can be private: `addons.sh registry add <name> <url>
+  --token-from keychain:<service>` (or `env:<VAR>`). Only the reference is
+  stored, the token never reaches a command line, and it is sent only to the
+  registry's own host.
+- `brain-emit` takes only full event ids for threads and replies, and expands a
+  unique short id. A short id used to put an event on no thread at all.
+- `check-product-notes` is much faster on a large vault.
+
+### Removed
+
+- `brain sandbox` and the browser install-testbed: maintainer tooling, now in
+  the factory. The container devtools intent no longer installs ttyd.
+
+### Fixed
+- The Lightpanda installer's reinstall question works again, and the SKILL.md it writes points at guides that ship.
+- `uninstall.sh` removes a Pi link only when it points into this checkout.
+- The commit-time note-id gate reads staged notes through the `vault/` link; it skipped every note on an install without the old `local/` name.
+- The explainer index stops with a clear message when no vault is found, and its default category and page language are English.
+- Docs name only paths that exist, or mark framework tests as source-checkout material; the doctor now checks this.
+- Factory release archives include only tracked lane and satellite files, excluding untracked working-tree files.
+- The full doctor discovers declared add-on suites without hardcoding add-on names; add-on test paths are validated.
+- Reference setup and architecture docs use the shipped vault layout and commands; version guidance reflects the live-lane INFO result.
+- Vault sync no longer requires an HTTP token helper for SSH or local remotes; HTTP remotes still require it.
+- Factory release manifests no longer claim arbitrary bundled content has no personal data without verification.
+- Corrected public examples, extension documentation, and release-layout guidance.
+- Theme generation requires an explicit model backend before sending a style prompt.
+- Brain extract/restore help names the resolved vault instead of the internal legacy path.
+- `system/pi-config/setup/bootstrap-pi-macos.sh` reaches the macOS bootstrap again; it pointed at a script that had moved.
+- Docs, examples and default configs name the vault as `vault/`, not the old `local/` (memory-redirect, session-journal, Pi config, references, integrations). The doctor now refuses prose that names `local/` as a place.
+- README and SECURITY.md state the network calls the core makes (the update check and, when your vault has a remote, the vault sync), the two-step macOS bootstrap, and `brain doctor` as the health check of an install; the docs no longer point to skills, templates or folders a release does not ship.
+- The `uuid5-gen.sh` examples include the `vault/` prefix; without it the id does not match what the validator expects.
+- `weekly-review` finds daily notes and include paths under `vault/`, also from a config that still says `local/`. Before, such a config scanned nothing.
+- The Rust build of `scanman` keeps its workspaces under `vault/research/repo-distill/`, where the shell version and `scan` look.
+- `system/tools.md` lists only scripts that exist and points to registry add-ons by their install command.
+- Ecosystem indexes no longer invent project paths when the inventory omits them.
+- Space listings show opaque slugs unless the owner is explicitly requested; docs and comments now match shipped behavior.
+- OpenCode: setup refreshes a stale pointer, removes dead agentBrain paths left by older setups, and grants OpenCode read access to the brain (it refused to read the vault outside the project).
+
+- Run Pi configuration only once during setup and fail setup when Pi configuration fails, before the doctor gate.
+- Keep the advisory Pi API check non-fatal when Pi is on PATH but its npm modules are unavailable in an isolated HOME.
+- Make the absent-editor test independent of which editors are installed on the host.
+
 ## [v1.14.2] - 2026-09-28
 
 ### Fixed
@@ -264,7 +345,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `setup-launchd-lan.sh` renders and loads the two LAN launchd jobs of a factory host (git daemon, lan-install) from their templates, with `--uninstall`; `uninstall.sh` boots them out. Until now they were rendered by hand.
+- `setup-launchd-lan.sh` renders and loads the two launchd jobs of a host that serves agentBrain on the LAN (git daemon, lan-install) from their templates, with `--uninstall`; `uninstall.sh` boots them out. Until now they were rendered by hand.
 
 ## [v1.10.7] - 2026-09-06
 
@@ -369,8 +450,7 @@ checkout on every install.
   re-deriving every note id and rewriting the slug where it is an identifier
   (`space:` fields, paths, wiki-links, `--space` arguments) and nowhere else.
   `--dry-run` counts what it would touch.
-- **`scripts/lib/lock.sh`**: doctor serializes itself. Four of its tests plant
-  fixtures in the real vault; two doctors at once tripped over them.
+- **`scripts/lib/lock.sh`**: doctor runs serially so fixture-based checks do not interfere with one another.
 - **`rules.md` "Material from outside"**: route imports through the workspace,
   a note records rather than instructs, invisible characters are refused at
   the entry, provenance travels with the material.
@@ -400,7 +480,7 @@ checkout on every install.
   installed; the Claude CLI must actually be available on PATH.
 - **Runtime declarations**: add-on prerequisite capabilities are now declared in
   manifests and checked through the platform capability layer.
-- **LAN installer**: the maintainer-only LAN wrapper now follows the canonical
+- **LAN installer**: the LAN installer now follows the canonical
   website installer flow and runs prerequisite installation before agentBrain setup.
 - **Pi setup**: LAN installations no longer skip Pi by default; the deep Pi
   integration runs unless explicitly disabled.

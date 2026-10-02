@@ -16,7 +16,8 @@ Index of bash CLIs and addon binaries in agentBrain. Skills (`/command` style) l
 | Tool | Path | What it does |
 |---|---|---|
 | `brain` | `S brain.sh` | Flip the active framework checkout: `brain status`, `brain use dev`, `brain use live`, `brain version`. Installed on PATH as `brain` by `setup.sh`. |
-| `doctor` | `S doctor.sh` | Framework health audit — runs all `check-*.sh` + `test-*.sh`. Exit 0 = healthy, non-zero = at least one check failed. Use `--summary` for compact output. |
+| `brain tool-update` | `S tool-update.sh` | Stage and check a versioned agent CLI before atomically switching its command link; `status` counts old/new processes, `finish` waits for old sessions, `rollback` restores the link. Profiles: `system/tool-profiles/`. |
+| `brain doctor` | `S doctor.sh --user` | Health check of your install and vault (the user checks). Exit 0 = healthy, non-zero = at least one check failed. Use `--summary` for compact output. In a source checkout, `doctor.sh` without `--user` (or `brain doctor --dev`) is the full framework audit with the `test-*.sh` suites; an installed release refuses it and points to `brain doctor`. |
 | `smoke-test` | `S smoke-test.sh` | End-to-end behavioural verification (flip + Pi resolution + event-bus roundtrip + doctor in both checkouts). Non-destructive — restores flip state on exit. Use after deploy/refactor. |
 | `new-note` | `S new-note.sh <type> <vault-rel-path-no-ext> [title]` | Create a note with correct frontmatter + computed UUID5. **Always use this — never type id by hand.** Types: learning, project, backlog, feedback, reference, session, spec. `--space <slug>` / `--context <slug>` writes into a sealed `vault/spaces/<slug>/` compartment; `--from <repo-or-file>` infers context when the harness CWD is elsewhere. Conflicting owner signals fail closed. Writes also auto-route by CWD code-root (see `docs/spaces.md`). To create a space itself, use `new-space`. |
 | `uuid5-gen` | `S uuid5-gen.sh "<vault-rel-path-no-ext>"` | Generate deterministic UUID5 for a note path (uses `brain.json["namespace"]`). Used internally by `new-note.sh` + template rendering. |
@@ -30,6 +31,28 @@ Index of bash CLIs and addon binaries in agentBrain. Skills (`/command` style) l
 > explicit `--context <slug>`. The old `active-space` session mode / `.active-space`
 > marker is **decommissioned**. Full workflow: `docs/spaces.md`.
 
+### Safe CLI update sequence
+
+A package manager replaces a tool's files under running sessions, and a session that loads a module after that can die. `brain tool-update` installs the new version beside the old one and moves only the command's symlink. Where things are at each step, for Pi going from 0.87.1 to 0.99.2 (paths for other tools come from their profile):
+
+| Step | `pi` command points at | Global install (`~/.bun/install/global/...`) | Staged copy (`$TOOL_VERSIONS_HOME/pi/0.99.2`) | Running sessions |
+|---|---|---|---|---|
+| before | global, 0.87.1 | 0.87.1 | none | 0.87.1 |
+| `stage 0.99.2` | global, 0.87.1 | 0.87.1 | installed | unchanged |
+| `check 0.99.2` | global, 0.87.1 | 0.87.1 | checked: profile checks, and a session copy exported by both versions with equal entry counts | unchanged |
+| `switch 0.99.2` | staged copy, 0.99.2 | 0.87.1, kept for the old sessions | in use by new sessions | old ones stay on 0.87.1; new ones start on 0.99.2 |
+| `status` | (counts only) | | | sessions started before and after the switch |
+| `finish` (refuses while any pre-switch session runs) | global, now 0.99.2 | updated to 0.99.2 | removed if no session runs from it, else kept | sessions started after the switch keep running from the staged copy |
+| `prune` (refuses while any session started before the finish runs) | global, 0.99.2 | 0.99.2 | removed | all on the global 0.99.2 |
+
+- `rollback` (while switched) points the command back at the recorded previous target; the staged copy stays until you remove it.
+- `switch` sets a reminder "Finish <tool> tool update" two days out; a `finish` that keeps the staged copy sets "Prune <tool> tool update". Each command closes its own reminder.
+- Do not run the tool's own updater (`pi update`, `npm i -g`, `brew upgrade`) while switched: it updates the global install, not the version the command runs.
+- Versions live under `TOOL_VERSIONS_HOME` (default `~/.local/share/tool-versions`), one directory per tool and version with its `state.json`. Profiles: `system/tool-profiles/`. For brew, never run `brew cleanup` on a keg an active session uses; brew can stage only the version its formula currently offers.
+- `--force` on `finish` bypasses the active-process guard and should be used only after verifying no sessions depend on the old version.
+
+`adopt <version> <previous-link-file>` records an already-switched tool without reinstalling or relinking it.
+
 ## Event-bus (inter-agent communication)
 
 | Tool | Path | What it does |
@@ -41,6 +64,8 @@ Index of bash CLIs and addon binaries in agentBrain. Skills (`/command` style) l
 See [`system/addons/event-bus/SPEC.md`](addons/event-bus/SPEC.md) for protocol details.
 
 ## YouTube Digest (ingestion add-on)
+
+A registry add-on: install it with `bash scripts/addons.sh install youtube-digest`.
 
 Pulls YouTube transcripts into the brain. **Two front-ends sharing one pipeline**: `sync` for configured channels, `fetch` for ad-hoc single URLs. All commands via `bun A youtube-digest/bin/yt-digest <command>`.
 
@@ -58,12 +83,14 @@ Pulls YouTube transcripts into the brain. **Two front-ends sharing one pipeline*
 
 **Prereqs**: `bun` (runtime) + `yt-dlp` (`brew install yt-dlp`).
 
-See [`system/addons/youtube-digest/SKILL.md`](addons/youtube-digest/SKILL.md) for usage details.
+After install, `system/addons/youtube-digest/SKILL.md` has the usage details.
 
 ## Weekly Review (digest add-on)
 
+A registry add-on: install it with `bash scripts/addons.sh install weekly-review`.
+
 Generates a weekly markdown summary of vault activity. Hybrid source: aggregates
-`daily-notes/*.md` within the target ISO-week, supplemented by an mtime-scan of
+`vault/daily-notes/*.md` within the target ISO-week, supplemented by an mtime-scan of
 `vault/{learnings,references,projects,backlog,sessions}`. Optional `git log` per
 configured repo. Fixed LLM model for week-over-week consistency.
 
@@ -85,20 +112,18 @@ scope-paths, git-roots).
 
 **Prereqs**: `bash`, `jq`, `python3`, `ollama` CLI. Optional: `git` for activity log.
 
-See [`system/addons/weekly-review/README.md`](addons/weekly-review/README.md) for
-launchd setup + troubleshooting.
+After install, `system/addons/weekly-review/README.md` covers launchd setup and
+troubleshooting.
 
 ## Setup / install / configuration
 
 | Tool | Path | What it does |
 |---|---|---|
 | `setup` | `S setup.sh` | Orchestrator — installs agent connectors for every detected AI tool. Idempotent. `--yes` for non-interactive. `--home=PATH` for sandbox/CI. |
-| `bootstrap-macos` | `S bootstrap-macos.sh` | First-time macOS setup: prereqs + setup.sh + configure-pi. |
+| `bootstrap-macos` | `S installer/bootstrap/macos.sh` | First-time macOS setup: prereqs + setup.sh + configure-pi. |
 | `install-prerequisites` | `S install-prerequisites.sh` | Install required dependencies (bun, jq, etc.). |
 | `configure-pi` | `S configure-pi.sh` | (Re-)configure Pi extensions, skills, and tsconfig.json. **Run after Pi updates** if `check-pi-extension-types` starts failing. |
-| `setup-<client>` | `S setup-{claude-code,cline,copilot,cursor,gemini-cli,hermes,opencode,windsurf,copilot-cli}.sh` | Per-client connectors. Each writes a pointer block into the client's config file. |
-| `validate-install` | `S validate-install.sh` | Headless install + idempotent update + doctor in a throwaway sandbox. Catches install-time regressions that the dev doctor misses (live-only bugs). |
-| `test-addons-release` | `S test-addons-release.sh` | Aggregate add-on release gate: functional suites, TypeScript coverage, registry validation. |
+| `setup-<client>` | `S setup-{claude-code,cline,copilot,cursor,gemini-cli,hermes,opencode,devin,copilot-cli}.sh` | Per-client connectors. Each installs or refreshes a managed pointer block when its content changes; embedded blocks preserve user text and get a backup. `check-installed-pointers.sh` reports installed state in the user doctor. |
 | `setup-abh-autostart` | `S setup-abh-autostart.sh enable|disable|status` | Optional user-level ABH Web startup: launchd on macOS, systemd --user on Linux/WSL. |
 
 ## Note + content management
@@ -108,19 +133,15 @@ launchd setup + troubleshooting.
 | `validate-note-id` | `S validate-note-id.sh <path>` | Verify a note's `id` matches `uuid5-gen.sh` for its path. Empty output = pass. |
 | `ensure-daily-note` | `S ensure-daily-note.sh` | Create today's daily note from `templates/daily.md` (renders `{{date}}` + `{{uuid5}}`). Idempotent. Called by `loop-tick.sh`. |
 | `update-daily-note` | `S update-daily-note.sh` | Append session info to today's daily note. |
-| `update-startup-context` | `S update-startup-context.sh` | Regenerate `vault/sessions/startup-context.md` (live open findings + alerts). Called by `loop-tick.sh`. |
+| `update-startup-context` | `S update-startup-context.sh` | Regenerate `vault/sessions/startup-context.md` (due queue reminders first, then open findings). Called by `loop-tick.sh` and session-start integrations. |
 | `loop-tick` | `S loop-tick.sh` | Autonomous tick: doctor + capture-findings + update-startup-context + ensure-daily-note. Run by launchd (`dev.agentbrain.loop`). |
 | `capture-findings` | `S capture-findings.sh` | Serialize doctor warnings/errors to `vault/findings/<detector>.json` for MCP brain_findings_list. |
 
 ## Release / deploy
 
-| Tool | Path | What it does |
-|---|---|---|
-| `deploy-dev-to-live` | `S deploy-dev-to-live.sh` | Rsync dev framework → live, preserving `vault/`, `.git/`, `brain.json`. Validates dev doctor first, then live doctor + validate-install after. Use `--dry-run` to preview. |
-| `bump-version` | `S bump-version.sh` | Bump the dev VERSION file (semver). |
-| `release` | `S release.sh` | Cut a release tag + push. |
-| `publish-gitea-release` / `publish-agentbrain-github` | `S` | Push the release to gitea / github mirror. |
-| `release-check` / `dev-sync-status` | `S` | Pre-release sanity + dev/live drift check. |
+Maintainer release and deployment commands are not part of the public install.
+Use the release workflow in the development checkout; do not expect these
+commands in a downloaded archive.
 
 ## Add-on management
 
@@ -140,9 +161,9 @@ launchd setup + troubleshooting.
 
 ## Quality checks (run via `doctor`, but standalone-capable)
 
-Each lives in `scripts/check-*.sh` and is invoked by `doctor.sh`; all are standalone-runnable when investigating a specific failure. There are ~37 of them, covering schema (`check-frontmatter`, `check-links`, `check-readmes`, …), architecture/docs truth (`check-architecture`, `check-skills-index`, `check-path-naming`, …), skills (`check-skill-links`, `check-skill-relations`, …), addons/extensions (`check-addons`, `check-pi-lens`, …), bootstrap/config (`check-version`, `check-client-pointers`, …), and knowledge quality (`check-brain-review`). The authoritative, always-current list is `ls scripts/check-*.sh`; each script documents itself in its header comment (see also [`scripts/README.md`](../scripts/README.md)).
+Each lives in `scripts/checks/check-*.sh` and is invoked by `doctor.sh`; all are standalone-runnable when investigating a specific failure. They cover schema (`check-frontmatter`, `check-links`, `check-readmes`, …), architecture/docs truth (`check-architecture`, `check-skills-index`, `check-path-naming`, …), skills (`check-skill-links`, `check-skill-relations`, …), addons/extensions (`check-addons`, `check-pi-lens`, …), bootstrap/config (`check-version`, `check-client-pointers`, …), and knowledge quality (`check-brain-review`). The authoritative list is `ls scripts/checks/check-*.sh`. A release ships the checks that test an install; the checks that test the framework itself stay in the source checkout; each script documents itself in its header comment (see also [`scripts/README.md`](../scripts/README.md)).
 
-Test scripts (`scripts/tests/test-*.sh`) verify individual subsystems — same story: `ls scripts/tests/test-*.sh` for the current list.
+Test scripts (`scripts/tests/test-*.sh`) verify individual subsystems. They are part of the source checkout, not of a release.
 
 ## Hooks (called by external triggers, not user-invoked)
 

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # claude-pretooluse-guard.sh — PreToolUse hook for Claude Code.
 # When incognito mode is active, BLOCK agent-initiated writes (Write/Edit/MultiEdit)
-# to knowledge notes under the vault's local/ tree. PreToolUse runs BEFORE the tool,
+# to knowledge notes under the vault/ tree. PreToolUse runs BEFORE the tool,
 # so exit 2 actually prevents the write (PostToolUse would be too late).
 #
 # Wired in ~/.claude/settings.json under hooks.PreToolUse, matcher "Write|Edit|MultiEdit".
@@ -11,7 +11,7 @@
 #   0 — allow the tool call (not incognito, or not a vault knowledge write)
 #   2 — block: stderr is surfaced to the agent as the reason
 #
-# Scope: only knowledge under local/ is blocked. Code (system/, scripts/, root)
+# Scope: only knowledge under vault/ is blocked. Code (system/, scripts/, root)
 # and config edits stay allowed — incognito stops NEW KNOWLEDGE, not all work.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,7 +49,7 @@ done
 
 REL="${ABS_FILE#"${BRAIN_ROOT}"/}"
 
-# Only knowledge under local/ is suppressed. Everything else (system/, scripts/,
+# Only knowledge under vault/ is suppressed. Everything else (system/, scripts/,
 # root config) stays writable so you can still build/fix during an incognito session.
 case "$REL" in
 	local/*|vault/*)

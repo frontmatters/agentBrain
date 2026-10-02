@@ -1,0 +1,12 @@
+{
+  "package": "@google/gemini-cli",
+  "manager": "npm",
+  "global_prefix": "/opt/homebrew",
+  "symlink": "/opt/homebrew/bin/gemini",
+  "entry": "dist/index.js",
+  "process": "gemini",
+  "checks": [
+    "--version",
+    "--help"
+  ]
+}

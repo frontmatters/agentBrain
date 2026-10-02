@@ -26,11 +26,19 @@ resolve_brain_dir() {
 }
 
 BRAIN_DIR="$(resolve_brain_dir)"
+# The resolver is code and belongs to this script's checkout; BRAIN_DIR is data
+# and may be a fixture that holds a vault and nothing else. So the library is
+# found from here first, and the vault is asked for BY the root that was given.
+_VAULT_LIB="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../../.." 2>/dev/null && pwd -P || true)/scripts/lib/vault.sh"
+[ -f "$_VAULT_LIB" ] || _VAULT_LIB="$BRAIN_DIR/scripts/lib/vault.sh"
+# shellcheck source=/dev/null
+. "$_VAULT_LIB"
+VAULT_DIR="$(vault_dir "$BRAIN_DIR")"
 
 # Source visibility helpers (added by brain-hide-forget)
 source "$BRAIN_DIR/system/lib/visibility.sh" 2>/dev/null || true
 
-LEARNINGS_DIR="$BRAIN_DIR/vault/learnings"
+LEARNINGS_DIR="$VAULT_DIR/learnings"
 
 FORMAT="table"
 LIMIT=20
@@ -77,14 +85,14 @@ esac
 
 # --space: opt-in view of a single space's own learnings. Validate the slug
 # first: an empty slug or one containing '/', '..', a leading dot, or any char
-# outside [a-z0-9._-] could escape local/spaces/<slug>/ (path traversal).
+# outside [a-z0-9._-] could escape vault/spaces/<slug>/ (path traversal).
 if [ "$SPACE_GIVEN" = "1" ]; then
     case "$SPACE_SLUG" in
         *[!a-z0-9._-]* | "" | .* | *..* )
             echo "learnlist: invalid --space slug: '$SPACE_SLUG' (allowed: lowercase a-z 0-9 . _ -, no '/' or '..')" >&2
             exit 2 ;;
     esac
-    LEARNINGS_DIR="$BRAIN_DIR/vault/spaces/$SPACE_SLUG/learnings"
+    LEARNINGS_DIR="$VAULT_DIR/spaces/$SPACE_SLUG/learnings"
 fi
 
 if [ ! -d "$LEARNINGS_DIR" ]; then
@@ -127,7 +135,7 @@ for file in "$LEARNINGS_DIR"/*.md; do
     type_field="$(read_fm_field "$file" type)"
     [ "$type_field" = "learning" ] || continue
 
-    # LAST TOUCHED — mtime (precieser dan frontmatter date, auto-update)
+    # LAST TOUCHED — mtime (more precise than the frontmatter date; updates automatically)
     if date_str=$(date -r "$file" "+%Y-%m-%d %H:%M" 2>/dev/null); then
         date="$date_str"
     elif date_str=$(stat -c "%y" "$file" 2>/dev/null | awk '{print $1, substr($2,1,5)}'); then

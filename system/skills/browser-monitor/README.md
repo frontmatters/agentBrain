@@ -40,7 +40,7 @@ still unexplained.
 
 ## Requires
 
-Python with Playwright (`playwright` importable, Chromium installed). The script
+`uv` (Playwright is declared inside `bin/monitor.py`, PEP 723, pinned to `~=1.58.0`) and a Chromium build for that version: `uv run --with 'playwright~=1.58.0' --no-project playwright install chromium`. The script
 launches a headed browser, so it needs a desktop session. It is not usable over a
 plain ssh connection.
 

@@ -1,1 +1,0 @@
-tests/test-new-note-space.sh

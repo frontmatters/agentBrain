@@ -18,6 +18,8 @@ for cand in \
     # a session on a second machine starts on current notes. Quiet unless notes
     # came in or the vault diverged; never blocks (bounded fetch, exit 0).
     bash "$(dirname "$cand")/sync/pull-vault.sh" 2>/dev/null || true
+    # Dates change between loop ticks; refresh before the agent reads the pointer.
+    bash "$(dirname "$cand")/flow/update-startup-context.sh" >/dev/null 2>&1 || true
     break
   fi
 done

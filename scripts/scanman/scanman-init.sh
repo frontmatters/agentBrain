@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 
-AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)}"
+# shellcheck source=scripts/lib/vault.sh
+. "$AGENTBRAIN_DIR/scripts/lib/vault.sh"
 
 usage() {
   echo "Usage: bash scripts/scanman/scanman-init.sh <repo-slug> [repo-path] [goal...]" >&2
-  echo "Example: bash scripts/scanman/scanman-init.sh babysitter ~/.opensrc/repos/github.com/a5c-ai/babysitter/main Distill orchestration architecture" >&2
+  echo "Example: bash scripts/scanman/scanman-init.sh example-repo /path/to/example-repo Distill repository architecture" >&2
 }
 
 if [[ $# -lt 1 ]]; then
@@ -26,7 +28,7 @@ REPO_PATH="${1:-}"
 if [[ $# -gt 0 ]]; then shift; fi
 GOAL="${*:-}"
 
-TARGET_DIR="$AGENTBRAIN_DIR/vault/research/repo-distill/$REPO_SLUG"
+TARGET_DIR="$VAULT_DIR/research/repo-distill/$REPO_SLUG"
 if [[ -e "$TARGET_DIR" ]]; then
   echo "Scanman target already exists: $TARGET_DIR" >&2
   exit 1

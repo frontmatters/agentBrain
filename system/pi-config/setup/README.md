@@ -11,13 +11,13 @@ Generic Pi setup helpers and public-safe onboarding checklists live here.
 
 ## Contents
 
-- `scripts/bootstrap-macos.sh` — macOS bootstrap helper for Pi + agentBrain setup.
+- `scripts/installer/bootstrap/macos.sh` — macOS bootstrap helper for Pi + agentBrain setup.
 - `corporate-onboarding.md` — process checklist for corporate Pi + agentBrain onboarding.
 
 ## Rules
 
 - Keep this folder public-safe: process, placeholders, and generic commands only.
-- Store real company names, private endpoints, provider policy, and credential details in `local/`.
+- Store real company names, private endpoints, provider policy, and credential details in `vault/`.
 - Run `bash scripts/privacy-scan.sh tracked` after public setup changes.
 
 ## Related

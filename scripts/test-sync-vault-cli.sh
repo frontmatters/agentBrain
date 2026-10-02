@@ -1,1 +1,0 @@
-tests/test-sync-vault-cli.sh

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# brain-forget — soft-delete a note to local/.trash/forget/<TS>/.
+# brain-forget — soft-delete a note to vault/.trash/forget/<TS>/.
 
 set -euo pipefail
 
@@ -25,6 +25,15 @@ resolve_brain_dir() {
 }
 
 BRAIN_DIR="$(resolve_brain_dir)"
+# The vault through the resolver (AGENTBRAIN_VAULT and friends), never the
+# checkout's own folder by assumption; a copy without scripts/lib (a test
+# fixture) falls back to it.
+if [ -f "$BRAIN_DIR/scripts/lib/vault.sh" ]; then
+	# shellcheck source=/dev/null
+	. "$BRAIN_DIR/scripts/lib/vault.sh"
+else
+	VAULT_DIR="${AGENTBRAIN_VAULT:-$BRAIN_DIR/vault}"
+fi
 
 usage() {
     cat <<EOF
@@ -69,17 +78,17 @@ case "$ARG" in
     projects/*)
         SLUG="${ARG#projects/}"
         if [ -n "$FILE_OVERRIDE" ]; then
-            TARGET="$BRAIN_DIR/vault/projects/$SLUG/$FILE_OVERRIDE"
+            TARGET="${VAULT_DIR}/projects/$SLUG/$FILE_OVERRIDE"
             CASCADE_DIR=""
         else
-            TARGET="$BRAIN_DIR/vault/projects/$SLUG/index.md"
-            CASCADE_DIR="$BRAIN_DIR/vault/projects/$SLUG"
+            TARGET="${VAULT_DIR}/projects/$SLUG/index.md"
+            CASCADE_DIR="${VAULT_DIR}/projects/$SLUG"
         fi
         ;;
     learnings/*|preferences/*|integrations/*|troubleshooting/*|memories/*)
         TYPE="${ARG%%/*}"
         SLUG="${ARG#$TYPE/}"
-        TARGET="$BRAIN_DIR/vault/$TYPE/$SLUG.md"
+        TARGET="${VAULT_DIR}/$TYPE/$SLUG.md"
         CASCADE_DIR=""
         ;;
     *)
@@ -101,7 +110,7 @@ fi
 
 if [ "$FORCE" -eq 0 ]; then
     SLUG_NAME=$(basename "${ARG#*/}")
-    BACKLINKS=$(grep -rln "\\[\\[${SLUG_NAME}\\]\\]" "$BRAIN_DIR/vault" 2>/dev/null \
+    BACKLINKS=$(grep -rln "\\[\\[${SLUG_NAME}\\]\\]" "${VAULT_DIR}" 2>/dev/null \
         | grep -v "/.trash/" \
         | grep -v "$TARGET" || true)
     if [ -n "$BACKLINKS" ]; then
@@ -122,7 +131,7 @@ if [ "$FORCE" -eq 0 ]; then
 fi
 
 TS="$(date +%Y%m%d-%H%M%S)"
-TRASH_BATCH="$BRAIN_DIR/vault/.trash/forget/$TS"
+TRASH_BATCH="${VAULT_DIR}/.trash/forget/$TS"
 mkdir -p "$TRASH_BATCH"
 
 ORIGINAL_PATHS=()

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # brain-extract — move a project's knowledge bundle from vault to project folder,
 # or bundle a whole space (--space) as a portable, space-id-stamped package.
-# Phase 1 MVP: happy-path only. See vault project doc for full spec.
+# Phase 1 MVP: happy-path only.
 
 set -euo pipefail
 
@@ -35,6 +35,15 @@ resolve_brain_dir() {
 }
 
 BRAIN_DIR="$(resolve_brain_dir)"
+# The vault through the resolver (AGENTBRAIN_VAULT and friends), never the
+# checkout's own folder by assumption; a copy without scripts/lib (a test
+# fixture) falls back to it.
+if [ -f "$BRAIN_DIR/scripts/lib/vault.sh" ]; then
+	# shellcheck source=/dev/null
+	. "$BRAIN_DIR/scripts/lib/vault.sh"
+else
+	VAULT_DIR="${AGENTBRAIN_VAULT:-$BRAIN_DIR/vault}"
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHARED_DIR="$SCRIPT_DIR/../../_shared/brain-package"
@@ -56,7 +65,7 @@ Phase 1 MVP — happy path only. No lockfile, no checkpoint.
   --keep           Retain vault originals (default; only mode in Phase 1).
   --to <path>      Destination root for the .brain-package/ (project mode).
   --out <path>     Destination root for the .brain-package/ (alias of --to).
-  --vault <path>   Vault root (default: \$BRAIN_DIR/local or ~/agentBrain/local).
+  --vault <path>   Vault root (default: resolved vault; AGENTBRAIN_VAULT overrides it).
 EOF
   exit 2
 }
@@ -133,7 +142,7 @@ SLUG=""
 SPACE_SLUG=""
 KEEP=0
 DEST_OVERRIDE=""
-VAULT="$BRAIN_DIR/vault"
+VAULT="${VAULT_DIR}"
 
 while [ $# -gt 0 ]; do
   case "$1" in

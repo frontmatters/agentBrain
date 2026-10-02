@@ -1,20 +1,24 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 # queue.sh — markdown-native work queue + dispatch for agentBrain.
-# Items are `type: task` notes under local/queue/<scope>/<slug>.md.
+# Items are `type: task` notes under vault/queue/<scope>/<slug>.md.
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/vault.sh
+. "$ROOT_DIR/scripts/lib/vault.sh"
+QUEUE_DIR="$VAULT_DIR/queue"
+queue_rel() { printf 'vault/%s' "${1#"$VAULT_DIR"/}"; }
 EMIT_BIN="${QUEUE_EMIT_BIN:-$ROOT_DIR/system/addons/event-bus/bin/brain-emit}"
 POLL_BIN="${QUEUE_POLL_BIN:-$ROOT_DIR/system/addons/event-bus/bin/brain-poll}"
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 slugify() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' | cut -c1-60; }
 
-# locate a task note by its id (uuid5). Prints relative path or exits 1.
+# locate a task note by its id (uuid5). Prints absolute path or exits 1.
 find_by_id() {
   local id="$1" f
-  f="$(grep -rl "^id: ${id}$" "$ROOT_DIR/vault/queue" --include='*.md' 2>/dev/null | head -1 || true)"
+  f="$(grep -rl "^id: ${id}$" "$QUEUE_DIR" --include='*.md' 2>/dev/null | head -1 || true)"
   [ -n "$f" ] || { echo "queue: no item with id $id" >&2; return 1; }
-  printf '%s' "${f#"$ROOT_DIR"/}"
+  printf '%s' "$f"
 }
 
 # set a frontmatter field (key: value) in-place; adds it before the id line if missing.
@@ -34,11 +38,12 @@ get_field() { sed -n "s|^$2: *||p" "$1" | head -1; }
 cmd_add() {
   local title="$1"; shift
   [ -n "$title" ] || { echo "queue: title must not be empty" >&2; return 1; }
-  local scope=inbox prio=P2 verify="" blocked_by=""
+  local scope=inbox prio=P2 verify="" blocked_by="" due=""
   while [ $# -gt 0 ]; do case "$1" in
     --scope) scope="$(slugify "$2")"; shift 2;;
     --prio)  prio="$2"; shift 2;;
     --verify) verify="$2"; shift 2;;
+    --due) due="$2"; shift 2;;
     --blocked-by) blocked_by="$2"; shift 2;;
     *) shift;;
   esac; done
@@ -46,7 +51,7 @@ cmd_add() {
   [ -n "$slug" ] || { echo "queue: title produces empty slug: '$title'" >&2; return 1; }
   rel="vault/queue/${scope}/${slug}"
   out="$(cd "$ROOT_DIR" && bash scripts/new-note.sh task "$rel" "$title")"
-  local f="$out"; [ -f "$f" ] || f="$ROOT_DIR/${out#"$ROOT_DIR"/}"
+  local f="$out"; [ -f "$f" ] || f="$VAULT_DIR/${out#vault/}"
   set_field "$f" scope "$scope"
   set_field "$f" priority "$prio"
   set_field "$f" agent local
@@ -54,9 +59,10 @@ cmd_add() {
   set_field "$f" created "$t"
   set_field "$f" updated "$t"
   set_field "$f" completed ""
+  [ -n "$due" ] && set_field "$f" due "$due"
   [ -n "$verify" ] && set_field "$f" verify "$verify"
   [ -n "$blocked_by" ] && block_on "$f" "$blocked_by"
-  printf '%s\n' "${f#"$ROOT_DIR"/}"
+  printf '%s\n' "$(queue_rel "$f")"
 }
 
 # --- blockers -------------------------------------------------------------
@@ -68,7 +74,7 @@ all_blockers_done() {
   local f="$1" b rel
   for b in $(get_field "$f" blocked_by | tr ',' ' '); do
     rel="$(find_by_id "$b" 2>/dev/null)" || return 1
-    [ "$(get_field "$ROOT_DIR/$rel" status)" = "done" ] || return 1
+    [ "$(get_field "$rel" status)" = "done" ] || return 1
   done
 }
 block_on() {  # $1=file $2=comma-separated blocker ids
@@ -83,11 +89,11 @@ block_on() {  # $1=file $2=comma-separated blocker ids
 cmd_block() {  # $1=id $2=comma-separated blocker ids
   local id="$1" rel; rel="$(find_by_id "$id")" || return 1
   [ -n "${2:-}" ] || { echo "queue: block <id> <blocker-id>[,<id>...]" >&2; return 1; }
-  block_on "$ROOT_DIR/$rel" "$2"
+  block_on "$rel" "$2"
 }
 wake_dependents() {  # $1=id that just reached done
   local id="$1" f
-  grep -rl "^blocked_by:.*${id}" "$ROOT_DIR/vault/queue" --include='*.md' 2>/dev/null | while IFS= read -r f; do
+  grep -rl "^blocked_by:.*${id}" "$QUEUE_DIR" --include='*.md' 2>/dev/null | while IFS= read -r f; do
     [ "$(get_field "$f" status)" = blocked ] || continue
     if all_blockers_done "$f"; then
       set_field "$f" status pending; set_field "$f" updated "$(now)"
@@ -119,7 +125,7 @@ on_verify_fail() {  # $1=file $2=exit code of the verify command
 
 cmd_start() {
   local id="$1" rel f scope; rel="$(find_by_id "$id")" || return 1
-  f="$ROOT_DIR/$rel"; scope="$(get_field "$f" scope)"
+  f="$rel"; scope="$(get_field "$f" scope)"
   local cur; cur="$(get_field "$f" status)"
   if [ "$cur" = "done" ] || [ "$cur" = cancelled ]; then
     echo "queue: item is terminal (${id})" >&2; return 1
@@ -128,7 +134,7 @@ cmd_start() {
     echo "queue: item is blocked by $(get_field "$f" blocked_by)" >&2; return 1
   fi
   # invariant: at most one in_progress per scope
-  local others; others="$(grep -rl "^type: task" "$ROOT_DIR/vault/queue/$scope" --include='*.md' 2>/dev/null || true)"
+  local others; others="$(grep -rl "^type: task" "$QUEUE_DIR/$scope" --include='*.md' 2>/dev/null || true)"
   while IFS= read -r o; do
     [ -n "$o" ] || continue
     [ "$o" = "$f" ] && continue
@@ -140,7 +146,7 @@ cmd_start() {
 }
 cmd_terminal() {  # $1=id $2=done|cancelled
   local id="$1" st="$2" rel f cur; rel="$(find_by_id "$id")" || return 1
-  f="$ROOT_DIR/$rel"; cur="$(get_field "$f" status)"
+  f="$rel"; cur="$(get_field "$f" status)"
   [ "$cur" = "$st" ] && return 0
   if [ "$cur" = "done" ] || [ "$cur" = cancelled ]; then
     echo "queue: already terminal ($cur)" >&2; return 1
@@ -175,17 +181,17 @@ cmd_review() {
     --watchdog) agent="$2"; shift 2;; *) shift;;
   esac; done
   [ -n "$agent" ] || { echo "queue: --watchdog <agent> required" >&2; return 1; }
-  rel="$(find_by_id "$id")" || return 1; f="$ROOT_DIR/$rel"; cur="$(get_field "$f" status)"
+  rel="$(find_by_id "$id")" || return 1; f="$rel"; cur="$(get_field "$f" status)"
   if [ "$cur" = "done" ] || [ "$cur" = cancelled ]; then
     echo "queue: item is terminal (${id})" >&2; return 1
   fi
   "$EMIT_BIN" --type=queue.item.verify.requested \
-    --payload="{\"note_id\":\"${id}\",\"path\":\"${rel}\",\"watchdog\":\"${agent}\"}"
+    --payload="{\"note_id\":\"${id}\",\"path\":\"$(queue_rel "$rel")\",\"watchdog\":\"${agent}\"}"
   set_field "$f" watchdog "$agent"
   set_field "$f" status in_review; set_field "$f" updated "$(now)"
 }
 apply_verdict() {  # $1=id $2=pass|fail $3=reason
-  local rel f; rel="$(find_by_id "$1")" || return 1; f="$ROOT_DIR/$rel"
+  local rel f; rel="$(find_by_id "$1")" || return 1; f="$rel"
   [ "$(get_field "$f" status)" = in_review ] || return 0
   if [ "$2" = pass ]; then
     cmd_terminal "$1" "done"
@@ -200,7 +206,7 @@ cmd_list() {
   while [ $# -gt 0 ]; do case "$1" in
     --scope) scope="$2"; shift 2;; --status) status="$2"; shift 2;; *) shift;;
   esac; done
-  local dir="$ROOT_DIR/vault/queue"; [ -n "$scope" ] && dir="$dir/$scope"
+  local dir="$QUEUE_DIR"; [ -n "$scope" ] && dir="$dir/$scope"
   [ -d "$dir" ] || return 0
   grep -rl "^type: task" "$dir" --include='*.md' 2>/dev/null | while read -r f; do
     local st ti; st="$(get_field "$f" status)"; ti="$(sed -n 's/^# //p' "$f" | head -1)"
@@ -215,9 +221,9 @@ cmd_dispatch() {
   while [ $# -gt 0 ]; do case "$1" in
     --to) agent="$2"; shift 2;; --event) mode=event; shift;; *) shift;;
   esac; done
-  rel="$(find_by_id "$id")" || return 1; f="$ROOT_DIR/$rel"
+  rel="$(find_by_id "$id")" || return 1; f="$rel"
   if [ "$mode" = event ]; then
-    "$EMIT_BIN" --type=queue.item.dispatched --payload="{\"note_id\":\"${id}\",\"path\":\"${rel}\"}"
+    "$EMIT_BIN" --type=queue.item.dispatched --payload="{\"note_id\":\"${id}\",\"path\":\"$(queue_rel "$rel")\"}"
     local eid; eid="$(get_field "$f" id)"
     set_field "$f" dispatch "event:${eid}"
   else
@@ -228,8 +234,8 @@ cmd_dispatch() {
 }
 
 cmd_board() {
-  local out="$ROOT_DIR/vault/queue/index.md"
-  mkdir -p "$ROOT_DIR/vault/queue"
+  local out="$QUEUE_DIR/index.md"
+  mkdir -p "$QUEUE_DIR"
   {
     echo "# Queue board"; echo
     for st in in_progress in_review blocked pending "done" cancelled; do

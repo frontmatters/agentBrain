@@ -9,7 +9,6 @@ VAULT="${VAULT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 AGENT_HOME="${AGENTBRAIN_HOME:-$HOME}"
 
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # shellcheck source=scripts/agentbrain-pointer.sh
@@ -24,13 +23,7 @@ CLINE_RULES="${CLINE_DIR}/Rules/agentBrain.md"
 # line, so per-client scripts stay silent when their target is absent.
 [ -d "${CLINE_DIR}" ] || exit 2
 
-# Already configured = our own rules file exists.
-if [ -f "$CLINE_RULES" ]; then
-	echo -e "${YELLOW}Skip${NC}    Cline (already configured)"
-elif ! agentbrain_pointer_target_ok "$CLINE_RULES" "$VAULT"; then
-	echo -e "${YELLOW}Skip${NC}    Cline (config file resolves into the agentBrain checkout)"
-else
-	mkdir -p "$(dirname "$CLINE_RULES")"
-	agentbrain_pointer_block "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "cline.md" >"$CLINE_RULES"
-	echo -e "${GREEN}✓${NC} Cline"
-fi
+mkdir -p "$(dirname "$CLINE_RULES")"
+# Refresh the managed block without changing the user's surrounding text.
+state="$(agentbrain_pointer_sync "$CLINE_RULES" "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "cline.md" own)"
+echo -e "${GREEN}✓${NC} Cline (pointer $state)"

@@ -3,6 +3,7 @@ id: agentbrain-mcp
 name: agentBrain MCP server
 version: 0.2.1
 author: frontmatters
+kind: framework
 install: bash system/addons/agentbrain-mcp/install.sh
 command: bun
 privacy: local
@@ -12,7 +13,7 @@ support:
   claude: full
   claude-desktop: full
   cursor: full
-  windsurf: full
+  devin: full
   pi: full
   gemini: full
   kiro: full
@@ -26,7 +27,7 @@ outputs:
 # agentBrain MCP server (add-on)
 
 A direct-file MCP server over this brain. Lets MCP-capable agents that lack a global
-skills directory — Cursor, Windsurf — natively search/read the brain and save learnings
+skills directory — Cursor, Devin Desktop — natively search/read the brain and save learnings
 and project notes into `vault/`.
 
 - **Run** (stdio): `bun system/addons/agentbrain-mcp/src/server.ts`

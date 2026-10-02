@@ -5,194 +5,29 @@ tags: [scripts, lightpanda]
 id: 84f514b3-b0be-53b2-8ae8-a06be5b479a0
 ---
 
-#!/bin/bash
+# Lightpanda
 
-#
+Lightpanda is a small headless browser. agentBrain installs it for Pi so an agent
+can search the web, open a page, extract content and fill forms.
 
-# Lightpanda Installer - Quick Start Guide
+## Install
 
-#
+```bash
+bash scripts/tools/install-lightpanda.sh
+```
 
-# This script installs Lightpanda for use in Pi agent
+The installer checks Node.js 20+ and Pi, installs the Lightpanda browser and its
+npm packages (core, MCP server, Pi extension), registers the `lightpanda` skill and
+verifies the result. Run it again to reinstall or update; it detects an existing
+install and asks first.
 
-#
+## Use
 
-# ═══════════════════════════════════════════════════════════════════════════
+```text
+/lightpanda search "query"
+/lightpanda browse https://example.com
+/lightpanda extract ".selector"
+/lightpanda form '{"email":"user@example.com"}'
+```
 
-#
-
-# INSTALLATION (ONE COMMAND):
-
-#
-
-# bash bash scripts/tools/install-lightpanda.sh
-
-#
-
-# ═══════════════════════════════════════════════════════════════════════════
-
-#
-
-# WHAT IT DOES:
-
-#
-
-# 1. ✅ Checks Node.js 20+ and Pi agent installation
-
-# 2. ✅ Installs Lightpanda browser (64MB headless engine)
-
-# 3. ✅ Installs 3 npm packages (core, MCP server, Pi extension)
-
-# 4. ✅ Registers Pi skill with symlink
-
-# 5. ✅ Creates SKILL.md wrapper
-
-# 6. ✅ Verifies everything works
-
-# 7. ✅ Shows quick start guide
-
-#
-
-# ═══════════════════════════════════════════════════════════════════════════
-
-#
-
-# QUICK START AFTER INSTALL:
-
-#
-
-# # Browse a URL
-
-# /lightpanda browse https://example.com
-
-#
-
-# # Search the web
-
-# /lightpanda search "query"
-
-#
-
-# # Extract content
-
-# /lightpanda extract ".selector"
-
-#
-
-# # Fill forms
-
-# /lightpanda form '{"email":"user@example.com"}'
-
-#
-
-# ═══════════════════════════════════════════════════════════════════════════
-
-#
-
-# DOCUMENTATION:
-
-#
-
-# Setup guide:
-
-# local/learnings/lightpanda-Pi-Setup-Complete.md
-
-#
-
-# Full details:
-
-# local/learnings/lightpanda-Setup.md
-
-# local/learnings/lightpanda-Integrations.md
-
-# local/learnings/lightpanda-QuickRef.md
-
-#
-
-# ═══════════════════════════════════════════════════════════════════════════
-
-#
-
-# REINSTALL / UPDATE:
-
-#
-
-# # Run installer again (detects existing, asks to reinstall)
-
-# bash bash scripts/tools/install-lightpanda.sh
-
-#
-
-# ═══════════════════════════════════════════════════════════════════════════
-
-#
-
-# INSTALLED LOCATIONS:
-
-#
-
-# Browser: /opt/homebrew/bin/lightpanda
-
-# npm packages: /opt/homebrew/lib/node_modules/@lightpanda/\*
-
-# Pi skill: ~/.pi/agent/skills/lightpanda (symlink)
-
-#
-
-# ═══════════════════════════════════════════════════════════════════════════
-
-#
-
-# TROUBLESHOOTING:
-
-#
-
-# If "command not found":
-
-# export PATH="/opt/homebrew/bin:$PATH"
-
-# bash bash scripts/tools/install-lightpanda.sh
-
-#
-
-# If Pi doesn't recognize /lightpanda:
-
-# Restart Pi or run: /reload
-
-#
-
-# For full troubleshooting, see:
-
-# local/learnings/lightpanda-Pi-Setup-Complete.md
-
-#
-
-# ═══════════════════════════════════════════════════════════════════════════
-
-#
-
-# STATUS:
-
-#
-
-# ✅ Installer ready to use
-
-# ✅ All components installed
-
-# ✅ Pi skill registered
-
-# ✅ Documentation complete
-
-#
-
-# ═══════════════════════════════════════════════════════════════════════════
-
-echo "🚀 Lightpanda Installer"
-echo ""
-echo "To run the full installation, execute:"
-echo ""
-echo " bash bash scripts/tools/install-lightpanda.sh"
-echo ""
-echo "For documentation, see:"
-echo " local/learnings/lightpanda-Pi-Setup-Complete.md"
-echo ""
+The full command reference is in `system/skills/lightpanda/SKILL.md`.

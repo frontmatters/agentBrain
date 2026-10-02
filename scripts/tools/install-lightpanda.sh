@@ -10,7 +10,7 @@
 # - Pi skill registration and wrapper
 # - Verification and tests
 #
-# Usage: bash lightpanda-install.sh
+# Usage: bash scripts/tools/install-lightpanda.sh
 ###############################################################################
 
 set -e
@@ -18,6 +18,10 @@ set -e
 # Tools (npm/node/bun) live in user-scoped installs — load them before probing.
 # shellcheck disable=SC1091
 source "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../lib/_toolpaths.sh"
+# ab_prompt_confirm (the reinstall question below) lives in the prompt helper.
+# shellcheck disable=SC1091
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../installer/prompt-helper.sh"
+AB_ROOT="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)"
 
 # Colors for output
 RED='\033[0;31m'
@@ -73,7 +77,7 @@ log_success "npm $(npm -v) found"
 PI_AGENT_DIR="${HOME}/.pi/agent"
 if [ ! -d "$PI_AGENT_DIR" ]; then
 	log_error "Pi agent directory not found at $PI_AGENT_DIR"
-	log_info "Install Pi first: https://github.com/mariozechner/pi"
+	log_info "Install Pi first: https://github.com/earendil-works/pi"
 	exit 1
 fi
 log_success "Pi agent directory found at $PI_AGENT_DIR"
@@ -250,10 +254,9 @@ npm packages installed:
 
 ## Documentation
 
-See related learnings:
-- `Lightpanda-Setup.md` — Full installation and configuration
-- `Lightpanda-Integrations.md` — MCP server and integration details
-- `Lightpanda-QuickRef.md` — Quick reference guide
+In the agentBrain checkout:
+- `system/skills/lightpanda/SKILL.md`: skill usage and commands
+- `system/integrations/lightpanda.md`: MCP server and integration details
 
 ## References
 
@@ -262,11 +265,8 @@ See related learnings:
 - **PI Extension**: https://github.com/MonsieurBarti/Lightpanda-PI
 - **MCP Server**: https://github.com/daanrongen/lightpanda-mcp
 
----
-
-**Installed**: 2026-05-14  
-**Status**: Ready for use ✅
 EOF
+printf '\n---\n\n**Installed**: %s\n' "$(date +%Y-%m-%d)" >>"$LIGHTPANDA_SKILL_DIR/SKILL.md"
 
 log_success "Created SKILL.md wrapper at $LIGHTPANDA_SKILL_DIR/SKILL.md"
 
@@ -350,9 +350,8 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "📚 Documentation:"
-echo "  - Setup guide:   ~/Developer/agentBrain/learnings/Lightpanda-Setup.md"
-echo "  - Integrations:  ~/Developer/agentBrain/learnings/Lightpanda-Integrations.md"
-echo "  - Quick ref:     ~/Developer/agentBrain/learnings/Lightpanda-QuickRef.md"
+echo "  - Skill:         $AB_ROOT/system/skills/lightpanda/SKILL.md"
+echo "  - Integrations:  $AB_ROOT/system/integrations/lightpanda.md"
 echo ""
 echo "📍 Installation locations:"
 echo "  - Browser:       $(which lightpanda)"

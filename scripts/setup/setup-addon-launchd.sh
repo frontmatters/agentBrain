@@ -38,8 +38,8 @@ if [[ -z "$CMD" || -z "$ID" ]]; then
     exit 2
 fi
 
-# Resolve the addon's directory across both roots — a local/downloaded copy in
-# local/addons overrides a bundled one in system/addons. Mirrors addons.sh's
+# Resolve the addon's directory across both roots — a downloaded copy in
+# vault/addons overrides a bundled one in system/addons. Mirrors addons.sh's
 # dual-root resolution, so registry-installed addons can get a launchd job too.
 STATE_ROOT="${ADDONS_STATE:-${VAULT}/vault/addons}"
 ADDON_DIR=""

@@ -1,0 +1,11 @@
+{
+  "package": "opencode",
+  "manager": "brew",
+  "symlink": "/opt/homebrew/bin/opencode",
+  "entry": "bin/opencode",
+  "process": "opencode",
+  "checks": [
+    "--version",
+    "--help"
+  ]
+}

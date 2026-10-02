@@ -25,8 +25,8 @@ bash system/addons/event-bus/install.sh        # dep check + chmod + link into ~
 
 Uninstall: the links in `~/.local/bin` are the only thing installed outside this
 directory; `uninstall.sh` removes exactly those (a same-named binary that does not
-point back here is left alone). Runtime state is the events in `vault/events/`, and
-only `--purge` deletes it:
+point back here is left alone). Runtime state is the events in `vault/events/` (resolved through
+`AGENTBRAIN_VAULT` when set), and only `--purge` deletes it:
 
 ```bash
 bash system/addons/event-bus/uninstall.sh            # remove the ~/.local/bin links
@@ -55,8 +55,17 @@ $AGENTBRAIN_DIR/system/addons/event-bus/bin/brain-poll --agent=pi --commit
 ```
 
 Outputs NDJSON (one envelope per line). `--commit` advances the cursor
-(`vault/events/cursors/<host>/<agent>/seen-ids.set`). Drop `--commit` for
-dry-read.
+(`vault/events/cursors/<host>/<agent>/seen-ids.set`) for **every yielded event**.
+Drop `--commit` for dry-read and do not ACK an uninspected event.
+`--correlation-id=<id>` filters a whole conversation; `--in-reply-to=<id>`
+selects direct replies. Use `--summary` for metadata-only NDJSON (type,
+agent name, IDs, time, broadcast flag): it never returns a payload, path, ref or hostname,
+replaces malformed metadata with `<invalid>`, and refuses `--commit` and
+`--raw`. Add `--wait=<seconds> --summary` (1–3600s) to rescan until a routed
+match exists; exit 5 means timeout. Pre-existing messages match immediately,
+and waiting never commits or ACKs. An agent still needs to treat metadata as
+untrusted input; an armed harness adapter must handle the wait result to wake
+a model.
 
 ### Test connectivity (ping/pong)
 
@@ -66,7 +75,25 @@ $AGENTBRAIN_DIR/system/addons/event-bus/bin/brain-ping --agent=pi --timeout=10
 
 Emits `system.bus.ping`, waits for matching `system.bus.pong`, verifies echo
 token, prints RTT. Exit 0 = success, 1 = timeout, 2 = echo mismatch, 3 =
-schema-invalid pong.
+schema-invalid pong. A timeout means no *running listener* answered in time;
+an interactive agent may still read the request on its next owner prompt.
+`brain-chat --follow` shows an attributed read-only event timeline, but neither
+it nor MCP tools wake an idle model. The opt-in interactive/always-on responder
+design (not implemented) and its per-run cloud-consent boundary live in
+[SPEC.md](SPEC.md#interactive-sessions-and-automatic-replies-design-not-shipped).
+
+### Check what happened to a message
+
+```bash
+$AGENTBRAIN_DIR/system/addons/event-bus/bin/brain-status 331538bb
+$AGENTBRAIN_DIR/system/addons/event-bus/bin/brain-status --open claude
+```
+
+Shows sent, read, acked and answered for one event id (or an 8+ character
+prefix), from what the bus already stores. "Read" means the recipient marked
+it with `brain-poll --commit-id=<id>` after inspecting it; a recipient that
+keeps no cursor shows `unknown`, never `no`. `--open` lists `*requested`
+events an agent has not answered yet.
 
 ## The scripts
 
@@ -115,9 +142,42 @@ tell at a glance what works today vs what is planned.
 
 ## Building a listener
 
-To make your agent respond to events, write a loop that calls `brain-poll` and
-acts on matches. See `templates/ping-listener.template.sh` for a minimal
-ping/pong responder.
+`brain-poll` provides a durable routed mailbox, but calling it does not wake a
+model. The ping-listener template is a smoketest only: it commits before
+replying and must not be copied as a crash-safe worker.
+
+### Pi mailbox adapter (opt-in prototype)
+
+`pi/bus-wake.ts` uses this **same bus**, not a second mailbox. Pi loads an
+extension at startup or `/reload`. To try it in a new Pi session:
+
+```bash
+pi --extension /path/to/agentBrain/system/addons/event-bus/pi/bus-wake.ts
+```
+
+It reads private `vault/addons/event-bus/config.json` from `AGENTBRAIN_DIR` or
+the active `~/agentBrain` checkout. Missing config means `role: none` and does
+nothing. To opt in, the owner can configure:
+
+```json
+{"session":{"role":"both","wake":"notify","interval_ms":5000,
+            "allow_types":["agent.collaboration.requested"]}}
+```
+
+`role` can be `none`, `ask` (replies), `answer` (new requests), or `both`.
+`allow_types` must list exact event types, without wildcards; an absent or
+empty list disables the adapter even if `role` is set. A notification only
+happens once per event per running session; reconnecting can notify again.
+`notify` is **UI-only** and never starts a model turn. `local-model` can start
+one Pi turn with `triggerTurn` only when the selected model URL is literal
+HTTP loopback (`127.0.0.1` or `::1`). An owner-controlled LAN host is not
+loopback. A local proxy may forward to cloud; verify the endpoint before
+opting in. Cloud-model automatic replies are **not authorized** by this
+config: per-run consent in `system/security-policy.md` still applies. The
+adapter never opens a payload or ref, never commits a cursor or ACKs a
+message, and stops its timer on session shutdown. `bun test
+system/addons/event-bus/tests/bus-wake.test.ts` uses a fake Pi session and
+sends nothing to a model; actual idle Pi wake is **not yet verified**.
 
 ## Cross-machine sync (deferred)
 
@@ -175,3 +235,5 @@ vault/events/
 `scripts/checks/check-events.sh` validates every event in `vault/events/inbox/` and
 `archive/` against the envelope schema, and `brain doctor` runs it. At read time,
 `brain-poll` skips an invalid envelope with a stderr warning.
+Only the bounded `--summary` form is suitable for a metadata-only notification.
+Do not treat same-user event files or claimed sender names as authorization.

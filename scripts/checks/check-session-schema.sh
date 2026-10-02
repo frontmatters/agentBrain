@@ -21,7 +21,7 @@ for file in system/sessions.md system/agent-config/shared.md; do
 	fi
 done
 
-# Validate private local archive names if local/ exists. This does not require local/ in CI.
+# Validate private archive names if the vault exists. This does not require vault/ in CI.
 if [[ -d vault/sessions/archive ]]; then
 	while IFS= read -r file; do
 		base="$(basename "$file")"

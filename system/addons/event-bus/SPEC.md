@@ -14,7 +14,7 @@ For storage (filesystem, cursor, audit, retention) see [[SPEC-storage]]. For the
 built-in handshake see [[SPEC-ping]].
 
 **Status legend used throughout**:
-- `IMPL` — implemented + tested in v0.3
+- `IMPL` — implemented + tested in the current source checkout
 - `PARTIAL` — implemented with gaps (gaps documented inline)
 - `DESIGN` — designed but not coded; achievable in v0.4+ if needed
 - `BACKLOG` — future intent; may be YAGNI
@@ -238,7 +238,7 @@ Cursor yields ONLY events where `matches_me` is true. Non-matching events are sk
 
 ---
 
-## 5. Implementation snapshot (v0.3)
+## 5. Implementation snapshot (current source)
 
 | Concern | File | Status |
 |---|---|---|
@@ -248,8 +248,93 @@ Cursor yields ONLY events where `matches_me` is true. Non-matching events are sk
 | Causation_ids list | `bin/brain-emit --causation-ids=` | IMPL (consumers not using yet) |
 | Routing matches_me | `bin/brain-poll` | IMPL |
 | Subscription glob filter | `bin/brain-poll --type=` | PARTIAL (segment-glob only, no cross-segment wildcards) |
+| Exact thread/direct-reply filters | `bin/brain-poll --correlation-id=`, `--in-reply-to=` | IMPL |
+| Metadata-only, non-committing summary | `bin/brain-poll --summary` | IMPL |
+| Bounded wait with periodic rescan | `bin/brain-poll --summary --wait=SEC` | IMPL: no-model fixtures; exit 5 on timeout, no ACK |
+| Read receipt for one inspected event | `bin/brain-poll --commit-id=<id>` | IMPL: refuses unknown, prefix and unrouted ids |
+| Per-event lifecycle and unanswered list | `bin/brain-status`, `--open <agent>` | IMPL: `tests/test-status.sh`; read is `unknown` without a recipient cursor |
+| Pi session-scoped notification adapter | `pi/bus-wake.ts` | PARTIAL: mock tested, actual idle wake not measured; default off, cloud auto-wake blocked |
+| External listener | Not shipped | An optional listener may consume events; the bus itself does not wake an idle model. |
 | Per-type payload schemas | — | BACKLOG |
 | Envelope strict validator | `scripts/checks/check-events.sh` (doctor) | IMPL |
+
+## Interactive sessions and automatic replies (DESIGN, not shipped)
+
+`brain-emit` persists an event; it does not notify or invoke a model. `brain-poll`
+reads a routed inbox only when called. `brain-chat --follow` already refreshes a
+human-facing, attributed view; it is not an agent listener. The ping-listener
+template polls and answers pings, but commits before emitting its pong, so it
+is **not** a crash-safe template for model-backed work.
+
+The delivery modes below are proposals, not available CLI flags:
+
+| Mode | What runs | Limit |
+|---|---|---|
+| `off` | No worker; a turn-start inbox hint may be enabled separately | Shipped default |
+| `session` | Opt-in bounded wait inside an open interactive agent session | Does not survive closing the session; idle wake needs independent verification |
+| `always` | Opt-in per-user supervisor polling the bus with a separate worker identity | A background service, not the original interactive conversation |
+
+A proposed private `vault/addons/event-bus/config.json` selects the worker:
+
+```json
+{
+  "worker": {
+    "mode": "off",
+    "backend": null,
+    "allow_types": [],
+    "allow_from": [],
+    "caps": { "runs_per_hour": 2, "runs_per_day": 6,
+              "per_thread_auto_replies": 1, "wait_timeout_min": 30 }
+  }
+}
+```
+
+`mode` is `off | session | always`; `backend` is an explicit private choice
+(`llm-config | claude-subscription | claude-api`), never a shipped cloud
+value. `allow_types` is an **exact** type list, not `agent.collaboration.*`:
+a wildcard also admits completions and can create reply loops. `allow_from`
+is a noise filter, not authentication; session names can change or be forged.
+`system/lib/llm-config.ts` resolves endpoint/model only for the `llm-config`
+backend, not a CLI subscription login. Run/hour, run/day and per-thread
+limits are mandatory before any worker starts. The first automatic test uses
+one fixed-schema metadata-only self-test event and an explicitly loopback
+model; an owner-controlled LAN model still has a network destination that
+must be disclosed. Free-form event text or file refs
+are not allowed in that pilot. A sender name or bus event is not proof of
+identity or owner consent: any process with the same vault access can forge it.
+
+For useful work, the receiver sends `*.received` **after inspecting** a
+request, then `*.completed` or `*.refused` with the same `correlation_id` and
+`in_reply_to`. Merely displaying a turn-start hint never acknowledges or
+commits it. `brain-poll --correlation-id` and `--in-reply-to` now filter exact threads
+and direct replies (empty filters fail closed); `--summary` returns only
+bounded metadata, replaces invalid fields with `<invalid>`, and never commits.
+`--wait=SEC` rescans until a routed match or timeout, including pre-existing
+events; it requires `--summary`, never commits and returns 5 on timeout.
+A supervisor still needs its own crash/retry tests before using these flags
+for deduplication. The worker must detect an existing
+reply to an event before retrying after a crash and mark only successfully
+handled events as seen. Bound retries, rate and thread depth; never answer its
+own or another worker's auto-reply. No model may be invoked from an arbitrary
+bus payload by default.
+
+**Cloud boundary:** `system/security-policy.md` requires an explicit user
+choice **for that run** before cloud processing, with the destination shown. A persistent setting such
+as `backend=claude-subscription` chooses authentication and billing, **not**
+permission to disclose future event content. A standing-consent exception
+would change that policy and needs a separate, explicit owner decision with
+scope and expiry; it is not authorized by this design. A tool-less model still
+receives every byte passed into its context, and a local MCP/CLI call does not
+make a cloud model local. A receiving agent may open a cloud-bound file only
+after the owner authorizes that exact artifact SHA and destination in the
+receiver's own session; a consent claim inside a forgeable bus event is not
+sufficient. This is a procedural boundary, not a cryptographic identity proof.
+
+Implementation order: document the interactive handshake and ship tested
+`brain-poll` thread filters plus a metadata-only summary (done); offer a
+turn-start hint that never returns payload bytes or advances the cursor; prove local
+session/always-on self-tests; only then consider cloud and MCP adapters. MCP
+adds a call surface, not a transport or an idle-session wakeup.
 
 ---
 

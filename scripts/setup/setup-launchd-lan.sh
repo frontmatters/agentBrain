@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 # setup-launchd-lan.sh — install/uninstall the two LAN launchd agents of a
-# factory host: the git daemon that exports the dev checkout over the LAN and
-# the lan-install job. Both templates live in system/launchd/ and were rendered
-# by hand until now, which is how they kept logging to local/logs/ after the
-# vault rename. Safe to re-run (idempotent: unloads before re-loading).
+# host that serves agentBrain on the LAN: the git daemon that exports the checkout and
+# the lan-install job. Both templates live in system/launchd/; rendering them
+# here keeps their paths in step with the checkout (a hand-rendered copy keeps
+# old paths). Safe to re-run (idempotent: unloads before re-loading).
 #
 # Usage:
 #   bash scripts/setup/setup-launchd-lan.sh                # render + bootstrap both

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# Validate `status:` frontmatter values in local/projects/*/index.md against
+# Validate `status:` frontmatter values in vault/projects/*/index.md against
 # the canonical enum. Catches drift like `status: unknown` or free-text values
 # such as `status: phase-3-shipped` that bypass the project-update skill spec
 # and confuse /list-parks filtering.
@@ -49,8 +49,8 @@ while IFS= read -r idx; do
 		bad+=("$idx → got '$bad_value'")
 	fi
 done < <(
-	# Only project index.md files (one level deep under local/projects/<name>/index.md).
-	# The top-level local/projects/index.md is a meta-registry (type: system), not a project.
+	# Only project index.md files (one level deep under vault/projects/<name>/index.md).
+	# The top-level vault/projects/index.md is a meta-registry (type: system), not a project.
 	find "$PROJECTS_DIR" -mindepth 2 -maxdepth 2 -name 'index.md' |
 	while IFS= read -r f; do
 		# Defense in depth: only check files declaring type: project.

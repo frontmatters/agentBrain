@@ -10,7 +10,9 @@
 set -euo pipefail
 ADDON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BRAIN="$(cd "$ADDON_DIR/../../.." && pwd)"
-EVENTS="$BRAIN/vault/events"
+# shellcheck source=scripts/lib/vault.sh
+. "$BRAIN/scripts/lib/vault.sh"
+EVENTS="$VAULT_DIR/events"
 
 bash "$ADDON_DIR/install.sh" --uninstall
 

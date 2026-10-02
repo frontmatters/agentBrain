@@ -18,4 +18,4 @@ fi
 echo "Installing JS deps…"
 (cd "$ADDON_DIR" && bun install)
 bun "$ADDON_DIR/src/register.ts"
-echo "agentBrain MCP registered. Restart Cursor/Windsurf to pick it up."
+echo "agentBrain MCP registered. Restart Cursor/Devin Desktop to pick it up."

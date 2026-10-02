@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 # uuid5-gen.sh — Generate a deterministic UUID5 for agentBrain notes.
-# The seed is the note's path relative to the brain root, INCLUDING the leading
-# `local/` — this is what validate-note-id.sh derives its expected id from, so any
+# The seed is the note's path relative to the brain root, spelled with the
+# leading `local/` (the vault's old name). validate-note-id.sh derives its
+# expected id the same way; a `vault/` path is folded to that spelling, and any
 # other base (e.g. "learnings/MyNote") produces an id the validator will reject.
-# Usage: ./uuid5-gen.sh "local/learnings/MyNote"
+# Usage: ./uuid5-gen.sh "vault/learnings/MyNote"   (local/learnings/MyNote gives the same id)
 
 set -euo pipefail
 
@@ -12,7 +13,7 @@ VAULT="$(cd "$(dirname "$0")/.." && pwd)"
 
 if [ -z "${1:-}" ]; then
   echo "Usage: $(basename "$0") \"path/to/note\" (without .md extension)"
-  echo "Example: $(basename "$0") \"local/learnings/Docker\""
+  echo "Example: $(basename "$0") \"vault/learnings/Docker\""
   exit 1
 fi
 
@@ -26,10 +27,10 @@ fi
 
 # Pass path + namespace as argv (NOT string-interpolated) — file paths can contain
 # apostrophes (e.g. "Anthropic's-...", "don't-...") which break single-quoted Python literals.
-# `vault/` is an alias for `local/` (setup-vault.sh links them), but an id
-# must never depend on which name the caller typed: every id in every vault is
-# already derived from the `local/` spelling, and re-deriving one under `vault/`
-# would produce a different uuid for the same file. Normalise before hashing.
+# The vault lives at `vault/`; `local/` is its old name. Every id in every vault
+# is derived from the `local/` spelling, and hashing a `vault/` path as typed
+# would produce a different uuid for the same file. Fold `vault/` to `local/`
+# before hashing, so either spelling gives the same id.
 REL="${1#vault/}"
 [ "$REL" != "${1}" ] && REL="local/${REL}"
 

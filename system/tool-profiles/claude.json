@@ -1,0 +1,11 @@
+{
+  "package": "@anthropic-ai/claude-code",
+  "manager": "npm",
+  "symlink": "${NPM_PREFIX}/bin/claude",
+  "entry": "bin/claude.exe",
+  "process": "claude",
+  "checks": [
+    "--version",
+    "--help"
+  ]
+}

@@ -35,6 +35,15 @@ EOF
 }
 
 AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../../.." && pwd)}"
+# The vault through the resolver (AGENTBRAIN_VAULT and friends), never the
+# checkout's own folder by assumption; a copy without scripts/lib (a test
+# fixture) falls back to it.
+if [ -f "$AGENTBRAIN_DIR/scripts/lib/vault.sh" ]; then
+	# shellcheck source=/dev/null
+	. "$AGENTBRAIN_DIR/scripts/lib/vault.sh"
+else
+	VAULT_DIR="${AGENTBRAIN_VAULT:-$AGENTBRAIN_DIR/vault}"
+fi
 RETENTION="30d"
 APPLY=false
 
@@ -73,8 +82,8 @@ parse_duration() {
 }
 RET_SEC="$(parse_duration "$RETENTION")"
 
-INBOX="$AGENTBRAIN_DIR/vault/events/inbox"
-ARCHIVE="$AGENTBRAIN_DIR/vault/events/archive"
+INBOX="${VAULT_DIR}/events/inbox"
+ARCHIVE="${VAULT_DIR}/events/archive"
 
 if [ ! -d "$INBOX" ]; then
     echo "brain-events-gc: no inbox at $INBOX (bus not yet used) — nothing to do"

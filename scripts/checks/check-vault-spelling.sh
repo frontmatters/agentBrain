@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# check-vault-spelling.sh — no new literal local/ paths in code.
+# check-vault-spelling.sh — no new legacy local/ paths or Python path.parts partitions in code.
 #
 # The vault's link in the checkout is vault/; local/ is the old name, kept as
 # an alias while path constructions in scripts and addons still spell it.
@@ -15,8 +15,9 @@
 # name the old spelling to retire it.
 #
 # Usage:
-#   check-vault-spelling.sh --staged    refuse added lines with a literal local/ path
+#   check-vault-spelling.sh --staged    refuse added lines with a local/ path or local path.parts partition
 #   check-vault-spelling.sh --count     print how many remain in the tree (doctor, info)
+#   check-vault-spelling.sh --docs      refuse prose that names local/ as the place of the vault
 set -uo pipefail
 ROOT="$(cd -P "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd -P)"
 cd "$ROOT" || exit 1
@@ -30,6 +31,7 @@ RE_VAR='(\$\{?[A-Za-z_]+\}?|\.|~|[A-Za-z0-9_-]+)/local/[A-Za-z0-9_.$*{-]'
 RE_COMMENT='^[[:space:]]*#'
 RE_IDENTITY='uuid5-gen\.sh|validate-note-id|validate-staged-note-ids|brainPath\('
 RE_JOIN='"local", "|Path\("local"\)|Path\('"'"'local'"'"'\)'   # join(root, "local", ...): the same path in another spelling
+RE_PARTS="['\"]local['\"][[:space:]]+in[[:space:]]+[A-Za-z_.][A-Za-z0-9_.]*\\.parts"
 is_path_use() {
 	local l="$1"
 	l="${l%% #*}"                      # a trailing comment is prose, not a path
@@ -44,7 +46,7 @@ is_path_use() {
 	# "local/x" is more often a label, a message or an identity string than a
 	# path, and refusing those breaks checks that use them legitimately. Bare
 	# forms are counted (--count), not gated.
-	[[ "$l" =~ $RE_VAR || "$l" =~ $RE_JOIN ]]
+	[[ "$l" =~ $RE_VAR || "$l" =~ $RE_JOIN || "$l" =~ $RE_PARTS ]]
 }
 case "$MODE" in
 --staged)
@@ -77,5 +79,39 @@ case "$MODE" in
 	echo "check-vault-spelling: $n literal local/ path(s) remain in code (migration to \$VAULT_DIR; the ratchet refuses new ones)"
 	exit 0
 	;;
-*) echo "usage: check-vault-spelling.sh --staged | --count" >&2; exit 2 ;;
+--docs)
+	# Prose a person reads must name the vault as vault/. A local/ there tells
+	# the reader to look in a directory a current checkout does not have. A
+	# line may still name local/ when it says why: the old name, the alias, the
+	# identity every note id is spelled in. Changelogs are history and tests
+	# build local/ on purpose; private add-ons do not ship. Exemptions by path
+	# live in scripts/lib/exemptions.tsv under "vault-spelling-docs".
+	docs_root="${2:-.}"
+	reg="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.." && pwd)/lib/exemptions.tsv"
+	exempt=()
+	if [ -f "$reg" ]; then
+		while IFS=$'\t' read -r check pattern _e _r; do
+			[ "${check:-}" = "vault-spelling-docs" ] && [ -n "${pattern:-}" ] && exempt+=("$pattern")
+		done < "$reg"
+	fi
+	# A private add-on (manifest `distribution: private`) does not ship.
+	private_re="$(cd "$docs_root" && grep -lE '^distribution:[[:space:]]*private([[:space:]]|$)' system/addons/*/manifest.md 2>/dev/null | sed 's#/manifest\.md$#/#' | paste -sd'|' -)"
+	hits="$(cd "$docs_root" && git ls-files -- '*.md' '*.json' '*.example' | grep -vE '(^|/)CHANGELOG\.md$|(^|/)tests?/|node_modules/' | { if [ -n "$private_re" ]; then grep -vE "^($private_re)"; else cat; fi; } | while IFS= read -r f; do
+		skip=0
+		for pat in ${exempt[@]+"${exempt[@]}"}; do
+			# shellcheck disable=SC2254
+			case "$f" in $pat) skip=1 ;; esac
+		done
+		[ "$skip" -eq 1 ] && continue
+		grep -nE '(^|[^.A-Za-z0-9_/~-])local/' "$f" 2>/dev/null | grep -vE '/usr/local|\.local/' | grep -viE 'legacy|alias|older|old name|pre-rename|identity|spelling|rename|\bids?\b' | sed "s#^#$f:#"
+	done)"
+	if [ -n "$hits" ]; then
+		echo "check-vault-spelling: prose names local/ as a place; the vault is vault/ (or say why local/ is meant: old name, alias, id spelling):" >&2
+		printf '%s\n' "$hits" | sed 's/^/  /' >&2
+		exit 1
+	fi
+	echo "check-vault-spelling: ok (docs)"
+	exit 0
+	;;
+*) echo "usage: check-vault-spelling.sh --staged | --count | --docs [dir]" >&2; exit 2 ;;
 esac

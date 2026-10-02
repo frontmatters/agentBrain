@@ -233,4 +233,10 @@ AGENTBRAIN_LOCAL_DIR="$TMP" bash "$BIN" rename proj-a proj-b >/dev/null 2>&1 && 
 assert "rename refuses non-ci collision" "$ec" "1"
 assert "collision left source in place"  "$(AGENTBRAIN_LOCAL_DIR="$TMP" bash "$BIN" resolve proj-a | sed "s#$TMP/##")" "projects/proj-a/index.md"
 
+# Without an override the CLI reads the vault of AGENTBRAIN_DIR (its vault/ link),
+# not a local/ directory a current checkout does not have.
+B="$TMP/brain"; mkdir -p "$B/vault/devices"
+printf -- '---\nid: 9\ntype: device\n---\n# vault-host\n' > "$B/vault/devices/vault-host.md"
+assert "default reads the vault/ link" "$(env -u AGENTBRAIN_LOCAL_DIR -u AGENTBRAIN_VAULT -u AGENTBRAIN_CONTEXT -u AGENTBRAIN_SPACE AGENTBRAIN_DIR="$B" bash "$BIN" list 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')" "vault-host"
+
 if [ "$fails" -eq 0 ]; then echo "test-brain-cmdb: ok"; else echo "test-brain-cmdb: $fails fail(s)" >&2; exit 1; fi

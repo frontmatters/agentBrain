@@ -31,10 +31,10 @@ the target repo's `docs/architecture/`.
 | `SKILL.md` | Workflow, hard gates, delivery contract |
 | `templates/00-04` | Fill-in skeletons per phase (see `templates/README.md`) |
 | `scripts/validate.sh` | Deterministic form-checker (bash 3.2; exit 0 = deliverable) |
-| `scripts/tests/test-validate.sh` | 17-assertion fixture suite for the checker |
+| `scripts/test-validate.sh` | 17-assertion fixture suite for the checker |
 
 ## Verify
 
 ```bash
-bash scripts/tests/test-validate.sh   # expects passed=17 failed=0
+bash scripts/test-validate.sh   # expects passed=17 failed=0
 ```

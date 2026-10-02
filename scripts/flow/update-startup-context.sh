@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# update-startup-context.sh — aggregate local/findings/*.json into one concise
-# markdown summary at local/sessions/startup-context.md. This is the SURFACE step
+# update-startup-context.sh — aggregate vault/findings/*.json into one concise
+# markdown summary at vault/sessions/startup-context.md. This is the SURFACE step
 # (§3) of the self-improving-loop design: a single file every agent reads at
 # session-start so it knows what's open in the brain without consuming the full
 # findings JSON in the system prompt.
@@ -18,15 +18,17 @@
 
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FINDINGS_DIR="$ROOT_DIR/vault/findings"
-OUT_FILE="$ROOT_DIR/vault/sessions/startup-context.md"
+ROOT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)"
+# shellcheck source=scripts/lib/vault.sh
+. "$ROOT_DIR/scripts/lib/vault.sh"
+FINDINGS_DIR="$VAULT_DIR/findings"
+OUT_FILE="$VAULT_DIR/sessions/startup-context.md"
 TMP_FILE="${OUT_FILE}.tmp.$$"
 
 mkdir -p "$(dirname "$OUT_FILE")"
 
 python3 - "$FINDINGS_DIR" "$OUT_FILE" "$TMP_FILE" "$ROOT_DIR" <<'PY'
-import json, os, glob, sys
+import json, os, glob, sys, subprocess, shutil
 from datetime import datetime, timezone
 from collections import Counter
 
@@ -63,6 +65,58 @@ for f in files:
 lines = []
 lines.append("# agentBrain — session-start status")
 lines.append("")
+# Independently inspect the installed command and links; never invoke brain here.
+home = os.environ.get("AGENTBRAIN_HOME") or os.environ["HOME"]
+cli_dirs = ([os.path.join(home, "bin"), os.path.join(home, ".local", "bin")]
+            if home == os.environ["HOME"] else [os.path.join(home, "bin")])
+checkout = os.path.join(home, "agentBrain")
+brain_script = os.path.join(checkout, "scripts", "brain.sh")
+if not os.path.isfile(brain_script):
+    brain_script = os.path.join(root_dir, "scripts", "brain.sh")
+issues = []
+command = shutil.which("brain")
+if not command or os.path.realpath(command) != os.path.realpath(brain_script) or not os.path.isfile(os.path.realpath(command)):
+    dest = os.path.join(next((d for d in cli_dirs if os.path.isdir(d)), cli_dirs[0]), "brain")
+    issues.append(f"- `brain` on PATH is missing or does not resolve to the active brain.sh. Fix: `ln -sfn {brain_script} {dest}` (ensure {os.path.dirname(dest)} is on PATH).")
+for directory in cli_dirs:
+    if not os.path.isdir(directory):
+        continue
+    for link in sorted(glob.glob(os.path.join(directory, "*"))):
+        if not os.path.islink(link):
+            continue
+        target = os.readlink(link)
+        absolute = os.path.abspath(os.path.join(directory, target))
+        # Include historical checkout paths as well as the stable alias/vault.
+        if not any(part.startswith("agentBrain") for part in absolute.split(os.sep)):
+            continue
+        if os.path.exists(link):
+            continue
+        replacement = ""
+        for marker in ("/scripts/", "/system/", "/vault/"):
+            if marker in absolute:
+                replacement = os.path.join(checkout, marker.strip("/"), absolute.split(marker, 1)[1])
+                break
+        if not replacement and os.path.basename(link) in ("brain", "agentbrain"):
+            replacement = brain_script
+        if replacement and os.path.isfile(replacement):
+            fix = f"Fix: `ln -sfn {replacement} {link}`."
+        else:
+            fix = "Restore the missing target before relinking; no replacement exists in the active checkout."
+        issues.append(f"- Broken CLI link `{link}` -> `{target}`. {fix}")
+if issues:
+    lines.extend(["## Broken brain commands and links", "Mention these to the owner before anything else:", *issues, ""])
+# Read from the queue, not from a second reminder store. The list is sorted by due date.
+try:
+    reminders = subprocess.check_output(["bash", os.path.join(root_dir, "scripts/remind.sh"), "list", "--plain"], text=True).splitlines()
+except (OSError, subprocess.CalledProcessError):
+    reminders = []
+# Local date: a reminder "on" a day is due from local midnight, not UTC midnight.
+today = datetime.now().date().isoformat()
+due = [row for row in reminders if row[:10] <= today]
+if due:
+    lines.extend(["## Reminders due", "Mention these to the owner before anything else:"])
+    lines.extend(f"- {row}" for row in due)
+    lines.append("")
 lines.append(f"Generated: {generated}")
 lines.append("")
 

@@ -16,6 +16,7 @@ Claude/Claude Code reads `CLAUDE.md` as the tool-specific entrypoint.
 - Self‑learning: write insights to the brain during sessions.
 
 - Follow `system/agent-config/shared.md` and `system/rules.md`.
+- Setup refreshes the managed block in `~/.claude/CLAUDE.md` between begin/end markers, preserving surrounding user text and backing up the file before changes. Legacy blocks migrate once.
 - Keep `CLAUDE.md` thin; detailed shared behaviour belongs here or in `shared.md`.
 - Prefer updating existing notes over creating duplicates.
 - Real learnings and project context go to `vault/`, not public `learnings/`, unless explicitly sanitized for the public framework.
@@ -34,21 +35,9 @@ for architecture questions that span more than ~5 files:
 
 When the addon is not enabled, behave as before — grep remains the default.
 
-## The `grep` in the Bash tool is not `/usr/bin/grep`
+## Verify search coverage
 
-Claude Code wraps `grep` as a shell function that runs `ugrep --ignore-files`, so it
-honours `.gitignore`. Verify it on the machine you are on:
-
-```
-type grep          # "grep is a shell function from ~/.claude/shell-snapshots/..."
-type -f grep       # ARGV0=ugrep ... -G --ignore-files --hidden -I --exclude-dir=.git
-```
-
-The consequence is not a slower search but a wrong one, and it announces nothing:
-exit 1, empty stdout, empty stderr. Indistinguishable from an honest zero. In a
-directory whose `.gitignore` is fail-closed (`/*` with one exception), every
-checkout below that root is invisible to the wrapper.
-
-Follow the rule in `shared.md`: when the absence carries the conclusion, repeat with
-`/usr/bin/grep`. `find` is unaffected and makes a good second measurement. For a
-normal lookup the wrapper is fine, and faster.
+A shell or agent harness may wrap `grep` and honor ignore files by default.
+Inspect the active command with `type grep` and check its options before relying
+on an empty search result. When absence matters, repeat with an unwrapped
+system binary (where available) or `find`, as described in `shared.md`.

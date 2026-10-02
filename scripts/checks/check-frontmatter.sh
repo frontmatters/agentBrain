@@ -15,7 +15,7 @@ is_exempt_template() {
 	[[ "$file" == templates/*.md && "$file" != "templates/README.md" ]] && return 0
 	[[ "$file" == templates/local-starters/*.md && "$file" != "templates/local-starters/README.md" ]] && return 0
 	# templates/vault/preferences/personal/*.md are source templates (with {{uuid5}}/{{date}} placeholders)
-	# seeded by setup-templates.sh into local/preferences/personal/. They use the same
+	# seeded by setup-templates.sh into vault/preferences/personal/. They use the same
 	# template-schema as templates/local-starters/ — exempt from strict id validation.
 	[[ "$file" == templates/vault/preferences/personal/*.md && "$file" != "templates/vault/preferences/personal/README.md" ]] && return 0
 	# Skill-owned templates live next to the skill (e.g. system/skills/scanman/templates/repro-spec/*.md).

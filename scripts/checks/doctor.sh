@@ -4,6 +4,8 @@
 # Usage:
 #   bash scripts/checks/doctor.sh                 # full check: framework plus the vault checks
 #   bash scripts/checks/doctor.sh --ci            # CI-safe: skips local-only checks
+#   bash scripts/checks/doctor.sh --user          # install health only (what `brain doctor` runs)
+#   bash scripts/checks/doctor.sh --list          # print the selected checks, run nothing
 #   bash scripts/checks/doctor.sh --summary       # compact output
 #   bash scripts/checks/doctor.sh --verbose       # full output including path lists
 #   bash scripts/checks/doctor.sh --pi-lens-strict # fail on Pi-lens review warnings too
@@ -13,6 +15,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)"
+# shellcheck source=scripts/lib/vault.sh
+. "$ROOT_DIR/scripts/lib/vault.sh"
 CALLER_PWD="$(pwd -P 2>/dev/null || echo ?)"
 cd "$ROOT_DIR"
 
@@ -21,7 +25,7 @@ cd "$ROOT_DIR"
 # do the work.
 doctor_context() {
 	printf '  checkout: %s\n' "$ROOT_DIR"
-	printf '  vault:    %s\n' "$(cd -P "$ROOT_DIR/vault" 2>/dev/null && pwd -P || echo '(none)')"
+	printf '  vault:    %s\n' "$(cd -P "$VAULT_DIR" 2>/dev/null && pwd -P || echo '(none)')"
 	printf '  cwd/tmp:  %s · %s\n' "$CALLER_PWD" "${TMPDIR:-/tmp}"
 	printf '  env:      AGENTBRAIN_HOME=%s SETUP_PHASE=%s · %s · git %s · %s\n' "${AGENTBRAIN_HOME:-default}" "${AGENTBRAIN_SETUP_PHASE:-0}" "$(bash --version | head -1 | sed -E 's/GNU bash, version ([0-9.]+).*/bash \1/')" "$(git --version | awk '{print $3}')" "$(uname -sm)"
 }
@@ -34,6 +38,8 @@ PI_LENS_STRICT=false
 WITH_SELFTEST=false
 FIX=false
 FAST=false
+USER_MODE=false
+LIST_ONLY=false
 
 for arg in "$@"; do
 	case "$arg" in
@@ -44,6 +50,8 @@ for arg in "$@"; do
 	--with-selftest|--all) WITH_SELFTEST=true ;;
 	--fix) FIX=true ;;
 	--fast) FAST=true ;;
+	--user) USER_MODE=true ;;
+	--list) LIST_ONLY=true ;;
 	*)
 		echo "Unknown flag: $arg" >&2
 		exit 1
@@ -70,7 +78,7 @@ fi
 . "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../lib/lock.sh"
 # A full doctor takes several minutes; a second one that stops waiting and
 # runs anyway shares the vault with the first, and their fixtures collide.
-acquire_lock doctor 900 || { echo "doctor: another doctor holds the lock (waited 15 min); not running two on one vault" >&2; exit 1; }
+[ "$LIST_ONLY" = true ] || acquire_lock doctor 900 || { echo "doctor: another doctor holds the lock (waited 15 min); not running two on one vault" >&2; exit 1; }
 # Tests build git fixtures. Under a hook from a linked worktree, GIT_DIR points
 # at the real checkout and every fixture command would land there.
 # shellcheck source=scripts/lib/git-env.sh
@@ -79,6 +87,8 @@ clear_git_env
 # shellcheck source=scripts/lib/repo-snapshot.sh
 . "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../lib/repo-snapshot.sh"
 
+# The full list below runs in a source checkout. A release ships without
+# scripts/tests/ and the framework-only checks; there it runs --user.
 framework_checks=(
 	"bash scripts/privacy-scan.sh tracked"
 	"bash scripts/checks/check-version.sh"
@@ -94,6 +104,7 @@ framework_checks=(
 	"bash scripts/checks/check-enforcement.sh"
 	"bash scripts/checks/check-function-exit.sh"
 	"bash scripts/checks/check-known-traps.sh"
+	"bash scripts/checks/check-token-argv.sh" # tracked source must not put variable secrets in argv
 	"bash scripts/checks/check-vault-assertion.sh"
 	"bash scripts/checks/check-frontmatter.sh"
 	"bash scripts/checks/check-product-notes.sh"
@@ -101,6 +112,8 @@ framework_checks=(
 	"bash scripts/checks/run-negative-cases.sh"
 	"bash scripts/checks/check-skill-relations.sh"
 	"bash scripts/checks/check-skills-index.sh"
+	"bash scripts/checks/check-skills-catalogue.sh" # add-on skills named by their id with a description; registry index lag is a warning
+	"bash scripts/tests/test-check-skills-catalogue.sh" # the catalogue check fails a misnamed add-on skill, only warns on registry lag
 	"bash scripts/checks/check-ksc.sh"
 	"bash scripts/checks/check-source-paths.sh"
 	"bash scripts/checks/check-writing-style.sh"
@@ -113,6 +126,10 @@ framework_checks=(
 	"bash scripts/checks/check-session-update-quiet.sh"
 	"bash scripts/checks/check-client-pointers.sh"
 	"bash scripts/tests/test-addons.sh"
+	"python3 system/addons/secret-guard/tests/test-secret-guard.py" # pre-tool scanner and isolated hook installation
+	"bash scripts/tests/test-addons-vault-resolver.sh"  # enable/disable and skill linking find the vault through vault.sh, like check-skill-links
+	"bash scripts/tests/test-addons-registry-auth.sh"  # a private registry: token by reference, never in argv, only to its own origin
+	"bash scripts/tests/test-addon-kind.sh"  # every add-on manifest names a kind and carries the fields that kind requires
 	"bash scripts/tests/test-channel-resolve.sh"
 	"bash scripts/tests/test-channel-next.sh"  # public next selects RC tags only
 	"bash scripts/tests/test-editors.sh"
@@ -128,6 +145,21 @@ framework_checks=(
 	"bash scripts/checks/check-prompt-cache-hygiene.sh"
 	"bash scripts/checks/check-english-sources.sh"
 	"bash scripts/tests/test-pointer-guard.sh" # a client config linked into the checkout never gets the pointer appended
+	"bash scripts/tests/test-bins-use-vault-resolver.sh" # add-on and skill bins find the vault through the resolver
+	"bash scripts/tests/test-vault-runtime-routing.sh" # runtime scripts read and write the vault AGENTBRAIN_VAULT names
+	"bash scripts/tests/test-onboard-web.sh" # the web onboarding writes the same files as the terminal wizard, loopback only
+	"bash scripts/tests/test-install-offers-once.sh" # the install flow offers each tool in one place, and no add-on tool in the core
+	"bash scripts/tests/test-addons-offerable.sh" # the optional add-ons step offers shipped-but-off and new registry add-ons, in a stable shape
+	"bash scripts/tests/test-addon-doctor-tests.sh" # addon doctor declarations are enumerated and confined to the addon
+	"bash scripts/tests/test-factory-naming.sh" # a factory is <tool>.factory; the registry finds it at any depth
+	"bash scripts/tests/test-note-id-real-vault-path.sh" # a wrong note id is refused through the vault link, the real vault path and the hook link
+	"bash scripts/tests/test-uninstall-leftovers.sh" # uninstall removes agent files setup created and keeps the user's
+	"bash scripts/tests/test-uninstall-pi-links.sh" # uninstall removes only Pi links that point into this checkout
+	"bash scripts/tests/test-cli-links.sh" # checkout CLI links and startup check use throwaway HOME
+	"bash scripts/tests/test-doctor-user.sh" # --user checks the install, not the source; brain doctor runs it, --dev the full list
+	"bash scripts/tests/test-bootstrap-redirect.sh" # old Pi bootstrap entry point reaches the installer bootstrap; stub, installs nothing
+	"bash scripts/tests/test-install-lightpanda.sh" # the Lightpanda reinstall prompt works and SKILL.md names shipped guides; stubs, installs nothing
+	"bash scripts/tests/test-tool-update.sh" # isolated fake managers + process clock; never installs a real tool
 )
 
 # Pi-agent checks — only when Pi is installed
@@ -147,7 +179,13 @@ else
 	echo "pi not detected — skipping pi checks"
 fi
 
-public_checks=("${framework_checks[@]}" "${pi_checks[@]}")
+# Each add-on may opt its isolated suites into the full doctor. The registry
+# enumerator validates paths before returning commands; no add-on is special-cased.
+addon_checks=()
+while IFS= read -r addon_check; do
+	[ -n "$addon_check" ] && addon_checks+=("$addon_check")
+done < <(bash scripts/lib/addon-doctor-tests.sh)
+public_checks=("${framework_checks[@]}" "${pi_checks[@]}" "${addon_checks[@]}")
 
 local_checks=(
 	"bash scripts/checks/check-onboarding.sh"   # onboarding completeness (G2/E2)
@@ -156,7 +194,7 @@ local_checks=(
 	"bash scripts/tests/test-onboard-choices.sh"   # onboarding fixed-choice schema (G5/G6)
 	"bash scripts/tests/test-onboard-identity.sh"   # onboarding identity template (G1/R3)
 	"bash scripts/tests/test-check-prerequisites.sh"   # prerequisites preflight (clean-install)
-	# Validates the machine install (brain.json namespace, local/, alias, git
+	# Validates the machine install (brain.json namespace, vault/, alias, git
 	# hooks) — meaningless against a bare artifact checkout, so not in CI.
 	"bash scripts/checks/check-anchors.sh"
 	"bash scripts/checks/check-vault-private.sh"
@@ -168,8 +206,11 @@ local_checks=(
 	"bash scripts/checks/check-spec-version.sh"
 	"bash scripts/checks/check-skill-links.sh"
 	"bash scripts/checks/check-agent-pointers.sh"  # do the paths each agent is handed still exist?
+	"bash scripts/checks/check-installed-pointers.sh" # read-only user light for every installed client
 	"bash scripts/checks/check-shorthand.sh"
 	"bash scripts/checks/check-brain-hide-forget.sh"
+	"bash scripts/tests/test-path-naming-vault.sh" # path naming reads the vault through the vault/ link
+	"bash scripts/tests/test-validate-staged-note-ids.sh" # commit-time id gate reads staged notes through the vault/ link
 	"bash scripts/tests/test-validate-note-id.sh"
 	"bash scripts/tests/test-vault-alias.sh"      # vault/ and local/ hash identically
 	"bash scripts/tests/test-factory-paths.sh"    # checkout paths come from factory.json
@@ -204,8 +245,13 @@ local_checks=(
 	"bash scripts/tests/test-capability-install.sh"                     # capability install helper
 	"bash scripts/tests/test-check-cmdb-coverage.sh"                    # CMDB coverage check
 	"bash scripts/tests/test-check-onboarding.sh"                       # check-onboarding unit tests
+	"bash scripts/tests/test-setup-pi-once.sh"                       # Pi setup once, before doctor, fail closed
 	"bash scripts/tests/test-configure-pi-skills.sh"                    # Pi skill linking and pruning
 	"bash scripts/tests/test-addon-skill-roots.sh"                       # addon skills link from every addon source root
+	"bash scripts/tests/test-skills-lib-keeps-vault.sh"                  # loading skills.sh keeps the vault a caller resolved
+	"bash scripts/tests/test-report-orphans-vault.sh"                    # report-orphans reads the vault the resolver names
+	"bash scripts/tests/test-pi-lens-nested-local.sh"                    # a project folder named local is not mistaken for the vault
+	"bash scripts/tests/test-port-skills-hermes-vault.sh"                # the Hermes port finds the vault's skills through the resolver
 	"bash scripts/checks/check-skill-tests.sh"                           # every test a skill ships with, discovered not listed
 	"bash scripts/checks/check-sandbox-home.sh"                        # the release sandbox must stay a sandbox
 	"bash scripts/checks/check-toolpaths.sh"                             # probe a user-scoped tool only after loading its paths
@@ -215,6 +261,8 @@ local_checks=(
 	"bash scripts/tests/test-onboard-preserves.sh"                       # the wizard owns answer bullets, not the files
 	"bash scripts/tests/test-decisions.sh"                              # check-decisions behaviour
 	"bash scripts/tests/test-vault-var-names.sh"                        # one vault location, whichever name sets it
+	"bash scripts/tests/test-report-index-root.sh"                     # index builders find root + vault from any cwd
+	"bash scripts/tests/test-vault-help.sh"                           # help describes the resolved vault
 	"bash scripts/tests/test-channel-picker.sh"                          # picking a channel selects that channel
 	"bash scripts/tests/test-doctor-no-duplicates.sh"                    # each check listed once
 	"bash scripts/tests/test-ext-verify.sh"                              # an extension row is judged by what the editor carries
@@ -238,10 +286,16 @@ local_checks=(
 	"bash scripts/tests/test-tree-purity.sh"     # a tracked file outside the framework is refused
 	"bash scripts/tests/test-private-skill-boundary.sh" # no .private file under public system/
 	"bash scripts/tests/test-vault-lib.sh"       # one vault path definition, ratchet on the old spelling
+	"bash scripts/checks/check-doc-paths.sh" # every path a public doc names exists (or is an example, a registry add-on, source-checkout material)
+	"bash scripts/checks/check-vault-spelling.sh --docs" # prose names the vault as vault/, never local/ as a place
 	"bash scripts/checks/check-vault-spelling.sh --count" # how many literal local/ paths remain
 	"bash scripts/tests/test-new-note.sh"
 	"bash scripts/tests/test-new-note-space.sh"
 	"bash scripts/tests/test-queue.sh"
+	"bash scripts/tests/test-remind.sh"
+	"bash scripts/tests/test-setup-opencode.sh"
+	"bash scripts/tests/test-pointer-sync.sh"
+	"bash scripts/tests/test-devin.sh"
 	"bash scripts/tests/test-new-space.sh"
 	"bash scripts/tests/test-list-space.sh"
 	"bash scripts/tests/test-active-space.sh"
@@ -252,6 +306,12 @@ local_checks=(
 	"bash scripts/tests/test-spaces-hygiene.sh"
 	"bash scripts/tests/test-sync-space.sh"
 	"bash scripts/tests/test-sync-vault-cli.sh"
+	"bash scripts/tests/test-git-token.sh"                   # git gets a token header through the environment, and ssh remotes get no token
+	"bash scripts/tests/shared-vault/test-sync-shared.sh"    # the shared-layer sync, checks, gitignore, promote and setup
+	"bash scripts/tests/shared-vault/test-check-shared.sh"
+	"bash scripts/tests/shared-vault/test-gitignore-shared.sh"
+	"bash scripts/tests/shared-vault/test-promote.sh"
+	"bash scripts/tests/shared-vault/test-setup-shared.sh"
 	"bash scripts/tests/test-space-boundary.sh"
 	"bash scripts/checks/check-space-boundary.sh"
 )
@@ -271,11 +331,34 @@ else
 	all_checks=("${public_checks[@]}" "${local_checks[@]}")
 fi
 
+# User mode: the health of an install, not of the framework's source. The rest
+# of the list tests the framework itself (tests with fixtures, negative cases,
+# code and writing rules); on a user's machine a failure there says nothing
+# about their install and reads as if it did. Names only, so each command stays
+# listed once above; check-doctor.sh fails a name that matches no entry.
+user_check_names=(
+	check-version check-anchors check-skill-links check-agent-pointers check-installed-pointers
+	check-addons check-onboarding check-events check-vault-content
+	check-vault-private check-agentbrain-shared check-vault-hygiene
+	check-space-boundary check-project-status-enum check-decisions
+	check-spec-version check-product-notes check-preference-scopes
+	check-learnings-structure check-shorthand check-brain-review check-pi-lens
+)
+if [ "$USER_MODE" = true ]; then
+	user_checks=()
+	for _c in "${public_checks[@]}" "${local_checks[@]}"; do
+		_n="$(basename "$(echo "$_c" | awk '{print $2}')" .sh)"
+		case " ${user_check_names[*]} " in *" $_n "*) user_checks+=("$_c") ;; esac
+	done
+	all_checks=("${user_checks[@]}")
+	FAST=false  # the fast filter drops vault checks; those are the user's
+fi
+
 # Fast mode: a quick pre-push gate. Keep the cheap, high-signal structural and
 # privacy checks; skip the slow ones (TypeScript pi-extension checks, the test
 # suites, and shellcheck below). Full validation still runs in release-check,
 # deploy, and CI. Goal: the safe path is also the fast path.
-if [ "$FAST" = true ]; then
+if [ "$FAST" = true ] && [ "$USER_MODE" != true ]; then
 	fast_checks=()
 	for _c in "${all_checks[@]}"; do
 		_n="$(basename "$(echo "$_c" | awk '{print $2}')" .sh)"
@@ -289,6 +372,20 @@ if [ "$FAST" = true ]; then
 		fast_checks+=("$_c")
 	done
 	all_checks=("${fast_checks[@]}")
+fi
+
+if [ "$LIST_ONLY" = true ]; then
+	printf '%s\n' "${all_checks[@]}"
+	exit 0
+fi
+
+# A release carries the user checks, not the framework's own gates: no
+# scripts/tests/ and only the checks an install calls. The full doctor needs
+# the source checkout; say so instead of failing on every missing file.
+if [ "$USER_MODE" != true ] && [ ! -d scripts/tests ]; then
+	echo "doctor: this is an installed release; the full doctor runs in the agentBrain source." >&2
+	echo "  Check this install with: brain doctor   (doctor.sh --user)" >&2
+	exit 2
 fi
 
 # ── Run ──────────────────────────────────────
@@ -421,6 +518,9 @@ if [ "$VERBOSE" = true ] && [ -d system/addons ]; then
 	bash scripts/addons.sh status || true
 fi
 
+# ── Source checks: syntax, shellcheck, unreachable code ──
+# They check the framework's source, not an install: skipped in --user.
+if [ "$USER_MODE" != true ]; then
 # ── Bash syntax ──────────────────────────────
 
 printf '\n▶ bash syntax'
@@ -515,6 +615,8 @@ if [ "$FAST" != true ] && command -v shellcheck >/dev/null 2>&1; then
 		failed_names+=("unreachable")
 	fi
 fi
+
+fi # USER_MODE
 
 # ── Selftest (opt-in: --with-selftest / --all) ─────────────────
 # Doctor verifies framework correctness; selftest verifies per-agent integration.

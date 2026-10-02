@@ -6,22 +6,28 @@ import { join } from "node:path";
 
 const home = mkdtempSync(join(tmpdir(), "ab-mcp-home-"));
 mkdirSync(join(home, ".cursor"), { recursive: true });           // Cursor "detected"
-// Windsurf dir intentionally absent -> not detected.
+// Devin config dir intentionally absent -> not detected.
 
 test("targets() builds per-client config paths under the given home", async () => {
   const { targets } = await import("../register");
   const t = targets(home);
   const cursor = t.find((x) => x.id === "cursor")!;
   assert.equal(cursor.configPath, join(home, ".cursor", "mcp.json"));
-  const windsurf = t.find((x) => x.id === "windsurf")!;
-  assert.equal(windsurf.configPath, join(home, ".codeium", "windsurf", "mcp_config.json"));
+  const devin = t.find((x) => x.id === "devin")!;
+  assert.equal(devin.configPath, join(home, ".config", "devin", "mcp_config.json"));
+  assert.equal(t.some((x) => x.id === "windsurf-legacy"), false);
+  const legacy = targets(home, true).find((x) => x.id === "windsurf-legacy")!;
+  assert.equal(legacy.configPath, join(home, ".codeium", "windsurf", "mcp_config.json"));
 });
 
 test("detected() is true only when the client config dir exists", async () => {
   const { targets, detected } = await import("../register");
   const t = targets(home);
   assert.equal(detected(t.find((x) => x.id === "cursor")!), true);
-  assert.equal(detected(t.find((x) => x.id === "windsurf")!), false);
+  const devin = t.find((x) => x.id === "devin")!;
+  assert.equal(detected(devin), false);
+  mkdirSync(join(home, ".config", "devin"), { recursive: true });
+  assert.equal(detected(devin), true);
 });
 
 test("claude-code target: ~/.claude.json config, detected via ~/.claude dir", async () => {
@@ -58,6 +64,34 @@ test("claude-desktop target: OS-aware config path + detected via parent dir", as
     );
   }
   // win32 deliberately not asserted: depends on APPDATA which may not be set in CI.
+});
+
+test("Devin registration writes only the new file and preserves existing servers", async () => {
+  const { targets, register, unregister } = await import("../register");
+  const h = mkdtempSync(join(tmpdir(), "ab-mcp-devin-"));
+  mkdirSync(join(h, ".config", "devin"), { recursive: true });
+  const devin = targets(h).find((x) => x.id === "devin")!;
+  writeFileSync(devin.configPath, JSON.stringify({ mcpServers: { other: { command: "x" } } }));
+  await register(devin, "/brain");
+  const cfg = JSON.parse(readFileSync(devin.configPath, "utf8"));
+  assert.ok(cfg.mcpServers.agentbrain);
+  assert.ok(cfg.mcpServers.other);
+  assert.equal(existsSync(join(h, ".codeium", "windsurf", "mcp_config.json")), false);
+  await unregister(devin);
+  assert.ok(JSON.parse(readFileSync(devin.configPath, "utf8")).mcpServers.other);
+});
+
+test("legacy Windsurf MCP entry is removal-only", async () => {
+  const { targets, unregister } = await import("../register");
+  const h = mkdtempSync(join(tmpdir(), "ab-mcp-legacy-"));
+  const legacy = targets(h, true).find((x) => x.id === "windsurf-legacy")!;
+  mkdirSync(join(h, ".codeium", "windsurf"), { recursive: true });
+  writeFileSync(legacy.configPath, JSON.stringify({ mcpServers: { agentbrain: { command: "bun" }, other: { command: "x" } } }));
+  assert.equal(await unregister(legacy), true);
+  const cfg = JSON.parse(readFileSync(legacy.configPath, "utf8"));
+  assert.equal("agentbrain" in cfg.mcpServers, false);
+  assert.ok(cfg.mcpServers.other);
+  assert.equal(targets(h).some((x) => x.id === "windsurf-legacy"), false);
 });
 
 test("register adds our entry, preserves others; unregister removes only ours", async () => {

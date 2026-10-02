@@ -3,6 +3,7 @@ id: session-journal
 name: Session Journal (behavior)
 version: 0.1.1
 author: frontmatters
+kind: framework
 install: bash system/addons/session-journal/install.sh
 command: bash
 # On by default in a fresh install; the user can untick it.

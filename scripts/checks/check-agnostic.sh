@@ -14,7 +14,7 @@ STRICT=0
 # Agent names to detect (word-boundary matched, case-insensitive).
 # 'pi' is short and prone to false positives — --word-regexp / \b guards catch
 # pip/pin/pipeline/pi-config etc. so only standalone 'pi' tokens match.
-AGENTS="claude|copilot|gemini|aider|cursor|cline|windsurf|obsidian|pi"
+AGENTS="claude|copilot|gemini|aider|cursor|cline|devin|obsidian|pi"
 
 # Whitelisted paths: legitimate agent-specific locations. Naming an agent here is
 # by design, not coupling. The remaining surface (behaviour/logic code) must stay

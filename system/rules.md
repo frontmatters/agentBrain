@@ -60,8 +60,8 @@ sibling checkout, the framework root, or a guessed legacy spelling.
 
 The knowledge layer is `vault/`. Internally it is still spelled `local/`, and that is
 **settled, not a leftover**: every UUID in every vault is derived from the `local/` path, so
-`uuid5-gen.sh` folds `vault/` back to it and `test-vault-alias.sh` exists to prove the two
-hash identically. Changing the spelling would change every id at once, and since the vault
+`uuid5-gen.sh` folds `vault/` back to it (in a source checkout, `test-vault-alias.sh` proves
+the two hash identically). Changing the spelling would change every id at once, and since the vault
 is shared across machines, any checkout that lagged behind would fail validation on all of
 them.
 
@@ -118,7 +118,7 @@ Read at the beginning of every session:
 4. `system/agent-config/shared.md` — shared agent behaviour
 5. `system/agent-config/<client>.md` — client-specific config (e.g. `claude.md`, `pi.md`)
 6. `system/skills.md` — available slash commands
-7. `vault/sessions/startup-context.md` — live open findings + alerts (skip if absent)
+7. `vault/sessions/startup-context.md` — live open findings + alerts (skip if absent); mention "Reminders due" or "Broken brain commands and links" to the owner before anything else
 8. Preference scopes — `vault/preferences/organization/`, `vault/preferences/team/`, `vault/preferences/personal/` when present
 
 Treat these compact files as the hot set. Load everything else — `system/tools.md` (bash CLIs + addon binaries), `system/lifecycle.md` (project phases), the relevant `vault/projects/[name]/index.md`, `vault/memories/`, private preferences detail, integrations, security notes, reports, research, session archives, `system/context-tiers.md` (the tier policy itself), and `system/integrations/opensrc.md` (only when working with a dependency) — as **warm/cold context** when relevant. Measure before adding more always-loaded files.
@@ -166,13 +166,13 @@ mirror — never bake personal paths or data into the script:
   Mechanisms read the built `vault/.space-map.json`, never the passports directly.
 
 Same name on both sides = the counterpart is always findable, and sharing the repo carries only
-the `system/` half. Exemplar: `system/references/dev-registry` (scanner + `dev-registry.roots.example`)
+the `system/` half. Exemplar: `system/references/dev-registry.scan.sh` (scanner + `dev-registry.roots.example`)
 mirrors `vault/references/dev-registry.roots` (private roots), and derives a per-client **Space**
 column + canonical/decoy from the space passports via `vault/.space-map.json`.
 
 ### Public learnings policy
 
-Public `learnings/` contains placeholders and examples only. Real categories and discoveries belong in `vault/learnings/`.
+The public layer carries no learnings, only examples: the seeds under `templates/vault/` (e.g. `templates/vault/learnings/_example.md`). Real categories and discoveries belong in `vault/learnings/`.
 
 Promote content to public only when explicitly requested, and only after removing all project, personal, customer, infrastructure, and research-specific details.
 
@@ -265,9 +265,13 @@ Each space carries an `index.md` passport (`type: space`, `space-id`, `owner`,
 `relation`, `sync`, `code-roots`) that identifies its owner and the repos that
 auto-route into it.
 
+## Updating third-party agent CLIs
+
+Use `brain tool-update <tool> stage <version>`, `check <version>`, then `switch <version>` instead of upgrading files used by running agents. `status` counts pre/post-switch processes; `finish` refuses while old processes run (unless the owner explicitly requests `--force`), points the command back at the updated global install, and keeps the staged copy while sessions started after the switch run from it; `prune` removes it once they have ended. `rollback` restores the old command link. Profiles are declared in `system/tool-profiles/`; state lives under `TOOL_VERSIONS_HOME` (default `~/.local/share/tool-versions`). Homebrew staging uses `--skip-link` and `HOMEBREW_NO_INSTALL_CLEANUP=1`; never run `brew cleanup` on a keg used by an active session. See `system/tools.md`.
+
 ## Security & Privacy
 
-- **Never store secrets in the public layer** (`learnings/`, `system/`, `templates/`, `templates/vault/preferences/personal/`, `projects/`) or in the `shared/` layer: no API keys, tokens, passwords, private URLs, customer data, or proprietary code.
+- **Never store secrets in the public layer** (`system/`, `scripts/`, `templates/` including the `templates/vault/` seeds, `docs/`) or in the `shared/` layer: no API keys, tokens, passwords, private URLs, customer data, or proprietary code.
 - **Private skill extensions belong only in `vault/skills/<name>.private.md`.** No `.private` file or directory under public `system/`, even if gitignored or dot-prefixed. `scripts/privacy-scan.sh` rejects staged/tracked private-named paths in `system/`; pre-commit and the pre-push doctor enforce this boundary.
 - **Before asking the user for credentials, tokens, or API keys, first check the local credential/integration notes** (`vault/integrations/`, `vault/security/`) for an existing secrets-helper, keychain, or authenticated helper workflow. Do not ask for a token unless those notes are missing or insufficient.
 - **All sensitive config belongs in `vault/integrations/`** (gitignored). If a tool needs a key, reference it conceptually (e.g. “set `OPENAI_API_KEY`”) but never paste the value.
@@ -308,7 +312,7 @@ model, not just a file, and it changes what writing one means.
 - Information already in a note
 - Speculation without evidence
 - Session-specific temporary state
-- Real discoveries, project context, customer/product details, or personal research
+- Anything private into the public layer: real discoveries, project context, customer/product details and personal research go to `vault/` (see the private routing table in Step 2)
 
 ## How to write
 
@@ -337,6 +341,6 @@ model, not just a file, and it changes what writing one means.
 
 Kept out of this hot file to stay compact; read when relevant:
 
-- **Path naming policy** — Title Case public paths are stable API; all new `vault/` content is lowercase/kebab-case. Enforced by `scripts/checks/check-path-naming.sh` + `scripts/checks/doctor.sh`.
+- **Path naming policy** — public and `vault/` paths are lowercase/kebab-case; the existing public root folders are stable API (do not rename). Reported in the source checkout by `check-path-naming.sh`, run by the doctor.
 - **Maintenance routine** — run `/brain-review` monthly; recoverable curation (consolidate/archive over delete).
 - **Note format examples** — troubleshooting + pattern entry templates.

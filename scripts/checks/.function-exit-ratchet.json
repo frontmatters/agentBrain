@@ -1,4 +1,4 @@
 {
   "_comment": "Branches inside a function that end on a bare `&& ...` with no `|| true`. Under set -e the function inherits that failure and a `x=\"$(f)\"` caller dies mid-run with no message. May only fall. Lower it when you add a fallback; scripts/checks/check-function-exit.sh explains why this exists at all.",
-  "unguarded": 72
+  "unguarded": 71
 }

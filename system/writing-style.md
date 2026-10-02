@@ -33,7 +33,7 @@ READMEs, changelog entries, error messages, and commit messages.
   prose. Its full reference costs ~12k tokens; load it only while writing.
 - **Other agents**: this document is the standard; the rules above are the
   working set.
-- **Doctor**: `scripts/checks/check-writing-style.sh` guards this policy — the doc
+- **Doctor**: in a source checkout, `check-writing-style.sh` guards this policy — the doc
   must exist, and user-facing strings are scanned for the needless-word
   denylist (warn-only: style is judgement, drift is the failure).
 

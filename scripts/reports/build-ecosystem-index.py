@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Build one searchable, tree-browsable HTML map of the developer ecosystem —
-same tree+search UX as the explainer index, but over projects.
+"""Build a searchable HTML map from an optional vault project inventory.
 
 Input : vault/ecosystem/projects.json  (array of profiled projects:
         {name, what, domain, status, active, last_commit, tech, relations})
@@ -12,14 +11,44 @@ across name/what/tech/domain/status. English UI (agentBrain is EN-primary).
 """
 import json, os, pathlib, html as _html
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-ECO = ROOT / "vault/ecosystem"
+def _find_root(start):
+    # Walk up from this script to the checkout that holds system/ and vault/.
+    # A fixed depth broke when the script moved into scripts/reports/; this
+    # stays relative to the script and survives moves of script or checkout.
+    for p in (start, *start.parents):
+        if (p / "system").is_dir() and (p / "vault").exists():
+            return p
+    raise SystemExit(f"agentBrain root not found above {start}")
+
+
+ROOT = _find_root(pathlib.Path(__file__).resolve().parent)
+
+
+def _vault_dir(root):
+    # Same precedence as scripts/lib/vault.sh, the one place that says where the
+    # vault is: an explicit override first (tests, a relocated vault), otherwise
+    # the vault/ symlink in this checkout, which `brain use` switches along.
+    for name in ("AGENTBRAIN_VAULT", "AGENTBRAIN_VAULT_DIR", "AGENTBRAIN_LOCAL_DIR"):
+        if os.environ.get(name):
+            return pathlib.Path(os.environ[name]).expanduser()
+    return root / "vault" if (root / "vault").exists() else root / "local"
+
+
+def _shown(path):
+    # Report paths relative to the checkout when they are inside it.
+    try:
+        return path.relative_to(ROOT)
+    except ValueError:
+        return path
+
+
+VAULT = _vault_dir(ROOT)
+ECO = VAULT / "ecosystem"
 DATA = ECO / "projects.json"
 OUT = ECO / "index.html"
 
 items = json.loads(DATA.read_text()) if DATA.exists() else []
-for it in items:  # all live under ~/Developer/<name> — derive a pasteable path
-    it.setdefault("path", "~/Developer/" + it.get("name", ""))
+# An absent path is not evidence that a project lives at a particular location.
 n_active = sum(1 for it in items if it.get("active"))
 domains = sorted({it.get("domain", "other") for it in items})
 
@@ -71,7 +100,7 @@ details.catgrp[open]>summary .chev2{transform:rotate(90deg)}
 footer{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);color:var(--soft);font-size:12px}
 </style></head><body><div class="wrap">
 <h1>Developer Ecosystem — Map</h1>
-<p class="sub">Every project across ~/Developer — grouped by domain, active vs. inactive called out. Browse as a tree, search live.</p>
+<p class="sub">Projects in the supplied inventory, grouped by domain and status. Browse as a tree or search.</p>
 <div class="bar">
 <input id="q" type="search" placeholder="Search by name, description, tech or domain…" autocomplete="off">
 <label class="tgl"><input type="checkbox" id="act"> active only</label>
@@ -149,4 +178,4 @@ out = (PAGE.replace("__DATA__", json.dumps(items, ensure_ascii=False))
            .replace("__FOOTER__", _html.escape(footer)))
 ECO.mkdir(parents=True, exist_ok=True)
 OUT.write_text(out)
-print(f"ecosystem-index: {len(items)} projects ({n_active} active, {len(domains)} domains) -> {OUT.relative_to(ROOT)}")
+print(f"ecosystem-index: {len(items)} projects ({n_active} active, {len(domains)} domains) -> {_shown(OUT)}")

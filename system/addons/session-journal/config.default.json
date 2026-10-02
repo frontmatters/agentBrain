@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "_comment": "Default config for session-journal addon. Copy to local/sessions/journal-config.json to override.",
+  "_comment": "Default config for session-journal addon. Copy to vault/sessions/journal-config.json to override.",
 
   "enabled": true,
 
@@ -29,7 +29,7 @@
   "general": {
     "project_inference": "cwd_basename",
     "transcript_max_lines": 1500,
-    "log_path": "local/sessions/.journal-hook.log",
+    "log_path": "vault/sessions/.journal-hook.log",
     "log_enabled": true
   }
 }

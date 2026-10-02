@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# build-space-map.sh — generate local/.space-map.json from the space passports.
+# build-space-map.sh — generate vault/.space-map.json from the space passports.
 #
 # Part of the spaces-context-model: context inference must never be content-based
 # (tech-stack is shared across projects → false positives). It is PATH-based. This
 # script builds the path→space lookup that scripts/../system/lib/context.sh reads:
 #
-#   local/.space-map.json
+#   vault/.space-map.json
 #   {
 #     "by-code-root": { "/abs/expanded/code-root": "<slug>", ... },
 #     "by-alias":     { "<alias>": "<slug>", ..., "<slug>": "<slug>" },
@@ -16,7 +16,7 @@
 # `canonical` names the ONE code-root that is the real checkout for a space; the
 # space's other code-roots are stale/parallel (consumers may flag them as decoys).
 #
-# Source of truth: each local/spaces/<slug>/index.md frontmatter (`slug`,
+# Source of truth: each vault/spaces/<slug>/index.md frontmatter (`slug`,
 # `aliases`, `code-roots`, `canonical`). Regenerate whenever a space's code-roots/aliases
 # change — analogous to .parks-index.json. Idempotent: same passports → byte-identical
 # output (keys sorted). The file is gitignored (holds absolute paths; machine-local).
@@ -37,8 +37,10 @@ while [ -L "$SELF" ]; do
 	esac
 done
 ROOT="$(cd -P "$(dirname "$SELF")/../.." && pwd -P)"
-SPACES_DIR="$ROOT/vault/spaces"
-OUT="$ROOT/vault/.space-map.json"
+# shellcheck source=scripts/lib/vault.sh
+. "$ROOT/scripts/lib/vault.sh"
+SPACES_DIR="$VAULT_DIR/spaces"
+OUT="$VAULT_DIR/.space-map.json"
 
 if [ ! -d "$SPACES_DIR" ]; then
 	printf '{\n  "by-alias": {},\n  "by-code-root": {},\n  "canonical": {}\n}\n' >"$OUT"

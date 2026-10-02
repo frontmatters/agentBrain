@@ -1,1 +1,0 @@
-checks/check-session-update-quiet.sh

@@ -41,7 +41,9 @@ if [ ! -x "$DETECTOR_SCRIPT" ]; then
 fi
 
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-FINDINGS_DIR="$ROOT_DIR/vault/findings"
+# shellcheck source=scripts/lib/vault.sh
+. "$ROOT_DIR/scripts/lib/vault.sh"
+FINDINGS_DIR="$VAULT_DIR/findings"
 FINDINGS_FILE="$FINDINGS_DIR/${DETECTOR}.json"
 mkdir -p "$FINDINGS_DIR"
 # mktemp next to the target keeps the final mv atomic; the trap removes a

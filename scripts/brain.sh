@@ -123,10 +123,12 @@ COMMANDS
   wire [--skills|--pi] [--quiet]
                     (Re)wire this brain into every detected agent: skills for
                     all agents + the Pi deep integration. Idempotent.
-  doctor [...]      Health check (proxies doctor.sh: --fast, --summary, ...)
+  doctor [...]      Health check of this install (doctor.sh --user; --dev runs the full doctor)
   onboard [--defaults]
                     Model-free personalization wizard (onboard-wizard.sh)
   addons [...]      Add-ons layer (proxies addons.sh: status, install, ...)
+  remind [...]      Dated reminders: "text" --on YYYY-MM-DD; list (table, --wide, --plain); done <id-prefix>
+  tool-update       Stage/check/switch/finish/rollback an agent CLI without replacing running files
   vault             Where your knowledge lives, which checkouts share it, and
                     anything sitting outside it that never syncs
   harness [start|stop|autostart ...]
@@ -135,8 +137,6 @@ COMMANDS
                     stop also stops the autostart login-service first, so it
                     stays stopped; autostart enable|disable|status manages
                     that login service)
-  sandbox [...]     Disposable install-testbed in the browser (start|stop|status)
-                    — fresh container per connection; needs docker + ttyd
   uninstall [...]   Symmetric removal of what setup added (pointers, symlinks,
                     env) — your knowledge stays; deleting the checkout needs an
                     explicit --delete-checkout (proxies uninstall.sh)
@@ -168,17 +168,25 @@ brain_menu() {
 	echo "brain v$BRAIN_VERSION"
 	# Ids, not row numbers: this menu maps a position onto a command, and adding
 	# an entry in the middle silently shifts every branch below it.
-	if ! ab_prompt_choose --default status "What next?" \
-		status  "status — what's connected" \
-		vault   "vault — where your knowledge lives" \
-		update  "update — pull the latest" \
-		wire    "wire — re-link skills + Pi" \
-		onboard "onboard — personalization questions" \
-		doctor  "doctor — health check (fast)"; then
+	local rows=(
+		status  "status — what's connected"
+		vault   "vault — where your knowledge lives"
+		addons  "addons — browse and switch add-ons"
+	)
+	# The Harness row only where the Harness is installed: a row that can only
+	# answer "not installed" is noise in a menu.
+	command -v abh >/dev/null 2>&1 && rows+=(harness "harness — open the web UI")
+	rows+=(
+		update  "update — pull the latest"
+		wire    "wire — re-link skills + Pi"
+		onboard "onboard — personalization questions"
+		doctor  "doctor — health check of this install"
+	)
+	if ! ab_prompt_choose --default status "What next?" "${rows[@]}"; then
 		exit 0
 	fi
 	case "$REPLY_ID" in
-		doctor) exec bash "$HERE/scripts/brain.sh" doctor --fast ;;
+		doctor) exec bash "$HERE/scripts/brain.sh" doctor ;;
 		*)      exec bash "$HERE/scripts/brain.sh" "$REPLY_ID" ;;
 	esac
 }
@@ -274,7 +282,16 @@ channel)
 	;;
 doctor)
 	shift
-	exec bash "$HERE/scripts/checks/doctor.sh" "$@"
+	# A user's `brain doctor` checks their install (--user). --dev runs the full
+	# doctor with the framework's own tests, for working on agentBrain itself.
+	dev=false; args=()
+	for a in "$@"; do
+		if [ "$a" = "--dev" ]; then dev=true; else args+=("$a"); fi
+	done
+	if [ "$dev" = true ]; then
+		exec bash "$HERE/scripts/checks/doctor.sh" ${args[@]+"${args[@]}"}
+	fi
+	exec bash "$HERE/scripts/checks/doctor.sh" --user ${args[@]+"${args[@]}"}
 	;;
 onboard)
 	shift
@@ -286,6 +303,14 @@ onboard)
 addons)
 	shift
 	exec bash "$HERE/scripts/addons.sh" "$@"
+	;;
+remind)
+	shift
+	exec bash "$HERE/scripts/remind.sh" "$@"
+	;;
+tool-update)
+	shift
+	exec bash "$HERE/scripts/tool-update.sh" "$@"
 	;;
 vault)
 	shift
@@ -397,10 +422,6 @@ harness)
 		;;
 	*) echo "brain: usage: brain harness [start|stop] — start/stop the running UI | brain harness autostart enable|disable|status — the login service" >&2; exit 2 ;;
 	esac
-	;;
-sandbox)
-	shift
-	exec bash "$HERE/scripts/installer/sandbox.sh" "$@"
 	;;
 uninstall)
 	shift

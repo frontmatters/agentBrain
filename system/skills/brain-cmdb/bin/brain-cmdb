@@ -5,11 +5,25 @@
 # `sync`, which regenerates each CI's `## Relations` section from its frontmatter.
 set -euo pipefail
 
-LOCAL_DIR="${AGENTBRAIN_LOCAL_DIR:-${AGENTBRAIN_DIR:-$HOME/agentBrain}/local}"
+# The vault, through the shared resolver (scripts/lib/vault.sh); a copy without
+# scripts/lib (a test fixture) falls back to its vault/ link. AGENTBRAIN_LOCAL_DIR
+# points the CLI at a hermetic CI tree.
+if [ -n "${AGENTBRAIN_LOCAL_DIR:-}" ]; then
+	LOCAL_DIR="$AGENTBRAIN_LOCAL_DIR"
+else
+	BRAIN_DIR="${AGENTBRAIN_DIR:-$HOME/agentBrain}"
+	if [ -f "$BRAIN_DIR/scripts/lib/vault.sh" ]; then
+		# shellcheck source=/dev/null
+		. "$BRAIN_DIR/scripts/lib/vault.sh"
+	else
+		VAULT_DIR="${AGENTBRAIN_VAULT:-$BRAIN_DIR/vault}"
+	fi
+	LOCAL_DIR="$VAULT_DIR"
+fi
 
 # Resolve the CI root through the space context. A leading `--space <slug>` flag or
-# AGENTBRAIN_CONTEXT/AGENTBRAIN_SPACE scopes the CMDB to local/spaces/<slug>/; else
-# personal (shared local/). Interactive fallback: infer_context() from context.sh —
+# AGENTBRAIN_CONTEXT/AGENTBRAIN_SPACE scopes the CMDB to vault/spaces/<slug>/; else
+# personal (shared vault/). Interactive fallback: infer_context() from context.sh —
 # skipped when AGENTBRAIN_LOCAL_DIR is set (hermetic tests never hit python).
 SPACE=""
 if [ "${1:-}" = "--space" ]; then
@@ -88,7 +102,7 @@ _ensure_ci() {  # <file>
 }
 
 # Resolve a CI slug to its note file. Order: devices, integrations, then an opted-in
-# project (local/.../projects/<slug>/index.md that carries a ci: field — a project
+# project (vault/.../projects/<slug>/index.md that carries a ci: field — a project
 # without one is not a CI, so it does not resolve). Empty exit 1 if none.
 _ci_file() {  # <slug>
 	local d pidx

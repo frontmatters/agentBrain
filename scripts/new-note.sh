@@ -153,6 +153,8 @@ fi
 #   ambiguous      → refuse (the file's path and frontmatter disagree)
 #   unknown        → main vault (default); with --strict / AGENTBRAIN_STRICT_CONTEXT=1, refuse
 _NN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/vault.sh
+. "$_NN_DIR/lib/vault.sh"
 _CTX_LIB="$_NN_DIR/../system/lib/context.sh"
 if [ -f "$_CTX_LIB" ]; then
 	# shellcheck source=/dev/null
@@ -161,7 +163,7 @@ fi
 if [ "$SPACE_GIVEN" = "0" ]; then
 	if [ -f "$_CTX_LIB" ]; then
 		_CTX_FILE=""
-		[ -n "$PATH_SPACE_SLUG" ] && _CTX_FILE="$_NN_DIR/../${REL_PATH_NO_EXT}.md"
+		[ -n "$PATH_SPACE_SLUG" ] && _CTX_FILE="$VAULT_DIR/${REL_PATH_NO_EXT#vault/}.md"
 		_CTX="$(infer_context "$_CTX_FILE" "${FROM_DIR:-$PWD}" 2>/dev/null || echo unknown)"
 	else
 		_CTX="unknown" # no context lib (partial checkout) → main-vault default
@@ -280,7 +282,7 @@ case "$REL_PATH_NO_EXT" in
 		PROJECT_INDEX_REL="vault/spaces/${_SPACE_SLUG}/projects/${_PROJECT_SLUG}/index"
 		;;
 esac
-if [ -n "$PROJECT_INDEX_REL" ] && [ "$REL_PATH_NO_EXT" != "$PROJECT_INDEX_REL" ] && [ ! -f "$ROOT_DIR/${PROJECT_INDEX_REL}.md" ]; then
+if [ -n "$PROJECT_INDEX_REL" ] && [ "$REL_PATH_NO_EXT" != "$PROJECT_INDEX_REL" ] && [ ! -f "$VAULT_DIR/${PROJECT_INDEX_REL#vault/}.md" ]; then
 	echo "new-note: project '${_PROJECT_SLUG}' has no index.md — create it first with type=project" >&2
 	exit 4
 fi
@@ -292,7 +294,7 @@ if [ -n "$PLATFORM_CSV" ]; then
 	PLATFORM_FIELD="platform: [${NORM}]"
 fi
 
-ABS_PATH="${ROOT_DIR}/${REL_PATH_NO_EXT}.md"
+ABS_PATH="$VAULT_DIR/${REL_PATH_NO_EXT#vault/}.md"
 
 if [ -e "$ABS_PATH" ]; then
 	echo "Refuse to overwrite existing: $ABS_PATH" >&2

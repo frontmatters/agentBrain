@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "_comment": "Routes Claude Code's per-project auto-memory into agentBrain. Copy to local/memories/claude-redirect-config.json to override.",
+  "_comment": "Routes Claude Code's per-project auto-memory into agentBrain. Copy to vault/memories/claude-redirect-config.json to override.",
 
   "enabled": true,
   "mode": "symlink",
   "_mode_help": "symlink | sync_hook | instruction_only | disabled",
 
-  "target_root": "local/memories/projects",
+  "target_root": "vault/memories/projects",
 
   "symlink": {
     "auto_seed_on_session_start": true,
@@ -35,7 +35,7 @@
   },
 
   "general": {
-    "log_path": "local/memories/.claude-redirect.log",
+    "log_path": "vault/memories/.claude-redirect.log",
     "log_enabled": true
   }
 }

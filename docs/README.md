@@ -13,8 +13,6 @@ User-facing documentation for agentBrain features.
   promote, and the bidirectional secret-gate.
 - [`development.md`](./development.md) — maintainer topics: dual-checkout development,
   quality gates, and cutting a release.
-- [`release/acceptance-matrix.md`](./release/acceptance-matrix.md) — exact release-candidate
-  acceptance gates and evidence record.
 - [`integrations/abh.md`](./integrations/abh.md) — canonical ABH context, memory and
   skill integration.
 - [`integrations/abh-autostart.md`](./integrations/abh-autostart.md) — optional ABH Web

@@ -81,6 +81,58 @@ for m in system/addons/*/manifest.md; do
 	errors=$((errors + 1))
 done
 
+# ── 3. a private addon never reaches a public release ─────────────────────────
+# `distribution: private` in a manifest means the add-on must never be
+# included in a public release.
+# Its own licence says so too, so a copy that leaks is not free to use. And the
+# public files must not name it: a changelog line or a skill that offers it
+# advertises what outsiders cannot get. A file that has to name one (a test
+# list) takes a dated or structural exemption in the registry, check
+# "private-addon-name", pattern = the file.
+PRIVATE_LICENSE="LicenseRef-PolyForm-Internal-Use-1.0.0"
+private=""
+for m in system/addons/*/manifest.md; do
+	[ -f "$m" ] || continue
+	grep -Eq '^distribution:[[:space:]]*private([[:space:]]|$)' "$m" || continue
+	addon="$(basename "$(dirname "$m")")"
+	private="$private $addon"
+	if grep -qx "$addon" scripts/lib/essential-addons.txt 2>/dev/null; then
+		echo "FAIL system/addons/$addon: distribution: private, yet listed in scripts/lib/essential-addons.txt (it would ship in the public release)" >&2
+		errors=$((errors + 1))
+	fi
+	license="$(awk '/^license:/{sub(/^license:[[:space:]]*/,""); print; exit}' "$m")"
+	if [ "$license" != "$PRIVATE_LICENSE" ]; then
+		echo "FAIL system/addons/$addon: distribution: private needs license: $PRIVATE_LICENSE (has '${license:-none}')" >&2
+		errors=$((errors + 1))
+	fi
+	[ -f "system/addons/$addon/LICENSE" ] || { echo "FAIL system/addons/$addon: private addon without its LICENSE file" >&2; errors=$((errors + 1)); }
+	while IFS= read -r f; do
+		echo "FAIL $f: SPDX header is not $PRIVATE_LICENSE in a private addon" >&2
+		errors=$((errors + 1))
+	done < <(git ls-files "system/addons/$addon" | xargs grep -l 'SPDX-License-Identifier:' 2>/dev/null | xargs grep -L "SPDX-License-Identifier: $PRIVATE_LICENSE" 2>/dev/null)
+done
+if [ -n "$private" ]; then
+	# What a public release ships: tracked files, minus the vault and minus
+	# every addon that is not essential (the same cut framework-release makes).
+	ess="$(grep -v '^#' scripts/lib/essential-addons.txt 2>/dev/null | grep . | paste -sd'|' -)"
+	names="$(printf '%s\n' $private | paste -sd'|' -)"
+	while IFS= read -r f; do
+		case "$f" in vault/*) continue ;; esac
+		[ -L "$f" ] && continue
+		if [[ "$f" == system/addons/* ]]; then
+			a="${f#system/addons/}"; a="${a%%/*}"
+			[[ "$a" == *.md ]] || [[ "|$ess|" == *"|$a|"* ]] || continue
+		fi
+		awk -F'\t' -v n="$f" '$1 == "private-addon-name" && $2 == n { found = 1 } END { exit found ? 0 : 1 }' "$REG" 2>/dev/null && continue
+		# A reference to the addon, not the word: its path, its name as code, or
+		# "<name> addon". The public event-bus has event types that share a word.
+		ref="addons/($names)\\b|\\| *($names) *\\||\`($names)\`|\\b($names)[ -]add-?ons?\\b"
+		grep -Eq "$ref" "$f" 2>/dev/null || continue
+		echo "FAIL $f: names a private addon ($(grep -Eo "$ref" "$f" | sort -u | paste -sd, -)); a public release would advertise it" >&2
+		errors=$((errors + 1))
+	done < <(git ls-files)
+fi
+
 if [ "$errors" -gt 0 ]; then
 	echo "check-addon-distribution: $errors problem(s)" >&2
 	exit 1

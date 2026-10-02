@@ -3,7 +3,7 @@
 # Sync the shared/ scope to its git remote: gate -> pull --rebase -> gate -> push.
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)"
 SHARED_DIR="${AGENTBRAIN_SHARED_DIR:-$ROOT_DIR/shared}"
 CHECK="${ROOT_DIR}/scripts/checks/check-agentbrain-shared.sh"
 REMOTE="${AGENTBRAIN_SHARED_REMOTE_NAME:-origin}"
@@ -37,7 +37,10 @@ git -c user.email="${AGENTBRAIN_GIT_EMAIL:-brain@local}" -c user.name="${AGENTBR
 
 # Push — per-scope credential. NO_TOKEN path for local/bare remotes & tests.
 log "Pushing to $REMOTE/$BRANCH"
-if [[ "${AGENTBRAIN_SHARED_NO_TOKEN:-0}" == "1" ]]; then
+# shellcheck source=scripts/lib/git-token.sh
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../lib/git-token.sh"
+# An ssh remote needs no token: nothing is fetched (the root fix).
+if [[ "${AGENTBRAIN_SHARED_NO_TOKEN:-0}" == "1" ]] || ! remote_needs_token . "$REMOTE"; then
 	git push "$REMOTE" "HEAD:$BRANCH"
 else
 	HELPER="${AGENTBRAIN_SHARED_HELPER:-$HOME/bin/gitea-helper.sh}"
@@ -46,7 +49,7 @@ else
 	source "$HELPER" >/dev/null 2>&1
 	TOKEN="$(get_gitea_token)"; export TOKEN
 	trap 'unset TOKEN' EXIT
-	git -c http.extraHeader="Authorization: token ${TOKEN}" push "$REMOTE" "HEAD:$BRANCH"
+	git_with_token "$TOKEN" push "$REMOTE" "HEAD:$BRANCH"
 	unset TOKEN; trap - EXIT
 fi
 log "Shared sync complete"

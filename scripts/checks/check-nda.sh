@@ -42,7 +42,11 @@
 set -uo pipefail
 
 BRAIN="${BRAIN_DIR:-$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)}"
-VAULT="$BRAIN/vault"
+# The lib sits beside this script; $BRAIN is overridable to a fixture and would
+# not have it. The vault follows $BRAIN on purpose.
+# shellcheck source=scripts/lib/vault.sh
+. "$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/vault.sh"
+VAULT="$(vault_dir "$BRAIN")"
 STAGED=0; SYSTEM=0; LIST=0
 for a in "$@"; do
   case "$a" in
@@ -59,10 +63,7 @@ MIN_MARKER=4
 
 # Order matters: without this, an absent vault took the "nothing to enforce"
 # exit below and the confidentiality gate passed by seeing nothing at all.
-# The lib sits beside this script; $BRAIN is overridable to a fixture and would
-# not have it. The vault to ASSERT is $VAULT, which follows $BRAIN on purpose.
-# shellcheck source=scripts/lib/vault.sh
-. "$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/vault.sh"
+# The vault to ASSERT is $VAULT, which follows $BRAIN on purpose.
 vault_required check-nda "$VAULT" || exit $?
 
 [ -d "$VAULT/spaces" ] || { echo "check-nda: no spaces/ — nothing to enforce"; exit 0; }

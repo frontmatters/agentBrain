@@ -3,6 +3,7 @@ id: claude-memory-redirect
 name: Claude Memory Redirect (behavior)
 version: 0.1.1
 author: frontmatters
+kind: framework
 install: bash system/addons/claude-memory-redirect/install.sh
 command: bash
 # On by default in a fresh install; the user can untick it.

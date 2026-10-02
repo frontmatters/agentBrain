@@ -1,1 +1,0 @@
-checks/check-local-content.sh

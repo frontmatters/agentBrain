@@ -25,6 +25,15 @@ resolve_brain_dir() {
 }
 
 BRAIN_DIR="$(resolve_brain_dir)"
+# The vault through the resolver (AGENTBRAIN_VAULT and friends), never the
+# checkout's own folder by assumption; a copy without scripts/lib (a test
+# fixture) falls back to it.
+if [ -f "$BRAIN_DIR/scripts/lib/vault.sh" ]; then
+	# shellcheck source=/dev/null
+	. "$BRAIN_DIR/scripts/lib/vault.sh"
+else
+	VAULT_DIR="${AGENTBRAIN_VAULT:-$BRAIN_DIR/vault}"
+fi
 
 usage() {
     cat <<EOF
@@ -48,7 +57,7 @@ done
 
 SKIP_RESOLVER=0
 if [[ "$ARG" =~ ^[0-9]+$ ]]; then
-    CACHE="$BRAIN_DIR/vault/.hidden-index.json"
+    CACHE="${VAULT_DIR}/.hidden-index.json"
     [ ! -f "$CACHE" ] && { echo "brain-unhide: no /list-hidden cache. Run /list-hidden first." >&2; exit 2; }
     RESOLVED=$(grep -oE "\{\"n\":$ARG,\"path\":\"[^\"]*\"" "$CACHE" | sed 's/.*"path":"//;s/"$//')
     if [ -z "$RESOLVED" ]; then
@@ -68,15 +77,15 @@ if [ "$SKIP_RESOLVER" -eq 0 ]; then
         projects/*)
             SLUG="${ARG#projects/}"
             if [ -n "$FILE_OVERRIDE" ]; then
-                TARGET="$BRAIN_DIR/vault/projects/$SLUG/$FILE_OVERRIDE"
+                TARGET="${VAULT_DIR}/projects/$SLUG/$FILE_OVERRIDE"
             else
-                TARGET="$BRAIN_DIR/vault/projects/$SLUG/index.md"
+                TARGET="${VAULT_DIR}/projects/$SLUG/index.md"
             fi
             ;;
         learnings/*|preferences/*|integrations/*|troubleshooting/*|memories/*)
             TYPE="${ARG%%/*}"
             SLUG="${ARG#$TYPE/}"
-            TARGET="$BRAIN_DIR/vault/$TYPE/$SLUG.md"
+            TARGET="${VAULT_DIR}/$TYPE/$SLUG.md"
             ;;
         *) echo "Unknown type prefix in: $ARG" >&2; exit 2 ;;
     esac

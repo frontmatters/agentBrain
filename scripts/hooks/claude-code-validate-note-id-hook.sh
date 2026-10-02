@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
 
 # Read tool-call JSON from stdin (Claude Code hook payload).
 # Defensive: if payload malformed, silent no-op rather than blocking unrelated tool calls.
@@ -46,8 +46,17 @@ fi
 # the agent makes anywhere on the machine, and a test fixture is allowed to
 # contain a bidi override — a note is not.
 BRAIN="${BRAIN_ALIAS:-$HOME/agentBrain}"
-case "$(cd "$(dirname "$FILE_PATH")" 2>/dev/null && pwd -P)/" in
-"$(cd -P "$BRAIN" 2>/dev/null && pwd -P)"/* | "$(cd -P "$BRAIN/vault" 2>/dev/null && pwd -P)"/*)
+# shellcheck source=scripts/lib/vault.sh
+. "$SCRIPT_DIR/../lib/vault.sh"
+FILE_DIR="$(cd -P "$(dirname "$FILE_PATH")" 2>/dev/null && pwd -P || true)"
+BRAIN_ROOT="$(cd -P "$BRAIN" 2>/dev/null && pwd -P || true)"
+VAULT_ROOT="$(cd -P "$VAULT_DIR" 2>/dev/null && pwd -P || true)"
+# Never interpolate an empty root into a case pattern ("/*" would match every
+# file on the machine when the checkout or vault is not mounted).
+inside_brain=0
+[ -n "$FILE_DIR" ] && [ -n "$BRAIN_ROOT" ] && [[ "$FILE_DIR/" == "$BRAIN_ROOT/"* ]] && inside_brain=1
+[ -n "$FILE_DIR" ] && [ -n "$VAULT_ROOT" ] && [[ "$FILE_DIR/" == "$VAULT_ROOT/"* ]] && inside_brain=1
+if [ "$inside_brain" -eq 1 ]; then
 	# No exemption for test fixtures. A test that needs one of these characters
 	# writes it as an escape, which is how test-intake.sh does it; the moment
 	# tests are exempt here but not at the commit boundary, the two layers
@@ -55,10 +64,9 @@ case "$(cd "$(dirname "$FILE_PATH")" 2>/dev/null && pwd -P)/" in
 	#
 	# Run it once and hold the report: calling it a second time to print would
 	# abort the hook under `set -e` before it could exit 2.
-	if ! intake_out="$(bash "$SCRIPT_DIR/checks/check-intake.sh" "$FILE_PATH" 2>&1)"; then
+	if ! intake_out="$(bash "$SCRIPT_DIR/../checks/check-intake.sh" "$FILE_PATH" 2>&1)"; then
 		printf '%s\n' "$intake_out" >&2
 		exit 2
 	fi
-	;;
-esac
+fi
 exit 0

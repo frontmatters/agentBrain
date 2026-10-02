@@ -16,12 +16,9 @@ brew "yq"                    # YAML on the CLI — brain-extract/space packaging
 brew "shellcheck"            # pre-commit shell lint gate
 brew "wget"
 
-# ── AI / agent tooling ────────────────────────────────────────────────────────
-brew "yt-dlp"                # required by youtube-transcript Pi extension
-
-# ── Media ─────────────────────────────────────────────────────────────────────
-brew "ffmpeg"
-brew "imagemagick"
+# yt-dlp is not here: only the youtube-digest add-on and the optional
+# youtube-transcript Pi tool use it. The add-on installs it when you enable it
+# (runtime_requires), and the Pi tool says how to install it when it is missing.
 
 # ── GitHub CLI ────────────────────────────────────────────────────────────────
 brew "gh"

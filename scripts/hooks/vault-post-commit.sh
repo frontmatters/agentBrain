@@ -3,10 +3,10 @@
 # vault-post-commit.sh — auto-push the vault after each commit, versioned SOURCE.
 # Installed by scripts/sync/sync-vault.sh next to vault-pre-commit.sh.
 #
-# post-commit (local/ repo) — auto-push to gitea origin.
+# post-commit (vault/ repo) — auto-push to the vault's origin remote.
 #
 # Runs git push in the background after each successful commit. Failures are
-# silent (commits still happen locally even if push can't reach gitea), but
+# silent (commits still happen locally even if push can't reach the remote), but
 # logged to /tmp/agentbrain-local-push.log for diagnosis.
 #
 # Skip-escape (two ways): env COMMIT_SKIP_PUSH=1 git commit ...  OR put a

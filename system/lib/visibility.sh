@@ -25,7 +25,7 @@ is_hidden() {
 }
 
 # is_in_trash <path>
-# Returns 0 if path is under local/.trash/
+# Returns 0 if path is under vault/.trash/ (or the old local/.trash/)
 is_in_trash() {
     case "$1" in
         */local/.trash/*|*/vault/.trash/*) return 0 ;;

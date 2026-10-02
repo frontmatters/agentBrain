@@ -19,7 +19,7 @@ set -euo pipefail
 
 # Load user-scoped tool locations before probing for a tool, or a restricted
 # PATH reports "not installed" for something that is. See scripts/lib/_toolpaths.sh.
-_ab_tp="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/lib/_toolpaths.sh"
+_ab_tp="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)/scripts/lib/_toolpaths.sh"
 # shellcheck disable=SC1090,SC1091
 [ -f "$_ab_tp" ] && . "$_ab_tp"
 

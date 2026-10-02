@@ -10,6 +10,17 @@ install_method: self
 # maintainer from brain.json; change it when adopting someone else's addon and add
 # `upstream: <url>` for provenance.
 author: your-handle
+# Where the add-on's code comes from (required; check-addons enforces the fields).
+#   framework  written for agentBrain, runs only inside it
+#              -> test: a suite that exists and passes (see `test:` below)
+#   adapter    thin layer over a standalone tool with its own repo or factory
+#              -> wraps: <tool>, wraps_source: <path or URL, no credentials>,
+#                 wraps_version: <pin or minimum> when you depend on one
+#   vendored   main content written by a third party (copied or wrapped)
+#              -> upstream: <url>, license: <SPDX or "see upstream">,
+#                 upstream_version: <tag, commit or date of the copy>
+# Write `unknown` for a value you cannot find; check-addons warns on it.
+kind: framework
 # Optional SPDX license id (e.g. Apache-2.0, MIT, PolyForm-Noncommercial-1.0.0).
 # Absent = the framework default (Apache-2.0). Set it when adopting an addon under
 # a different license.

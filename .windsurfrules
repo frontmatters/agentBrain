@@ -8,7 +8,7 @@ If any file in `vault/preferences/personal/` contains "This is an example file",
 ## At session start, read:
 - `system/rules.md` -- public/private policy
 - `system/agent-config/shared.md` -- shared agent checklist
-- `system/agent-config/windsurf.md` -- Windsurf-specific behaviour
+- `system/agent-config/devin.md` -- Devin Desktop-specific behaviour
 - `system/skills.md` -- available slash commands
 - `vault/preferences/personal/` -- your individual preferences
 - `vault/preferences/organization/` -- optional org context (if exists)
@@ -20,7 +20,7 @@ If any file in `vault/preferences/personal/` contains "This is an example file",
 
 **Public framework** (HOW/WHERE only):
 - Framework/rule changes -> `system/`
-- Template/example changes -> `templates/` or `learnings/_example.md`
+- Template/example changes -> `templates/` or `templates/vault/learnings/_example.md`
 - Real discoveries -> `vault/learnings/`
 
 **Private knowledge** (gitignored):

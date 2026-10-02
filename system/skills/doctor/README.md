@@ -19,10 +19,12 @@ Checks whether the brain framework is functioning correctly: privacy guardrails,
 /doctor
 ```
 
-Equivalent command:
+Equivalent commands:
 
 ```bash
-bash scripts/checks/doctor.sh
+brain doctor          # this install (doctor.sh --user)
+brain doctor --dev    # the agentBrain source: the full doctor with its tests
 ```
 
-Use after framework changes, before publishing, or when agentBrain may be inconsistent.
+Use `brain doctor` when agentBrain may be inconsistent on a machine, and
+`brain doctor --dev` after framework changes or before publishing.

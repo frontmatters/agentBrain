@@ -48,10 +48,10 @@ for skills AND addons alike:
    detected agent — and run the artifact's own tests from the new location.
 6. **Add the public-repo hygiene files** the system side requires: a
    `README.md` in the artifact root (and in subdirs that hold content, like
-   `templates/`) — `check-readmes.sh` enforces this.
-7. **Run `doctor --summary`** to prove the promote is complete;
-   `check-skill-links` and `check-readmes` catch exactly the steps people
-   skip.
+   `templates/`). The README check in `brain doctor --dev` enforces this.
+7. **Run `brain doctor --dev --summary`** in the agentBrain source to prove the
+   promote is complete; its skill-link and README checks catch exactly the
+   steps people skip.
 
 Presenting a promote as done without these steps is incomplete work.
 

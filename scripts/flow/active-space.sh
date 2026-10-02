@@ -11,8 +11,7 @@
 # <slug>`). This shim keeps use/show/clear round-tripping for backward-compat, but
 # the marker has NO effect on writes or recall.
 #
-# State lives in a single gitignored marker in the active vault so it flips with
-# `brain use dev|live` and is never synced:  local/.active-space
+# The compatibility marker is gitignored in the active vault: vault/.active-space.
 #
 # Usage:
 #   active-space.sh use <slug>    activate a space (must exist; slug path-guarded)
@@ -20,9 +19,8 @@
 #   active-space.sh show          print the active slug, or "none"  (default)
 #   active-space.sh resolve       machine-readable: raw slug, or empty (no "none")
 #
-# Resolution order (used by show/resolve and by every consumer): the env var
-# AGENTBRAIN_SPACE wins, else the marker, else empty. This mirrors how the MCP
-# server resolves it (src/search.ts) so shell + TS never disagree.
+# This shim's show/resolve commands use AGENTBRAIN_SPACE, then the marker,
+# then empty. Neither writes nor MCP recall consult this legacy resolver.
 #
 # Sourceable: `source active-space.sh` defines active_space_slug() (the resolver)
 # without running any subcommand, for scripts that prefer an in-process call.
@@ -30,12 +28,14 @@ set -euo pipefail
 
 # Brain root from this script's own location (works in worktrees and via the alias).
 _active_space_root() {
-	cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd
+	cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd
 }
+# shellcheck source=scripts/lib/vault.sh
+. "$(_active_space_root)/scripts/lib/vault.sh"
 
 # Slug guard — identical policy to new-note.sh's --space: an empty slug or one
 # containing '/', '..', a leading dot, or any char outside [a-z0-9._-] could
-# escape local/spaces/<slug>/, defeating the seal.
+# escape vault/spaces/<slug>/, defeating the seal.
 _active_space_valid() {
 	case "$1" in
 		*[!a-z0-9._-]* | "" | .* | *..*) return 1 ;;
@@ -51,7 +51,7 @@ active_space_slug() {
 		return 0
 	fi
 	local marker
-	marker="$(_active_space_root)/vault/.active-space"
+	marker="$VAULT_DIR/.active-space"
 	if [ -f "$marker" ]; then
 		head -n1 "$marker" | tr -d '[:space:]'
 	fi
@@ -59,8 +59,7 @@ active_space_slug() {
 
 # Subcommands run only on direct execution; sourcing just loads the resolver.
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
-	ROOT="$(_active_space_root)"
-	MARKER="$ROOT/vault/.active-space"
+	MARKER="$VAULT_DIR/.active-space"
 	cmd="${1:-show}"
 	case "$cmd" in
 		use)
@@ -69,7 +68,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 				echo "active-space: invalid slug: '$slug' (allowed: lowercase a-z 0-9 . _ -, no '/' or '..')" >&2
 				exit 2
 			fi
-			if [ ! -d "$ROOT/vault/spaces/$slug" ]; then
+			if [ ! -d "$VAULT_DIR/spaces/$slug" ]; then
 				echo "active-space: space does not exist: vault/spaces/$slug" >&2
 				exit 1
 			fi

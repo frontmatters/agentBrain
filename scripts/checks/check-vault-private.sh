@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# Sanity-check the private agentBrain local/ repository before pushing to private storage.
+# Sanity-check the private agentBrain vault/ repository before pushing to private storage.
 # This is NOT a public-safety scan. It allows private notes/URLs, but blocks likely plaintext secrets.
 
 set -euo pipefail
@@ -15,7 +15,7 @@ if [[ ! -d "$LOCAL_DIR" ]]; then
 	exit 1
 fi
 
-# High-confidence credential patterns only. Private URLs/project names are allowed in local/.
+# High-confidence credential patterns only. Private URLs/project names are allowed in vault/.
 SECRET_PATTERN='(gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|\bsk-[A-Za-z0-9_-]{20,}|\bsk-ant-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|-----BEGIN (RSA |DSA |EC |OPENSSH |PGP )?PRIVATE KEY-----|xox[baprs]-[A-Za-z0-9-]{20,}|[a-z]+://[^[:space:]/:@]+:[^[:space:]@/]+@[^[:space:]/]+)|eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+'
 
 hits="$({

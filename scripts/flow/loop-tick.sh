@@ -11,7 +11,7 @@
 # checker should not silence the rest of the loop.
 
 set -uo pipefail   # not -e: we want to continue past individual detector failures
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
 
 DETECTORS=(
 	"check-vault-content"

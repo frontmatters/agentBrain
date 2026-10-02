@@ -85,7 +85,7 @@ tracked | --tracked)
 esac
 
 # Optional local denylist: put private project/customer/user names in
-# local/security/privacy-denylist.txt (gitignored), one grep -E pattern per line.
+# vault/security/privacy-denylist.txt (gitignored), one grep -E pattern per line.
 deny_hits=""
 if [[ -f "$LOCAL_DENYLIST" ]]; then
 	while IFS= read -r deny_pattern; do

@@ -13,7 +13,7 @@
 
 set -uo pipefail
 
-AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)}"
 cd "$AGENTBRAIN_DIR" || exit 2
 
 DRY_RUN=false

@@ -12,5 +12,5 @@ Cline can read a rule file from `~/Documents/Cline/Rules/agentBrain.md`.
 ## Cline-specific rules
 
 - Follow `system/agent-config/shared.md` and `system/rules.md`.
-- `scripts/setup/setup.sh` creates a thin `agentBrain.md` pointer when Cline/VS Code extension paths are detected.
+- `scripts/setup/setup.sh` creates or refreshes its own thin `agentBrain.md` pointer only when its content differs when Cline/VS Code extension paths are detected.
 - Keep the Cline rule file as pointers to canonical agentBrain files.

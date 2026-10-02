@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 
-AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)}"
+# shellcheck source=scripts/lib/vault.sh
+. "$AGENTBRAIN_DIR/scripts/lib/vault.sh"
 
 usage() {
   echo "Usage: bash scripts/scanman/scanman-complete.sh <repo-path> [repo-slug] [goal...]" >&2
@@ -19,7 +21,7 @@ REPO_SLUG="${1:-$(basename "$REPO_PATH" | tr '[:upper:]' '[:lower:]' | tr -cs 'a
 REPO_SLUG="${REPO_SLUG%-}"
 if [[ $# -gt 0 ]]; then shift; fi
 GOAL="${*:-Complete repo distillation}"
-TARGET_DIR="$AGENTBRAIN_DIR/vault/research/repo-distill/$REPO_SLUG"
+TARGET_DIR="$VAULT_DIR/research/repo-distill/$REPO_SLUG"
 
 if [[ ! -d "$TARGET_DIR" ]]; then
   bash "$AGENTBRAIN_DIR/scripts/scanman/scanman-init.sh" "$REPO_SLUG" "$REPO_PATH" "$GOAL"

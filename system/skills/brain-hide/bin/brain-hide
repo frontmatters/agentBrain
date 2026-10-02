@@ -25,6 +25,15 @@ resolve_brain_dir() {
 }
 
 BRAIN_DIR="$(resolve_brain_dir)"
+# The vault through the resolver (AGENTBRAIN_VAULT and friends), never the
+# checkout's own folder by assumption; a copy without scripts/lib (a test
+# fixture) falls back to it.
+if [ -f "$BRAIN_DIR/scripts/lib/vault.sh" ]; then
+	# shellcheck source=/dev/null
+	. "$BRAIN_DIR/scripts/lib/vault.sh"
+else
+	VAULT_DIR="${AGENTBRAIN_VAULT:-$BRAIN_DIR/vault}"
+fi
 
 usage() {
     cat <<EOF
@@ -73,18 +82,18 @@ case "$ARG" in
     projects/*)
         SLUG="${ARG#projects/}"
         if [ -n "$FILE_OVERRIDE" ]; then
-            TARGET="$BRAIN_DIR/vault/projects/$SLUG/$FILE_OVERRIDE"
+            TARGET="${VAULT_DIR}/projects/$SLUG/$FILE_OVERRIDE"
         else
-            TARGET="$BRAIN_DIR/vault/projects/$SLUG/index.md"
+            TARGET="${VAULT_DIR}/projects/$SLUG/index.md"
         fi
         ;;
     learnings/*|preferences/*|integrations/*|troubleshooting/*|memories/*)
         TYPE="${ARG%%/*}"
         SLUG="${ARG#$TYPE/}"
-        TARGET="$BRAIN_DIR/vault/$TYPE/$SLUG.md"
+        TARGET="${VAULT_DIR}/$TYPE/$SLUG.md"
         ;;
     sessions/*|daily-notes/*|.trash/*)
-        TARGET="$BRAIN_DIR/vault/$ARG.md"
+        TARGET="${VAULT_DIR}/$ARG.md"
         ;;
     system/*)
         TARGET="$BRAIN_DIR/$ARG"

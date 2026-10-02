@@ -90,7 +90,8 @@ update_pointer() {
 # Claude
 update_pointer "$HOME/.claude/CLAUDE.md"
 
-# Windsurf
+# Devin Desktop (formerly Windsurf)
+update_pointer "$HOME/.config/devin/AGENTS.md"
 update_pointer "$HOME/.codeium/windsurf/memories/global_rules.md"
 
 # Cline
@@ -165,7 +166,13 @@ if [[ -L "$PI_BIN" ]]; then
 	fi
 fi
 
-# ── 6. Update VAULT env var ─────────────────
+# ── 6. Relink installed CLI commands ────────
+# Source from the moved checkout: the old source path no longer exists.
+# shellcheck source=scripts/lib/cli-links.sh
+. "$NEW_VAULT/scripts/lib/cli-links.sh"
+brain_cli_move "$VAULT" "$NEW_VAULT"
+
+# ── 7. Update VAULT env var ─────────────────
 
 SHELL_RC=""
 if [[ -f "$HOME/.zshrc" ]] && grep -q "export VAULT=" "$HOME/.zshrc" 2>/dev/null; then
@@ -180,14 +187,14 @@ if [[ -n "$SHELL_RC" ]]; then
 	echo -e "${GREEN}Updated${NC}  VAULT in ${SHELL_RC##*/}"
 fi
 
-# ── 7. Restore git hooks ────────────────────
+# ── 8. Restore git hooks ────────────────────
 
 if [[ -d "${NEW_VAULT}/.githooks" ]]; then
 	git -C "$NEW_VAULT" config core.hooksPath .githooks
 	echo -e "${GREEN}Restored${NC} git hooks"
 fi
 
-# ── 8. Validate ─────────────────────────────
+# ── 9. Validate ─────────────────────────────
 
 echo ""
 echo "Running doctor..."

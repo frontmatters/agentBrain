@@ -78,15 +78,32 @@ while [ "$DIR" != "/" ]; do
 	DIR="$(dirname "$DIR")"
 done
 
+# The vault is usually a link (~/agentBrain/vault -> ~/.agentBrain/vault), and
+# an agent may write through its real path, which has no brain.json above it.
+# Ask the resolver where this checkout's vault really is; a note inside it is
+# validated under its vault/ name, as if written through the link.
+if [ -z "$BRAIN_ROOT" ]; then
+	_self_root="$(cd -P "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd -P)"
+	# shellcheck source=scripts/lib/vault.sh
+	. "$_self_root/scripts/lib/vault.sh"
+	_vault_real="$(cd -P "$VAULT_DIR" 2>/dev/null && pwd -P || true)"
+	_file_dir="$(cd -P "$(dirname "$ABS_FILE")" 2>/dev/null && pwd -P || true)"
+	if [ -n "$_vault_real" ] && [ -n "$_file_dir" ] && [[ "$_file_dir/" == "$_vault_real/"* ]]; then
+		BRAIN_ROOT="$_self_root"
+		_sub="${_file_dir#"$_vault_real"}"
+		ABS_FILE="$BRAIN_ROOT/vault${_sub}/$(basename "$ABS_FILE")"
+	fi
+fi
+
 # Not in a brain? not our concern
 [ -n "$BRAIN_ROOT" ] || exit 0
 
 # Compute vault-relative path (no .md). Quote pattern to satisfy shellcheck SC2295.
 REL="${ABS_FILE#"${BRAIN_ROOT}"/}"
 
-# `vault/` and `local/` name the same directory (see setup-vault.sh, and the
-# v2 layout migration which makes vault/ the canonical one). Fold the alias to the
-# canonical spelling FIRST: every id ever written was derived from `local/`, and a
+# The vault lives at `vault/`; `local/` is its old name and the spelling ids are
+# hashed in. Fold `vault/` to that spelling FIRST: every id ever written was
+# derived from `local/`, and a
 # guard that only recognised one spelling would silently pass every note addressed
 # by the other — not a mismatch, no output at all.
 REL="${REL#vault/}"
@@ -94,7 +111,7 @@ REL="${REL#vault/}"
 
 REL_NO_EXT="${REL%.md}"
 
-# Only validate notes under local/ — system/learnings/ have their own schemas
+# Only validate notes in the vault; system/learnings/ have their own schemas
 [[ "$REL" == local/* ]] || exit 0
 
 # Skip machine-generated paths (same exempts as check-vault-content.sh).

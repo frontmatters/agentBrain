@@ -2,7 +2,7 @@
 # brain-restore — write a brain-package back into the vault.
 # Phase 1 MVP: happy-path + default overwrite-on-collision. No lockfile, no
 # alternate collision flags. Supports space packages (--space / auto-detected
-# space_id), which are restored under local/spaces/<slug>/ only.
+# space_id), which are restored under vault/spaces/<slug>/ only.
 
 set -euo pipefail
 
@@ -28,6 +28,15 @@ resolve_brain_dir() {
 }
 
 BRAIN_DIR="$(resolve_brain_dir)"
+# The vault through the resolver (AGENTBRAIN_VAULT and friends), never the
+# checkout's own folder by assumption; a copy without scripts/lib (a test
+# fixture) falls back to it.
+if [ -f "$BRAIN_DIR/scripts/lib/vault.sh" ]; then
+	# shellcheck source=/dev/null
+	. "$BRAIN_DIR/scripts/lib/vault.sh"
+else
+	VAULT_DIR="${AGENTBRAIN_VAULT:-$BRAIN_DIR/vault}"
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHARED_DIR="$SCRIPT_DIR/../../_shared/brain-package"
@@ -44,7 +53,7 @@ Phase 1 MVP — happy path, default overwrite + warn on collision.
             restore its notes under vault/spaces/<slug>/ only. Space packages
             are auto-detected from the manifest even without this flag.
   --move    Remove the package after a successful restore.
-  --vault   Vault root (default: \$BRAIN_DIR/local or ~/agentBrain/local).
+  --vault   Vault root (default: resolved vault; AGENTBRAIN_VAULT overrides it).
 EOF
   exit 2
 }
@@ -52,7 +61,7 @@ EOF
 PACKAGE=""
 MOVE=0
 WANT_SPACE=0
-VAULT="$BRAIN_DIR/vault"
+VAULT="${VAULT_DIR}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -91,7 +100,7 @@ done < "$CHECKSUMS"
 
 # === Step 2: Space detection + slug safety ===
 # A space package carries a top-level space_id; its notes belong under
-# local/spaces/<slug>/ and must never be written anywhere else.
+# vault/spaces/<slug>/ and must never be written anywhere else.
 SPACE_ID=$(yq -r '.space_id // ""' "$MANIFEST" 2>/dev/null || echo "")
 IS_SPACE=0
 [ -n "$SPACE_ID" ] && IS_SPACE=1
@@ -164,7 +173,7 @@ for note in "$PACKAGE"/notes/*.md; do
     continue
   fi
 
-  # Space safety: refuse to write outside local/spaces/<slug>/.
+  # Space safety: refuse to write outside vault/spaces/<slug>/.
   if [ "$IS_SPACE" -eq 1 ]; then
     # 1) Reject path-escape ('..') and absolute targets BEFORE anything is
     #    staged. Bash `case` globs let `*` match both `/` and `..`, so the

@@ -4,7 +4,7 @@
 #
 # The consumer half of the release-channel system (channel.sh is the picker).
 # Resolves your channel to a git ref, fetches, and — only if there is something
-# genuinely newer — fast-forwards behind a doctor --fast gate, with an exact-ref
+# genuinely newer — fast-forwards behind a doctor --user gate, with an exact-ref
 # rollback anchor. It never forces over uncommitted work or detaches you silently.
 #
 #   brain-update.sh            update to the newest release on your channel
@@ -16,7 +16,7 @@
 #   - record the EXACT current ref (tag or SHA) up front; rollback uses that, not
 #     "the previous tag" (edge sits on an untagged commit).
 #   - a failed/offline fetch aborts cleanly: no half-pull, nothing changed.
-#   - doctor --fast gates EVERY channel, edge included; a broken HEAD is rejected.
+#   - doctor --user gates EVERY channel, edge included; a broken HEAD is rejected.
 set -euo pipefail
 # shellcheck disable=SC1091
 . "$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)/installer/prompt-helper.sh"
@@ -139,7 +139,9 @@ CHANNEL_SH="$REPO/scripts/channel.sh"
 # must still be able to take updates. check-onboarding reports 'pending' (exit 0)
 # under this env instead of failing the gate.
 export AGENTBRAIN_ONBOARDING_PENDING_OK=1
-[ "${DOCTOR_CMD:-}" = "" ] && DOCTOR_CMD="bash $REPO/scripts/checks/doctor.sh --fast"
+# --user: the install's health. A release carries no framework tests (P9), so
+# --fast, which runs them, could not pass on one and would roll back every update.
+[ "${DOCTOR_CMD:-}" = "" ] && DOCTOR_CMD="bash $REPO/scripts/checks/doctor.sh --user"
 
 # Read channel config — same path resolution as channel.sh (honours AGENTBRAIN_DIR).
 CFG="${AGENTBRAIN_DIR:-$HOME/agentBrain}/vault/update/config.json"
@@ -301,7 +303,7 @@ rewire() {
 rewire
 
 # 6. Doctor gate — applies to EVERY channel, edge included.
-info "validating with doctor --fast …"
+info "validating with doctor --user …"
 doctor_log="$(mktemp "${TMPDIR:-/tmp}/brain-update-doctor.XXXXXX")"
 if eval "$DOCTOR_CMD" >"$doctor_log" 2>&1; then
   rm -f "$doctor_log"
@@ -310,7 +312,7 @@ if eval "$DOCTOR_CMD" >"$doctor_log" 2>&1; then
   info "rollback anchor was $anchor — discard with: git -C $REPO reset --hard $anchor"
   info "skills + Pi wired before the gate (self-healing wiring)"
 else
-  warn "doctor --fast FAILED on $short_t — rolling back to ${anchor:0:9}"
+  warn "doctor --user FAILED on $short_t — rolling back to ${anchor:0:9}"
   tail -5 "$doctor_log" >&2 || true
   info "full doctor log: $doctor_log"
   if [ "$ff_possible" -eq 1 ]; then

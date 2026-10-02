@@ -1,1 +1,0 @@
-check-vault-private.sh

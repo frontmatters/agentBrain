@@ -20,7 +20,6 @@ VAULT="${VAULT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 AGENT_HOME="${AGENTBRAIN_HOME:-$HOME}"
 
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # shellcheck source=scripts/agentbrain-pointer.sh
@@ -34,15 +33,9 @@ command -v hermes >/dev/null 2>&1 || [ -d "$HERMES_HOME" ] || exit 2
 
 mkdir -p "$HERMES_HOME"
 
-MARKER="## agentBrain"
-if [ -f "$SOUL" ] && grep -q "^${MARKER}" "$SOUL" 2>/dev/null; then
-	echo -e "${YELLOW}Skip${NC}    Hermes (already configured)"
-elif ! agentbrain_pointer_target_ok "$SOUL" "$VAULT"; then
-	echo -e "${YELLOW}Skip${NC}    Hermes (config file resolves into the agentBrain checkout)"
-else
-	agentbrain_pointer_block "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "hermes.md" >>"$SOUL"
-	echo -e "${GREEN}✓${NC} Hermes (pointer appended to ${SOUL})"
-fi
+# Refresh the managed block without changing the user's surrounding text.
+state="$(agentbrain_pointer_sync "$SOUL" "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "hermes.md" embed)"
+echo -e "${GREEN}✓${NC} Hermes (pointer $state)"
 
 # MCP hint — shown until wired (also on the Skip path above: the pointer block
 # alone gives Hermes no brain_search/brain_read tools, and this second step is

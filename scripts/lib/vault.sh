@@ -2,12 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # vault.sh — the one place that says where the vault is.
 #
-# The vault is a directory outside the checkout (~/.agentBrain/vault by
-# default), reached through a symlink in the checkout root. That link was
-# called local/ for a long time and is called vault/ now; local/ stays as an
-# alias until nothing uses it. Thirteen scripts each carried their own
-# definition, in five spellings, before this file existed. One definition,
-# sourced everywhere, is how a rename becomes one line instead of a thousand.
+# The vault is a directory outside the checkout, reached through vault/ or
+# AGENTBRAIN_VAULT. Centralize path resolution here so callers agree.
 #
 # Precedence: AGENTBRAIN_VAULT (what the installer documents) >
 # AGENTBRAIN_VAULT_DIR > AGENTBRAIN_LOCAL_DIR (the name tests
@@ -19,9 +15,17 @@
 #
 # Usage:  source "$ROOT/scripts/lib/vault.sh"      # defines VAULT_DIR
 #         vault_dir                                # prints it
+#         vault_dir "$BRAIN"                       # the vault of ANOTHER brain root
+#
+# The second form is for a script that accepts a brain root from its caller
+# (BRAIN_DIR, which tests point at a fixture). Such a script sources this file
+# from its own location and passes the root as an argument. Sourcing it through
+# the root it was handed looks the same and is not: the library is code and
+# belongs to the script, the root is data and may be a directory that holds a
+# vault and nothing else.
 vault_dir() {
 	local root
-	root="${AGENTBRAIN_DIR:-$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)}"
+	root="${1:-${AGENTBRAIN_DIR:-$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)}}"
 	# AGENTBRAIN_VAULT is the name the installer documents and the one a user
 	# sets by hand (`--vault=PATH / AGENTBRAIN_VAULT=PATH`). It was read only by
 	# setup-vault.sh, so setting it moved where the vault was CREATED and not

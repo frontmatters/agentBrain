@@ -112,7 +112,7 @@ is immutable: any further change is a new version.
 
 Every sentence a human reads follows `system/writing-style.md` (*The Elements
 of Style*): name the subject, omit needless words, concrete over vague, honest
-claims only. `scripts/checks/check-writing-style.sh` guards the policy in the doctor;
+claims only. In a source checkout, `scripts/checks/check-writing-style.sh` guards the policy in the doctor;
 Claude Code users can invoke the `elements-of-style` plugin skill while
 writing. Source comments and system/ docs stay English
 (`check-english-sources.sh`).

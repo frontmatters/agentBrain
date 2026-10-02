@@ -4,19 +4,19 @@
 # Inventarises every dev checkout under the configured ROOTS (plus every space
 # code-root) and regenerates the registry table. Path-agnostic and shareable: it
 # holds NO personal paths. Your data lives NEXT TO it, in the private mirror:
-#     local/references/dev-registry.roots        (your search roots — gitignored)
-#     local/references/dev-registry.overrides    (manual origin/canonical fixes)
-#     local/references/dev-registry.md           (generated output)
+#     vault/references/dev-registry.roots        (your search roots — gitignored)
+#     vault/references/dev-registry.overrides    (manual origin/canonical fixes)
+#     vault/references/dev-registry.md           (generated output)
 # A committed template ships as  system/references/dev-registry.roots.example .
 #
-# Spaces integration: reads local/.space-map.json (built by scripts/reports/build-space-map.sh
+# Spaces integration: reads vault/.space-map.json (built by scripts/reports/build-space-map.sh
 # from the space passports). Every checkout under a space's code-root is tagged with
 # its space; the space's `canonical` code-root is marked ✓ and its other code-roots
 # ⛔ decoy. So "which checkout is the real one for this client?" is a space-owned fact.
 #
 # Config precedence (data → mechanism):
 #     $DEV_ROOTS (colon-separated) > $DEV_DIR (single, back-compat)
-#       > local/references/dev-registry.roots > baked-in default (~/Developer)
+#       > vault/references/dev-registry.roots > baked-in default ($HOME/Developer)
 #
 # Columns: Name · Origin · Space · Type · What · Canonical? · agentBrain
 # Refresh:  bash "$AGENTBRAIN_DIR"/system/references/dev-registry.scan.sh
@@ -45,7 +45,7 @@ BRAIN_LOCAL="$AB/vault"
 # Origin values are data (overrides files use them), so they stay as-is:
 # eigen = own, extern = external, klant = client, lokaal? = local, no remote.
 # These are PERSONAL data, so they live in private config, never hardcoded here.
-# Precedence: $DEV_OWN_RE > local/references/dev-registry.owners (one pattern/line, joined
+# Precedence: $DEV_OWN_RE > vault/references/dev-registry.owners (one pattern/line, joined
 # with |) > empty. Empty → nothing is "eigen" by remote; copy dev-registry.owners.example.
 OWN_RE="${DEV_OWN_RE:-}"
 if [ -z "$OWN_RE" ] && [ -f "$OWNERS_FILE" ]; then
@@ -54,7 +54,7 @@ fi
 
 trim(){ local s="$1"; s="${s#"${s%%[![:space:]]*}"}"; s="${s%"${s##*[![:space:]]}"}"; printf '%s' "$s"; }
 
-# --- resolve ROOTS (data lives in local/, not here) ------------------------
+# --- resolve ROOTS (data lives in vault/, not here) ------------------------
 declare -a ROOTS=()
 if [ -n "${DEV_ROOTS:-}" ]; then
   IFS=':' read -r -a ROOTS <<< "$DEV_ROOTS"

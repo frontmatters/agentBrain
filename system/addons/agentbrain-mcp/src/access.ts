@@ -9,7 +9,7 @@ const MS_PER_DAY = 86_400_000;
 export interface AccessRecord { count: number; last: string; } // last = YYYY-MM-DD
 export type AccessIndex = Record<string, AccessRecord>;
 
-// Gitignored sidecar, dot-prefixed in local/ like .parks-index.json / .space-map.json.
+// Gitignored sidecar, dot-prefixed in vault/ like .parks-index.json / .space-map.json.
 function indexPath(): string {
   return join(localDisk(), ".access-index.json");
 }

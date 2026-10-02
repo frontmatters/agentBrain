@@ -58,4 +58,4 @@ PI_POSTINSTALL_PATCH=1 pi update pi
 
 - These patches modify local package-manager output under global `node_modules`.
 - A future Pi update can overwrite them; rerun this skill or enable automatic post-update patching.
-- Keep real machine-specific config in `~/.pi/agent/pi-postinstall-patch.json` or `local/`, not in public docs.
+- Keep real machine-specific config in `~/.pi/agent/pi-postinstall-patch.json` or `vault/`, not in public docs.

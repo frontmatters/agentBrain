@@ -3,6 +3,7 @@ id: git-email-guard
 name: Git Email Guard (pre-commit hook)
 version: 0.1.2
 author: frontmatters
+kind: framework
 install: bash system/addons/git-email-guard/install.sh
 command: bash
 # On by default in a fresh install; the user can untick it.

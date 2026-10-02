@@ -26,8 +26,17 @@ resolve_brain_dir() {
 }
 
 BRAIN_DIR="$(resolve_brain_dir)"
+# The vault through the resolver (AGENTBRAIN_VAULT and friends), never the
+# checkout's own folder by assumption; a copy without scripts/lib (a test
+# fixture) falls back to it.
+if [ -f "$BRAIN_DIR/scripts/lib/vault.sh" ]; then
+	# shellcheck source=/dev/null
+	. "$BRAIN_DIR/scripts/lib/vault.sh"
+else
+	VAULT_DIR="${AGENTBRAIN_VAULT:-$BRAIN_DIR/vault}"
+fi
 UUID5_GEN="$BRAIN_DIR/scripts/uuid5-gen.sh"
-LOCAL_DIR="$BRAIN_DIR/vault"
+LOCAL_DIR="${VAULT_DIR}"
 
 if [ ! -d "$LOCAL_DIR" ]; then
     echo "wash-vault: no vault/ at $LOCAL_DIR" >&2

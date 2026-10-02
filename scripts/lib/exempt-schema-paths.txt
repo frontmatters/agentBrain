@@ -38,7 +38,7 @@ local/.trash/**/*
 local/memories/MEMORY.md
 
 # Content under sanitization-watch — out of scope here.
-# See local/quarantine/README.md and check-vault-private.sh.
+# See vault/quarantine/README.md and check-vault-private.sh.
 local/quarantine/*
 local/quarantine/**/*
 

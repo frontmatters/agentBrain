@@ -6,7 +6,7 @@ import { noteId } from "./uuid5";
 
 // Lowercase kebab slug; strips every non-alphanumeric (so "../x" or "a/b" can't traverse).
 // This is the primary filename-traversal guard; localPath is the backstop. (Symlinks under
-// local/ are not realpath-resolved — acceptable for a local single-user tool.)
+// vault/ are not realpath-resolved — acceptable for a local single-user tool.)
 function slugify(s: string): string {
   return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "note";
 }
@@ -45,7 +45,7 @@ function assertNotIncognito(): void {
 
 function today(): string { return new Date().toISOString().slice(0, 10); }
 
-// Save a learning to local/learnings/<slug>.md. Returns the brain-relative path.
+// Save a learning to vault/learnings/<slug>.md. Returns the brain-relative path (local/ id spelling).
 export async function saveLearning(title: string, body: string, tags: string[] = []): Promise<string> {
   assertNotIncognito();
   assertNoSecret(title, body);

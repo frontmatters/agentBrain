@@ -7,8 +7,10 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
-LOCAL_THEMES="${EXPLAINERS_LOCAL_THEMES:-$ROOT/vault/explainers/themes}"
-CFG="${EXPLAINERS_CONFIG:-$ROOT/vault/explainers/config.json}"
+# shellcheck source=scripts/lib/vault.sh
+. "$ROOT/scripts/lib/vault.sh"
+LOCAL_THEMES="${EXPLAINERS_LOCAL_THEMES:-$VAULT_DIR/explainers/themes}"
+CFG="${EXPLAINERS_CONFIG:-$VAULT_DIR/explainers/config.json}"
 
 # Detect-before-ask: a personal default already set is a no-op.
 if [ -f "$CFG" ] && grep -q '"default_theme"' "$CFG"; then

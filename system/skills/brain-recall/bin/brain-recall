@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# brain-recall — restore a note from local/.trash/forget/.
+# brain-recall — restore a note from vault/.trash/forget/.
 
 set -euo pipefail
 
@@ -25,6 +25,15 @@ resolve_brain_dir() {
 }
 
 BRAIN_DIR="$(resolve_brain_dir)"
+# The vault through the resolver (AGENTBRAIN_VAULT and friends), never the
+# checkout's own folder by assumption; a copy without scripts/lib (a test
+# fixture) falls back to it.
+if [ -f "$BRAIN_DIR/scripts/lib/vault.sh" ]; then
+	# shellcheck source=/dev/null
+	. "$BRAIN_DIR/scripts/lib/vault.sh"
+else
+	VAULT_DIR="${AGENTBRAIN_VAULT:-$BRAIN_DIR/vault}"
+fi
 
 usage() {
     cat <<EOF
@@ -39,7 +48,7 @@ ARG="$1"
 
 # Numeric resolves via cache (but NOT pure numeric timestamps like 20260603-153012)
 if [[ "$ARG" =~ ^[0-9]+$ ]] && [[ ! "$ARG" =~ ^[0-9]{8}-[0-9]{6}$ ]]; then
-    CACHE="$BRAIN_DIR/vault/.hidden-index.json"
+    CACHE="${VAULT_DIR}/.hidden-index.json"
     [ ! -f "$CACHE" ] && { echo "brain-recall: no /list-hidden cache. Run /list-hidden --include-trash first." >&2; exit 2; }
     RESOLVED=$(grep -oE "\{\"n\":$ARG,\"timestamp\":\"[^\"]*\"" "$CACHE" | sed 's/.*"timestamp":"//;s/"$//')
     if [ -z "$RESOLVED" ]; then
@@ -57,7 +66,7 @@ fi
 case "$ARG" in
     [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9])
         MODE="timestamp"
-        BATCH="$BRAIN_DIR/vault/.trash/forget/$ARG"
+        BATCH="${VAULT_DIR}/.trash/forget/$ARG"
         ;;
     *) MODE="slug" ;;
 esac
@@ -88,7 +97,7 @@ fi
 # Slug mode
 TYPE="${ARG%%/*}"; SLUG="${ARG#$TYPE/}"
 FOUND=""
-for batch in "$BRAIN_DIR/vault/.trash/forget"/*/; do
+for batch in "${VAULT_DIR}/.trash/forget"/*/; do
     [ -d "$batch" ] || continue
     if [ -e "$batch/local/$TYPE/$SLUG.md" ] || [ -e "$batch/local/$TYPE/$SLUG/index.md" ]; then
         FOUND="$batch"

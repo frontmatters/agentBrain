@@ -148,7 +148,9 @@ find_pi_modules() {
 check_pi_api() {
 	local pi_mods
 	pi_mods="$(find_pi_modules)"
-	[[ -n "$pi_mods" ]] || return
+	# Pi's CLI can be on PATH while its npm modules are outside this HOME
+	# (e.g. a sandbox install). No types to inspect is advisory, not fatal.
+	[[ -n "$pi_mods" ]] || { warn "Pi modules not found — skipping API check."; return 0; }
 
 	local types_file="$pi_mods/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts"
 	[[ -f "$types_file" ]] || {
@@ -296,7 +298,7 @@ install_pi_config() {
 		ok "Pi wrapper linked -> $PI_CONFIG_DIR/bin/pi"
 	fi
 
-	# All agentBrain skills (system/skills + local/skills), via the shared lib so
+	# All agentBrain skills (system/skills + vault/skills), via the shared lib so
 	# Pi links the SAME standalone skills as Claude Code/Copilot (setup-skills.sh).
 	# No hardcoded subset: a new skill in the brain can never be silently skipped
 	# for Pi. Orphans (source deleted) are pruned, like the other agents.

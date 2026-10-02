@@ -23,8 +23,17 @@ set -uo pipefail
 # realpath, not plain dirname: real scripts live under bin/ and a compat symlink
 # elsewhere would make the climb land one level too high. See check-known-traps.
 AGENTBRAIN_DIR="${AGENTBRAIN_DIR:-$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../../.." && pwd)}"
-CLAIMS_DIR="$AGENTBRAIN_DIR/vault/claims"
-CONFIG="$AGENTBRAIN_DIR/vault/events/config.json"
+# The vault through the resolver (AGENTBRAIN_VAULT and friends), never the
+# checkout's own folder by assumption; a copy without scripts/lib (a test
+# fixture) falls back to it.
+if [ -f "$AGENTBRAIN_DIR/scripts/lib/vault.sh" ]; then
+	# shellcheck source=/dev/null
+	. "$AGENTBRAIN_DIR/scripts/lib/vault.sh"
+else
+	VAULT_DIR="${AGENTBRAIN_VAULT:-$AGENTBRAIN_DIR/vault}"
+fi
+CLAIMS_DIR="${VAULT_DIR}/claims"
+CONFIG="${VAULT_DIR}/events/config.json"
 HERE="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 
 die() { echo "brain-claim: $1" >&2; exit "${2:-2}"; }

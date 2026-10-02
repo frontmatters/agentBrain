@@ -3,6 +3,7 @@ id: extract-learnings
 name: Extract Learnings (behavior)
 version: 0.1.3
 author: frontmatters
+kind: framework
 install: bash system/addons/extract-learnings/install.sh
 command: bun
 privacy: sends-docs

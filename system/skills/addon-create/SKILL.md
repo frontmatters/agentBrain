@@ -42,6 +42,12 @@ Before writing, gather or infer:
 - `command` — health-check binary/command when relevant
 - `privacy` — `local` | `sends-docs` | `sends-all`
 - `install_method` — `self` | `ai-driven` | `config-entry`
+- `kind`: where the code comes from, decided from the files, not the name.
+  Either `framework` (written for agentBrain; needs `test:` naming a suite that exists),
+  `adapter` (thin layer over a standalone tool; needs `wraps:`, `wraps_source:`,
+  and `wraps_version:` when it depends on one) or `vendored` (third-party
+  content; needs `upstream:`, `license:`, `upstream_version:`). Write `unknown`
+  for a value you cannot find; see "Add-on kinds" in `system/addons/README.md`
 - support matrix — set unknown by default unless known
 
 ## Procedure
@@ -134,6 +140,9 @@ install: bash system/addons/example-addon/install.sh
 command: example-binary
 privacy: local
 install_method: self
+author: your-handle
+kind: framework
+test: bash tests/test-example-addon.sh
 support:
   pi: full
   claude: unknown

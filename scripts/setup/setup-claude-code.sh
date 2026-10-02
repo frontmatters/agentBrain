@@ -29,12 +29,6 @@ if ! command -v claude &>/dev/null; then
 fi
 mkdir -p "${CLAUDE_DIR}"
 
-# Anchored block heading; covers the legacy "# agentBrain" h1 marker too.
-if [ -f "${CLAUDE_MD}" ] && grep -qE '^##? agentBrain' "${CLAUDE_MD}" 2>/dev/null; then
-	echo -e "${YELLOW}Skip${NC}    Claude Code (already configured)"
-elif ! agentbrain_pointer_target_ok "${CLAUDE_MD}" "$VAULT"; then
-	echo -e "${YELLOW}Skip${NC}    Claude Code (config file resolves into the agentBrain checkout)"
-else
-	agentbrain_pointer_block "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "claude.md" >>"${CLAUDE_MD}"
-	echo -e "${GREEN}✓${NC} Claude Code"
-fi
+# Refresh the managed block without changing the user's surrounding text.
+state="$(agentbrain_pointer_sync "$CLAUDE_MD" "${BRAIN_ALIAS:-$AGENT_HOME/agentBrain}" "claude.md" embed)"
+echo -e "${GREEN}✓${NC} Claude Code (pointer $state)"

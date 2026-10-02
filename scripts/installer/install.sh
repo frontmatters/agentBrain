@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # The installer is one versioned unit: this orchestrator, the sub-installers it
-# calls (bootstrap-macos.sh / setup.sh / setup-devtools.sh / install-*.sh) and
+# calls (bootstrap/macos.sh / setup.sh / setup-devtools.sh / install-*.sh) and
 # the libs they share (platform.sh, lib/capability-install.sh, prompt-helper.sh).
 # It evolves independently from the framework it installs; AB_VERSION below is
 # the target agentBrain release. Bump installer/VERSION when installer behavior
@@ -27,7 +27,7 @@ _ab_installer_version() {
 INSTALLER_VERSION="${AB_INSTALLER_VERSION:-$(_ab_installer_version)}"
 
 # Inlined from scripts/lib/lineage.sh (the piped installer has no lib beside it;
-# test-lineage-switch.sh keeps the two copies identical).
+# in a source checkout, test-lineage-switch.sh keeps the two copies identical).
 lineage_identity() {
 	git -C "$1" describe --tags --match 'v*' 2>/dev/null || true
 }
@@ -1182,16 +1182,16 @@ else
     ln_ "  ${C}▸${N} updating existing checkout…"
     # Update from the installer's source ($REPO — the public repo), NOT the existing
     # checkout's origin: that origin may be a private/LAN remote left by an earlier
-    # clone (unreachable off-network → the install fails). The public repo is a
-    # rewriting clean snapshot, so reset to the fetched ref rather than ff-merge
-    # (unrelated lineage). Re-point origin so later updates/session-checks track the
-    # public source too. local/ is gitignored — a hard reset never touches it.
-    # --tags: the public repo is a rewriting snapshot, so the checkout's old tags
-    # never sit on the new lineage; without the new ones `git describe` yields a
-    # bare hash and the checkout cannot say which release it is (test-edge-identity).
-    # --force on the tags as well: a checkout that once tracked the private
-    # lineage holds a v-tag of the same name on another commit, and a plain
-    # --tags fetch then refuses it in silence ("would clobber existing tag").
+    # clone (unreachable off-network → the install fails). The existing checkout
+    # may carry history from that other source, which a fast-forward merge cannot
+    # follow, so reset to the fetched ref: the installer's source wins. Re-point
+    # origin so later updates/session-checks track the public source too. vault/
+    # is gitignored, so a hard reset never touches it.
+    # --tags: without the source's tags `git describe` yields a bare hash and the
+    # checkout cannot say which release it is.
+    # --force on the tags as well: a checkout that tracked another source can
+    # hold a v-tag of the same name on another commit, and a plain --tags fetch
+    # then refuses it in silence ("would clobber existing tag").
     if adopt_lineage "$DEST" "$REPO" "$BRANCH"; then
       git -C "$DEST" remote set-url origin "$REPO" 2>/dev/null \
         || git -C "$DEST" remote add origin "$REPO" 2>/dev/null || true
@@ -1273,15 +1273,24 @@ if [ -x "$DEST/scripts/setup/setup-default-addons.sh" ]; then
     ln_ "  ${D}Default add-ons step had issues. Later: brain addons${N}"
 fi
 
-# Optional devtools (cascaded-config capabilities: mail, container, python).
+# Optional add-ons: none ticked; each one picked asks its own privacy question
+# and brings the tools it declares, so the core install asks about none of them.
+if has_tty && [ -f "$DEST/scripts/setup/setup-optional-addons.sh" ]; then
+  ln_ ""
+  bash "$DEST/scripts/setup/setup-optional-addons.sh" </dev/tty || true
+elif [ -f "$DEST/scripts/setup/setup-optional-addons.sh" ]; then
+  ln_ "  ${D}Optional add-ons skipped (non-interactive). Later: brain addons${N}"
+fi
+
+# Optional devtools (cascaded-config capabilities: mail, container, python, local-ai).
 # The interactive path asks; non-interactive runs decline politely — the
 # subscript is re-runnable any time: scripts/setup/setup-devtools.sh <intent>.
 if has_tty && [ -f "$DEST/scripts/setup/setup-devtools.sh" ]; then
   ln_ ""
-  if ab_prompt_confirm --default no "Set up optional devtools now? (mailpit, container tools, uv)"; then
+  if ab_prompt_confirm --default no "Set up optional devtools now? (mailpit, container tools, uv, ollama)"; then
     bash "$DEST/scripts/setup/setup-devtools.sh" </dev/tty || true
   else
-    ln_ "  ${D}Skipped. Later: bash $DEST/scripts/setup/setup-devtools.sh (intents: mail, container, python)${N}"
+    ln_ "  ${D}Skipped. Later: bash $DEST/scripts/setup/setup-devtools.sh (intents: mail, container, python, local-ai)${N}"
   fi
 elif [ -f "$DEST/scripts/setup/setup-devtools.sh" ]; then
   ln_ "  ${D}Optional devtools skipped (non-interactive). Later: bash $DEST/scripts/setup/setup-devtools.sh${N}"

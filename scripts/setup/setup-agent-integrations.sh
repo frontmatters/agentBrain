@@ -30,7 +30,7 @@ AGENTS=(
 	"setup-claude-code.sh:Claude Code:claude"
 	"setup-copilot.sh:Copilot:code"
 	"setup-copilot-cli.sh:Copilot CLI:copilot"
-	"setup-windsurf.sh:Windsurf:windsurf"
+	"setup-devin.sh:Devin Desktop:"
 	"setup-cursor.sh:Cursor:cursor"
 	"setup-cline.sh:Cline:cline"
 	"setup-opencode.sh:OpenCode:opencode"
@@ -46,8 +46,8 @@ for agent_config in "${AGENTS[@]}"; do
 	script_path="${SCRIPTS}/${script}"
 	[ -f "$script_path" ] || continue
 
-	# A config directory or stale PATH shim is not proof of an installed client.
-	# Require the CLI's version probe to succeed before wiring it.
+	# CLI clients require a working version probe; GUI-only Devin Desktop uses
+	# setup-devin.sh's app/config marker instead (its CLI need not be on PATH).
 	if [ -n "$check_command" ] && { ! command -v "$check_command" &>/dev/null || ! "$check_command" --version </dev/null >/dev/null 2>&1; }; then
 		SKIPPED_NAMES+=("$agent_name")
 		continue

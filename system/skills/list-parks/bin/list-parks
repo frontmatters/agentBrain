@@ -27,11 +27,19 @@ resolve_brain_dir() {
 }
 
 BRAIN_DIR="$(resolve_brain_dir)"
+# The resolver is code and belongs to this script's checkout; BRAIN_DIR is data
+# and may be a fixture that holds a vault and nothing else. So the library is
+# found from here first, and the vault is asked for BY the root that was given.
+_VAULT_LIB="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../../.." 2>/dev/null && pwd -P || true)/scripts/lib/vault.sh"
+[ -f "$_VAULT_LIB" ] || _VAULT_LIB="$BRAIN_DIR/scripts/lib/vault.sh"
+# shellcheck source=/dev/null
+. "$_VAULT_LIB"
+VAULT_DIR="$(vault_dir "$BRAIN_DIR")"
 
 # Source visibility helpers (added by brain-hide-forget)
 source "$BRAIN_DIR/system/lib/visibility.sh" 2>/dev/null || true
 
-PROJECTS_DIR="$BRAIN_DIR/vault/projects"
+PROJECTS_DIR="$VAULT_DIR/projects"
 
 if [ ! -d "$PROJECTS_DIR" ]; then
     echo "list-parks: no projects directory at $PROJECTS_DIR" >&2
@@ -183,7 +191,7 @@ shopt -u nullglob
 
 if [ ${#rows[@]} -eq 0 ]; then
     # Clear stale index so /unpark <number> can't resolve to a removed project
-    echo "[]" > "$BRAIN_DIR/vault/.parks-index.json"
+    echo "[]" > "$VAULT_DIR/.parks-index.json"
     if [ "$FORMAT" = "json" ]; then
         echo "[]"
     else
@@ -196,7 +204,7 @@ fi
 sorted=()
 while IFS= read -r _row; do sorted+=("$_row"); done < <(printf '%s\n' "${rows[@]}" | sort -r)
 
-INDEX_FILE="$BRAIN_DIR/vault/.parks-index.json"
+INDEX_FILE="$VAULT_DIR/.parks-index.json"
 
 # Write index file (used by /unpark <number>). Always written.
 # Format: [{"n":1,"name":"foo-skill","id":"<uuid>","status":"paused","priority":"medium","date":"2026-06-02"}, ...]

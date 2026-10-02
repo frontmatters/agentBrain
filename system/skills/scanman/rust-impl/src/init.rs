@@ -1,6 +1,6 @@
 //! `init` subcommand — port of bash scripts/scanman/scanman-init.sh.
 //!
-//! Creates a canonical workspace under local/research/repo-distill/<slug>/ with
+//! Creates a canonical workspace under vault/research/repo-distill/<slug>/ with
 //! frontmatter that carries the correct UUID5 (so the agentBrain validate-hook
 //! accepts subsequent agent edits without blockades).
 
@@ -14,9 +14,7 @@ pub fn run(slug: &str, repo_path: Option<&Path>, goal: &str) -> Result<()> {
     validate_slug(slug)?;
 
     let agentbrain_dir = find_agentbrain_dir()?;
-    let target = agentbrain_dir
-        .join("local/research/repo-distill")
-        .join(slug);
+    let target = workspace_dir(&agentbrain_dir, slug);
     if target.exists() {
         anyhow::bail!("Scanman target already exists: {}", target.display());
     }
@@ -160,10 +158,29 @@ fn read_scanman_version(agentbrain_dir: &Path) -> Result<String> {
     Ok(fs::read_to_string(path)?.trim().to_string())
 }
 
+/// Where a workspace lives on disk: under the checkout's vault/ link. The
+/// note ids keep the local/ spelling (see uuid5), but no local/ directory
+/// exists in a current checkout, so a path on disk must never use it.
+pub fn workspace_dir(agentbrain_dir: &Path, slug: &str) -> PathBuf {
+    agentbrain_dir.join("vault/research/repo-distill").join(slug)
+}
+
 pub fn find_agentbrain_dir() -> Result<PathBuf> {
     if let Ok(dir) = std::env::var("AGENTBRAIN_DIR") {
         return Ok(PathBuf::from(dir));
     }
     let home = std::env::var("HOME").context("HOME not set")?;
     Ok(PathBuf::from(home).join("agentBrain"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workspace_is_under_the_vault_link() {
+        let dir = workspace_dir(Path::new("/brain"), "demo");
+        assert_eq!(dir, PathBuf::from("/brain/vault/research/repo-distill/demo"));
+        assert!(!dir.to_string_lossy().contains("/local/"));
+    }
 }

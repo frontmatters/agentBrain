@@ -3,6 +3,7 @@ id: incognito
 name: Incognito Mode (behavior)
 version: 0.1.1
 author: frontmatters
+kind: framework
 install: bash system/addons/incognito/install.sh
 command: bash
 # On by default in a fresh install; the user can untick it.

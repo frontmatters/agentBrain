@@ -5,7 +5,7 @@
 # Idempotent: running it twice (or with no hook installed) is a no-op that exits 0.
 #
 #   bash uninstall.sh            # remove the PreCompact hook entry (keep settings.json)
-#   bash uninstall.sh --purge    # also remove extracted learnings in local/learnings/extracted
+#   bash uninstall.sh --purge    # also remove extracted learnings in vault/learnings/extracted
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PURGE=0
@@ -17,7 +17,9 @@ bash "$HERE/install.sh" --uninstall
 
 if [ "$PURGE" = "1" ]; then
   BRAIN="$(cd "$HERE/../../.." && pwd)"
-  EXTRACTED="$BRAIN/vault/learnings/extracted"
+  # shellcheck source=scripts/lib/vault.sh
+  . "$BRAIN/scripts/lib/vault.sh"
+  EXTRACTED="$VAULT_DIR/learnings/extracted"
   if [ -d "$EXTRACTED" ]; then
     rm -rf "$EXTRACTED"
     echo "Purged extracted learnings ($EXTRACTED)"

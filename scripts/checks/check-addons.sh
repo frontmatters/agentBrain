@@ -19,7 +19,13 @@ ONLY="${1:-}"   # optional: validate a single add-on by id
 # validates against. Hand-kept copies drift, and a client can then be declared
 # by manifests with no column anywhere.
 CLIENTS="$(grep -vE '^[[:space:]]*(#|$)' "$ROOT_DIR/scripts/lib/clients.txt" 2>/dev/null | tr '\n' ' ')"
-REQUIRED="id name privacy install_method author"
+REQUIRED="id name privacy install_method author kind"
+# kind: where an add-on's code comes from, and so what it must declare.
+#   framework  written for agentBrain, runs only inside it   -> test
+#   adapter    thin layer over a standalone tool             -> wraps, wraps_source (+ optional wraps_version)
+#   vendored   main content is a third party's              -> upstream, license, upstream_version
+# See "Add-on kinds" in system/addons/README.md and the table in KINDS.md.
+VALID_KIND="framework adapter vendored"
 VALID_PRIVACY="local local-only sends-docs sends-all"
 VALID_SUPPORT="full rules none unknown"
 # Every client a manifest declares must have a column, or the matrix silently
@@ -70,6 +76,22 @@ for m in "$REGISTRY"/*/manifest.md; do
 	[ "$dir_id" = "_template" ] && continue
 	[ -n "$ONLY" ] && [ "$ONLY" != "$dir_id" ] && continue
 	[ -f "$(dirname "$m")/README.md" ] || { echo "FAIL $m: missing README.md (every add-on must document itself)" >&2; errors=$((errors+1)); }
+	# Doctor suites are opt-in and must be files inside their declaring add-on.
+	if [ -f "$addon_dir/doctor-tests.txt" ]; then
+		while IFS= read -r doctor_test || [ -n "$doctor_test" ]; do
+			[ -z "$doctor_test" ] && continue
+			case "$doctor_test" in
+				tests/test-*.sh)
+					case "${doctor_test#tests/}" in
+						*[!a-zA-Z0-9_.-]*|*..*) echo "FAIL $m: invalid doctor test $doctor_test" >&2; errors=$((errors+1)); continue ;;
+					esac
+					if [ ! -f "$addon_dir/$doctor_test" ]; then
+						echo "FAIL $m: missing doctor test $doctor_test" >&2; errors=$((errors+1))
+					fi ;;
+				*) echo "FAIL $m: invalid doctor test $doctor_test" >&2; errors=$((errors+1)) ;;
+			esac
+		done < "$addon_dir/doctor-tests.txt"
+	fi
 	# Install/uninstall symmetry: any add-on shipping an install.sh must also ship a
 	# matching uninstall.sh — the "true inverse" contract (see README "Add-on types").
 	# This keeps newly-added install scripts from silently lacking a removal path.
@@ -79,6 +101,53 @@ for m in "$REGISTRY"/*/manifest.md; do
 			echo "FAIL $m: missing required field '$key'" >&2; errors=$((errors+1))
 		fi
 	done
+	# Per-kind required fields. A value of `unknown` is allowed so an honest gap
+	# can be written down instead of invented, but it is a WARN naming the
+	# add-on, never a silent pass.
+	kind="$(field "$m" kind)"
+	kind_req=""; kind_opt=""
+	case "$kind" in
+		'') ;;   # already reported as a missing required field
+		framework) kind_req="test" ;;
+		adapter)   kind_req="wraps wraps_source"; kind_opt="wraps_version" ;;
+		vendored)  kind_req="upstream license upstream_version" ;;
+		*) echo "FAIL $m: invalid kind '$kind' (allowed: $VALID_KIND)" >&2; errors=$((errors+1)) ;;
+	esac
+	for key in $kind_req; do
+		[ -z "$(field "$m" "$key")" ] && { echo "FAIL $m: kind=$kind requires '$key'" >&2; errors=$((errors+1)); }
+	done
+	for key in $kind_req $kind_opt; do
+		kv="$(field "$m" "$key")"; kv="${kv//\"/}"
+		[ "$kv" = "unknown" ] && echo "WARN $dir_id: $key is 'unknown' (kind=$kind); record the real value" >&2
+	done
+	# A source URL is published with the registry; user info in it is a credential.
+	for key in wraps_source upstream; do
+		kv="$(field "$m" "$key")"
+		if printf '%s' "$kv" | grep -qE '^[A-Za-z][A-Za-z0-9+.-]*://[^/@[:space:]]+@'; then
+			echo "FAIL $m: $key carries credentials (user info in the URL); publish the bare URL" >&2; errors=$((errors+1))
+		fi
+		# ...and a path on the maintainer's machine is personal and resolves nowhere else
+		case "$kv" in
+			# bracketed so the privacy scan does not read the rule itself as a home path
+			"~"*|/[U]sers/*|/[h]ome/*)
+				echo "FAIL $m: $key names a path on one machine ($kv); name the repository or its public URL" >&2; errors=$((errors+1)) ;;
+		esac
+	done
+	# framework: the suite must exist. A named path is checked with the other
+	# test: tokens below; a runner that discovers its own tests (`bun test`)
+	# names none, so the add-on must then contain a test file.
+	if [ "$kind" = "framework" ]; then
+		fw_test="$(field "$m" test)"
+		if [ -n "$fw_test" ] && [ "$fw_test" != "unknown" ]; then
+			fw_named=0
+			for tok in $fw_test; do
+				case "$tok" in */*|*.sh|*.py|*.ts|*.js|*.mjs) fw_named=1 ;; esac
+			done
+			if [ "$fw_named" -eq 0 ] && [ -z "$(find "$addon_dir" -name node_modules -prune -o -type f \( -name '*.test.*' -o -name '*_test.*' -o -name 'test_*' -o -name '*.spec.*' \) -print 2>/dev/null | head -1)" ]; then
+				echo "FAIL $m: kind=framework test '$fw_test' names no test file, and the add-on contains none" >&2; errors=$((errors+1))
+			fi
+		fi
+	fi
 	id="$(field "$m" id)"
 	[ -n "$id" ] && [ "$id" != "$dir_id" ] && { echo "FAIL $m: id '$id' != directory '$dir_id'" >&2; errors=$((errors+1)); }
 	# Optional `shorthand:` — lowercase handle, unique across addons.
@@ -177,7 +246,7 @@ for m in "$REGISTRY"/*/manifest.md; do
 	if [ -n "$test_cmd" ]; then
 		for tok in $test_cmd; do
 			case "$tok" in
-				*.sh|system/addons/*|tests/*)
+				*.sh|*.py|*.ts|*.js|*.mjs|system/addons/*|tests/*)
 					if ! ref_file_exists "$addon_dir" "$dir_id" "$tok"; then
 						echo "FAIL $m: test references missing file '$tok'" >&2; errors=$((errors+1))
 					fi ;;

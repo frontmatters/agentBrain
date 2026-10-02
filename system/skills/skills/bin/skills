@@ -8,66 +8,152 @@
 # instead of re-implementing them. See SKILL.md for the routing table.
 set -euo pipefail
 
-# local/ is a symlink to the vault, so walking up from this file can't reach the
+# vault/ is a symlink to the vault, so walking up from this file can't reach the
 # checkout that holds system/ + scripts/. Anchor on the stable brain alias instead.
 BRAIN="${AGENTBRAIN_HOME:-$HOME/agentBrain}"
+# The vault through the resolver (AGENTBRAIN_VAULT and friends), never the
+# checkout's own folder by assumption; a copy without scripts/lib (a test
+# fixture) falls back to it.
+if [ -f "$BRAIN/scripts/lib/vault.sh" ]; then
+	# shellcheck source=/dev/null
+	. "$BRAIN/scripts/lib/vault.sh"
+else
+	VAULT_DIR="${AGENTBRAIN_VAULT:-$BRAIN/vault}"
+fi
 
 die() { printf 'skills: %s\n' "$*" >&2; exit 1; }
 [ -d "$BRAIN/system/skills" ] || die "brain root not found at $BRAIN (set AGENTBRAIN_HOME)"
 
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 
-# Pull a short, single-line description out of a SKILL.md (inline or YAML-folded).
-skill_desc() {
-	awk '
-		/^description:[[:space:]]*[|>]/ { folded=1; next }              # >- or |  -> desc on next lines
-		!folded && /^description:[[:space:]]*[^[:space:]]/ {           # inline desc
-			sub(/^description:[[:space:]]*/, ""); print; exit
-		}
-		folded && /^[[:space:]]+[^[:space:]]/ {                        # first folded line
-			sub(/^[[:space:]]+/, ""); print; exit
-		}
-	' "$1" 2>/dev/null | cut -c1-72
+# The add-on enabled-state root, the same one addons.sh and setup-skills.sh read.
+STATE="${ADDONS_STATE:-${VAULT_DIR}/addons}"
+
+# Frontmatter field of a SKILL.md or manifest.md (first frontmatter block only).
+# A folded or literal scalar (`key: >-` / `key: |`) is joined onto one line.
+fm_field() {
+	awk -v k="$2" -v q="'" '
+		/^---[[:space:]]*$/ { fm++; if (fm > 1) exit; next }
+		fm != 1 { next }
+		folded && /^[[:space:]]+[^[:space:]]/ { l=$0; sub(/^[[:space:]]+/, "", l); out = out (out == "" ? "" : " ") l; next }
+		folded { exit }
+		$0 ~ "^"k":[[:space:]]*[|>][-+]?[[:space:]]*$" { folded=1; next }
+		$0 ~ "^"k":" { l=$0; sub("^"k":[[:space:]]*", "", l); sub(/[[:space:]]+$/, "", l); out=l; exit }
+		END { if (out ~ "^[\"" q "]" && out ~ "[\"" q "]$") out = substr(out, 2, length(out) - 2); print out }
+	' "$1" 2>/dev/null
 }
 
 # Extract a subfield of the nested `deprecated:` block from a SKILL.md.
 dep_sub() { awk -v k="$2" '/^---[[:space:]]*$/{fm++;next} fm==1&&/^deprecated:[[:space:]]*$/{s=1;next} fm==1&&s&&/^[^[:space:]]/{s=0} fm==1&&s&&$0 ~ "^[[:space:]]+"k":"{sub("^[[:space:]]+"k":[[:space:]]*","");sub(/[[:space:]]*#.*$/,"");gsub(/"/,"");print;exit}' "$1"; }
 
-# Print "  /name   <scope>   description" for every SKILL.md under a tree.
-# A deprecated skill gets a trailing "[deprecated → /successor]" marker.
-list_tree() {
-	local root="$1" scope="$2" d name desc dep repl
-	for d in "$root"/*/; do
+# One catalogue record per skill, tab-separated:
+#   name  source  state  kind  deprecated  replaced_by  description
+# source: system | local | addon.  state: installed (system/local), enabled |
+# available (add-on, from the addons.sh state file).  kind: the add-on
+# manifest's kind (framework | adapter | vendored), "-" otherwise.
+# Everything is read from the files; there is no list to keep by hand.
+emit_record() {  # <name> <source> <state> <kind> <SKILL.md>
+	local dep=0 repl="" desc
+	if grep -qE "^deprecated:[[:space:]]*$" "$5"; then
+		dep=1; repl="$(dep_sub "$5" replaced_by)"
+	fi
+	desc="$(fm_field "$5" description | tr '\t' ' ')"
+	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$dep" "${repl:--}" "$desc"
+}
+
+records_tree() {  # <root> <source>
+	local d name
+	for d in "$1"/*/; do
 		[ -f "${d}SKILL.md" ] || continue
 		name="$(basename "$d")"
 		[ "$name" = "_shared" ] && continue
-		desc="$(skill_desc "${d}SKILL.md")"
-		dep=""
-		if grep -qE "^deprecated:[[:space:]]*$" "${d}SKILL.md"; then
-			repl="$(dep_sub "${d}SKILL.md" replaced_by)"
-			dep="  [deprecated${repl:+ → /$repl}]"
-		fi
-		printf '  /%-22s %-7s %s%s\n' "$name" "$scope" "$desc" "$dep"
+		emit_record "$name" "$2" installed - "${d}SKILL.md"
 	done
 }
 
-cmd_list() {
-	bold "system skills — canonical framework ($BRAIN/system/skills)"
-	list_tree "$BRAIN/system/skills" system
-	echo
-	bold "local skills — private / experimental ($BRAIN/vault/skills)"
-	list_tree "$BRAIN/vault/skills" local
-	echo
-	bold "addon skills — enabled skill-providing addons"
-	local a id shown=0
-	for a in "$BRAIN"/system/addons/*/; do
-		[ -f "${a}SKILL.md" ] || continue
-		id="$(basename "$a")"
-		[ -f "$BRAIN/vault/addons/$id/enabled" ] || continue
-		printf '  /%-22s %-7s %s\n' "$id" "addon" "$(skill_desc "${a}SKILL.md")"
-		shown=1
+# Add-on skills from both add-on roots, like addons.sh: an add-on installed
+# into the vault ($STATE/<id>) wins over the bundled copy of the same id.
+records_addons() {
+	local d id kind state seen=" "
+	for d in "$STATE"/*/ "$BRAIN"/system/addons/*/; do
+		[ -f "${d}SKILL.md" ] && [ -f "${d}manifest.md" ] || continue
+		id="$(basename "$d")"
+		[ "$id" = "_template" ] && continue
+		case "$seen" in *" $id "*) continue ;; esac
+		seen="$seen$id "
+		kind="$(fm_field "${d}manifest.md" kind)"
+		if [ -f "$STATE/$id/enabled" ]; then state=enabled; else state=available; fi
+		emit_record "$id" addon "$state" "${kind:--}" "${d}SKILL.md"
 	done
-	[ "$shown" = 1 ] || echo "  (none enabled)"
+}
+
+catalogue() {
+	records_tree "$BRAIN/system/skills" system
+	records_tree "${VAULT_DIR}/skills" local
+	records_addons | sort
+}
+
+list_human() {
+	local recs="$1" src title n
+	for src in system local addon; do
+		case "$src" in
+			system) title="system skills — canonical framework ($BRAIN/system/skills)" ;;
+			local)  title="local skills — private / experimental (${VAULT_DIR}/skills)" ;;
+			addon)  title="addon skills — every add-on that ships a SKILL.md (enable: bash scripts/addons.sh enable <id>)" ;;
+		esac
+		[ "$src" = system ] || echo
+		bold "$title"
+		n="$(printf '%s\n' "$recs" | awk -F'\t' -v s="$src" '$2 == s' | wc -l | tr -d ' ')"
+		if [ "$n" = 0 ]; then echo "  (none)"; continue; fi
+		printf '  %-27s %-7s %-10s %-10s %s\n' NAME SOURCE STATE KIND DESCRIPTION
+		printf '%s\n' "$recs" | awk -F'\t' -v s="$src" '
+			$2 != s { next }
+			{
+				d = substr($7, 1, 72)
+				if ($5 == 1) d = d "  [deprecated" ($6 != "-" ? " → /" $6 : "") "]"
+				printf "  /%-26s %-7s %-10s %-10s %s\n", $1, $2, $3, $4, d
+			}'
+	done
+	echo
+	printf '%s\n' "$recs" | awk -F'\t' '
+		NF { t++; c[$2]++; if ($2 == "addon") a[$3]++ }
+		END { printf "%d skills: %d system, %d local, %d addon (%d enabled, %d available)\n", t, c["system"], c["local"], c["addon"], a["enabled"], a["available"] }'
+}
+
+# The same records as JSON, for tools. Stable shape (schema 1):
+#   {"schema": 1, "skills": [{"name", "source", "state", "kind", "description",
+#    "deprecated", "replaced_by"}]}
+# kind and replaced_by are null when they do not apply; deprecated is a boolean.
+list_json() {
+	command -v python3 >/dev/null 2>&1 || die "list --json needs python3"
+	printf '%s\n' "$1" | python3 -c '
+import json, sys
+skills = []
+for line in sys.stdin.read().splitlines():
+    if not line:
+        continue
+    name, source, state, kind, dep, repl, desc = (line.split("\t") + [""] * 7)[:7]
+    skills.append({
+        "name": name,
+        "source": source,
+        "state": state,
+        "kind": None if kind in ("", "-") else kind,
+        "description": desc,
+        "deprecated": dep == "1",
+        "replaced_by": None if repl in ("", "-") else repl,
+    })
+print(json.dumps({"schema": 1, "skills": skills}, indent=2, ensure_ascii=False))
+'
+}
+
+cmd_list() {
+	local recs
+	recs="$(catalogue)"
+	case "${1:-}" in
+		--json) list_json "$recs" ;;
+		"")     list_human "$recs" ;;
+		*)      die "usage: skills list [--json]" ;;
+	esac
 }
 
 cmd_sources() {
@@ -147,7 +233,7 @@ cmd_add_repo() {
 A skill repo is included as an ADDON (registry pointer). Run these in order — the
 first two are agent-skills, so invoke them from the agent, not this CLI:
 
-  1. /skill-finder $url        discover + security-audit (SAFE / REVIEW / DANGEROUS)
+  1. /skill-finder $url        discover + security-audit (SAFE / REVIEW / DANGEROUS; third-party skill, not shipped)
   2. /addon-create             scaffold the pointer addon (manifest + README)
   3. bash scripts/addons.sh enable <id>
   4. bash bin/skills sync      wire into agent dirs + verify the index
@@ -169,7 +255,8 @@ usage() {
 	cat <<'EOF'
 skills — thin orchestrator for the agentBrain skill lifecycle
 
-  skills list            every skill: scope (system/vault/addon) + one-line desc
+  skills list            every skill: name, source (system, local or addon), state, kind, desc
+  skills list --json     the same catalogue as JSON (schema 1), for tools
   skills sources         skill-repo / skill-providing addons + enabled state
   skills audit <path>    layered audit: instructions + permissions + code patterns
   skills sync            check skills.md parity + re-wire enabled skills/addons
@@ -183,7 +270,7 @@ EOF
 }
 
 case "${1:-help}" in
-	list)              cmd_list ;;
+	list)              shift; cmd_list "${1:-}" ;;
 	sources)           cmd_sources ;;
 	audit)             shift; cmd_audit "${1:-}" ;;
 	sync)              cmd_sync ;;
