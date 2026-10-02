@@ -84,7 +84,7 @@ youtube-digest/
 
 Do not change public paths casually. A public path migration is a compatibility-sensitive change and should be a dedicated prerelease/migration.
 
-New `vault/` content must be lowercase/kebab-case:
+New `vault/` content is best lowercase/kebab-case (existing names stay; a rename changes the note id):
 
 ```text
 vault/projects/my-project/

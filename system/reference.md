@@ -38,7 +38,7 @@ For **new** public files and folders:
 
 ### Private layer (`vault/`)
 
-All new `vault/` content **must** use **lowercase/kebab-case**:
+New `vault/` content is best named in **lowercase/kebab-case**:
 
 ```
 vault/projects/my-project/
@@ -47,13 +47,14 @@ vault/research/electron-vs-tauri.md
 vault/sessions/archive/2026-05/20260518-143205-a7f3.md
 ```
 
-Legacy mixed-case files in `vault/` may exist from before this policy; rename them
-to lowercase/kebab-case when you touch them.
+The vault is yours: mixed-case names are allowed and are not renamed. A note's
+id is derived from its path, so a rename gives it a new id and breaks links to it.
 
 ### Enforced by
 
-- `check-path-naming.sh` reports drift; the doctor runs it in a source checkout, and
-  `check-path-naming.sh --strict` makes vault naming drift fatal
+- `check-path-naming.sh` (source checkout, run by the doctor) reports public mixed-case
+  paths, and fails on two vault paths that differ only in case: a case-insensitive
+  disk (macOS) keeps one of them, a case-sensitive one (Linux) both
 
 ## Maintenance routine
 

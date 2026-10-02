@@ -13,9 +13,6 @@ jobs:
           fetch-depth: 0
       - name: Install ShellCheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
-      # The space boundary guard needs a vault to measure and a runner has none
-      # (it exits 77, not measured); a real install runs it in the full doctor.
-      - name: Run agentBrain doctor (CI mode)
-        run: bash scripts/doctor.sh --ci
-      - name: Run session continuity tests
-        run: bash scripts/test-session-continuity.sh
+      # One entry point for a source checkout and a release; see scripts/ci.sh.
+      - name: agentBrain CI
+        run: bash scripts/ci.sh

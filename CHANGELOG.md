@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.15.1] - 2026-10-02
+
+### Fixed
+- GitHub CI runs again on the public repository. A release leaves the framework test suites out, so its full doctor refuses to run; the workflow called it anyway. CI now has one entry point, `scripts/ci.sh`: in a source checkout it runs the full doctor, in a release it installs into a throwaway home (`setup.sh --yes`) and runs the user doctor and `brain --version`, as a user would.
+
+### Changed
+- Mixed-case note names in the vault are fine and stay; the docs no longer ask you to rename them (a rename changes a note's id and breaks links to it).
+
 ## [v1.15.0] - 2026-10-01
 
 ### Added

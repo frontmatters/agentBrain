@@ -341,6 +341,6 @@ model, not just a file, and it changes what writing one means.
 
 Kept out of this hot file to stay compact; read when relevant:
 
-- **Path naming policy** — public and `vault/` paths are lowercase/kebab-case; the existing public root folders are stable API (do not rename). Reported in the source checkout by `check-path-naming.sh`, run by the doctor.
+- **Path naming policy**: public paths are lowercase/kebab-case and the existing public root folders are stable API (do not rename). New `vault/` notes are best lowercase/kebab-case; existing names stay (a rename changes the note id). `check-path-naming.sh` (source checkout, run by the doctor) fails only on vault paths that differ just in case.
 - **Maintenance routine** — run `/brain-review` monthly; recoverable curation (consolidate/archive over delete).
 - **Note format examples** — troubleshooting + pattern entry templates.
